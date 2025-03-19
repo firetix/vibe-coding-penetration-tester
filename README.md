@@ -1,6 +1,15 @@
-# Vibe Pen Tester
+<p align="center">
+  <img src="logo.webp" alt="Vibe tester Logo" width="270"/>
+</p>
+
+
+# Vibe Penetration Tester  🎯
+> An intelligent web vulnerability scanner agent powered by Large Language Models
 
 **Vibe Coding**? Cool story. But your vibe might be "security breach waiting to happen." Introducing VibePenTester, the AI pen-tester who rolls its eyes at your half-baked code, discovers your vulnerabilities faster than your coworkers discover free pizza, and gently bullies your web app into compliance. Less "vibe check," more "reality check."
+
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
 # What is it? 
 
