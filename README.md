@@ -86,6 +86,7 @@ Then open your browser to [http://localhost:5050](http://localhost:5050)
 
 VibePenTester is built with a modular architecture consisting of several key components (like a well-designed sandwich):
 
+- **OpenAI Swarm**: The backbone of our multi-agent system, leveraging OpenAI's powerful swarm architecture to coordinate multiple specialized agents (it's like The Avengers, but for hacking)
 - **SwarmCoordinator**: Orchestrates the scanning process and manages other components (the micromanager you actually want)
 - **LLMProvider**: Unified interface to different LLM providers (OpenAI and Anthropic) (the universal translator of AI dialects)
 - **Scanner**: Handles web page interaction and data collection (digital detective with OCD)
@@ -125,6 +126,26 @@ Reports are generated in both text and markdown formats, containing:
 - [ ] Improve subdomain enumeration techniques
 - [ ] Add API security testing capabilities
 - [x] Add basic documentation and examples
+
+## 🛡️ OWASP Top 10 Coverage
+
+We're working hard to cover all OWASP Top 10 vulnerabilities, but we need your help! Currently, we have decent coverage for:
+
+- ✅ Injection (SQL, NoSQL, Command)
+- ✅ Broken Authentication
+- ✅ Cross-Site Scripting (XSS)
+- ✅ Insecure Direct Object References (IDOR) 
+- ✅ Security Misconfiguration
+
+But we still need help with:
+
+- ❌ Broken Access Control (advanced scenarios)
+- ❌ Cryptographic Failures (comprehensive detection)
+- ❌ Insecure Design patterns
+- ❌ Software and Data Integrity Failures
+- ❌ Server-Side Request Forgery (SSRF) detection improvements
+
+If you're knowledgeable in these areas, we desperately need your contributions! Help us make the internet slightly less terrible, one fixed vulnerability at a time. Your expertise could save countless developers from embarrassing security incidents and awkward conversations with their CISOs.
 
 ## 🤝 Contributing
 
