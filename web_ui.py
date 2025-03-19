@@ -60,6 +60,45 @@ except Exception as e:
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         logger.info(f"Using fallback tmp directory for reports: {app.config['UPLOAD_FOLDER']}")
 
+# Custom log handler to capture logs for the UI
+class UILogHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.logs = []
+        
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            # Strip ANSI codes
+            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+            msg = ansi_escape.sub('', msg)
+            
+            # Do not store DEBUG level logs to avoid flooding the UI
+            if record.levelno >= logging.INFO:
+                self.logs.append({
+                    'time': time.strftime('%H:%M:%S'),
+                    'level': record.levelname,
+                    'message': msg
+                })
+                
+                # Keep only the last 100 logs to avoid memory issues
+                if len(self.logs) > 100:
+                    self.logs = self.logs[-100:]
+        except Exception:
+            self.handleError(record)
+    
+    def get_logs(self):
+        return self.logs
+    
+    def clear(self):
+        self.logs = []
+
+# Create a UI log handler and add it to the root logger
+ui_log_handler = UILogHandler()
+ui_log_handler.setLevel(logging.INFO)
+ui_log_handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
+logging.getLogger().addHandler(ui_log_handler)
+
 # Store scan status
 scan_status = {
     "is_running": False,
@@ -68,7 +107,7 @@ scan_status = {
     "url": "",
     "report_path": "",
     "error": None,
-    "agent_logs": [],
+    "agent_logs": [],  # This will be updated from ui_log_handler
     "action_plan": [],
     "current_action": "",
     "completed_tasks": []  # New field to track completed tasks by ID
@@ -344,8 +383,43 @@ def run_scan(url, model="gpt-4o", provider="openai", ollama_url=None, openai_api
                 anthropic_api_key=anthropic_api_key
             )
             
+            # Add detailed logging for debugging
+            logger.info("=== DEBUG START: Before coordinator.run() ===")
+            logger.info(f"Current scan_status: {scan_status}")
+            logger.info(f"Is Vercel environment: {is_vercel}")
+            logger.info(f"Report path before run: {scan_status['report_path']}")
+            logger.info(f"Output directory: {output_dir}")
+            logger.info("=== DEBUG END ===")
+            
             # Run the scan and get results
-            coordinator.run()
+            try:
+                coordinator.run()
+                logger.info("Coordinator.run() completed successfully")
+            except Exception as e:
+                logger.error(f"Error during coordinator.run(): {str(e)}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                raise
+            
+            # Add more detailed logging after coordinator run
+            logger.info("=== DEBUG START: After coordinator.run() ===")
+            logger.info(f"Updated scan_status: {scan_status}")
+            
+            # Check if report files were created
+            report_md_path = os.path.join(output_dir, "report.md")
+            report_json_path = os.path.join(output_dir, "report.json")
+            logger.info(f"Checking for report.md at: {report_md_path}")
+            logger.info(f"report.md exists: {os.path.exists(report_md_path)}")
+            logger.info(f"report.json exists: {os.path.exists(report_json_path)}")
+            
+            # List all files in output directory
+            try:
+                files_in_output = os.listdir(output_dir)
+                logger.info(f"Files in output directory: {files_in_output}")
+            except Exception as e:
+                logger.error(f"Error listing output directory: {str(e)}")
+            
+            logger.info("=== DEBUG END ===")
             
             # Scan completed, mark all tasks as completed
             scan_status["progress"] = 100
@@ -430,14 +504,31 @@ def run_scan(url, model="gpt-4o", provider="openai", ollama_url=None, openai_api
 @app.route('/status')
 def get_status():
     logger.debug(f"Status request received, current status: {scan_status}")
+    
+    # Update the agent_logs with logs from the UI log handler
+    scan_status["agent_logs"] = ui_log_handler.get_logs()
+    
+    # If scan is not running, append error message if there is one
+    if not scan_status["is_running"] and scan_status["error"]:
+        if scan_status["error"] not in [log["message"] for log in scan_status["agent_logs"]]:
+            scan_status["agent_logs"].append({
+                'time': time.strftime('%H:%M:%S'),
+                'level': 'ERROR',
+                'message': scan_status["error"]
+            })
+    
     return jsonify(scan_status)
 
 @app.route('/report')
 def get_report():
+    logger.info("==== REPORT DEBUG START ====")
     logger.info("Report request received")
+    logger.info(f"Current scan_status: {scan_status}")
+    logger.info(f"Is Vercel environment: {is_vercel}")
     
     if not scan_status["report_path"]:
         logger.warning("Report request rejected: No report available")
+        logger.info("==== REPORT DEBUG END ====")
         return jsonify({
             "status": "error",
             "message": "No report available"
@@ -445,35 +536,82 @@ def get_report():
     
     # Handle report path resolution
     report_path = scan_status["report_path"]
-    logger.debug(f"Raw report path: {report_path}")
+    logger.info(f"Raw report path: {report_path}")
     
-    # Check if the path is absolute or relative
-    if os.path.isabs(report_path):
-        # Use absolute path directly
-        if os.path.isdir(report_path):
-            report_file = os.path.join(report_path, "report.md")
+    # In Vercel, confirm we're looking at the right directory
+    if is_vercel:
+        logger.info(f"Vercel report directory should be: {app.config['UPLOAD_FOLDER']}")
+        try:
+            tmp_files = os.listdir('/tmp')
+            logger.info(f"Files in /tmp: {tmp_files}")
+            
+            if os.path.exists(app.config['UPLOAD_FOLDER']):
+                report_folder_files = os.listdir(app.config['UPLOAD_FOLDER'])
+                logger.info(f"Files in report folder: {report_folder_files}")
+        except Exception as e:
+            logger.error(f"Error listing directories: {str(e)}")
+    
+    # Special handling for Vercel environment
+    if is_vercel:
+        logger.info(f"Using special handling for Vercel report path resolution")
+        
+        # In Vercel, we need to look in the /tmp directory
+        if os.path.isabs(report_path):
+            # If it's already an absolute path to /tmp, use it directly
+            if report_path.startswith('/tmp'):
+                if os.path.isdir(report_path):
+                    report_file = os.path.join(report_path, "report.md")
+                else:
+                    report_file = report_path
+            else:
+                # If it's an absolute path but not to /tmp, convert it
+                base_name = os.path.basename(report_path)
+                if os.path.isdir(report_path):
+                    report_file = os.path.join(app.config['UPLOAD_FOLDER'], base_name, "report.md")
+                else:
+                    report_file = os.path.join(app.config['UPLOAD_FOLDER'], base_name)
         else:
-            # If it's a file path, use it directly
-            report_file = report_path
+            # Handle relative paths in Vercel
+            if os.path.basename(report_path) == "report.md":
+                # If it's just report.md, get the containing directory
+                dir_path = os.path.dirname(report_path)
+                if dir_path:
+                    report_file = os.path.join(app.config['UPLOAD_FOLDER'], dir_path, "report.md")
+                else:
+                    report_file = os.path.join(app.config['UPLOAD_FOLDER'], "report.md")
+            else:
+                # Otherwise treat the path as a directory
+                report_file = os.path.join(app.config['UPLOAD_FOLDER'], report_path, "report.md")
+        
+        logger.info(f"Resolved Vercel report file path: {report_file}")
     else:
-        # Try different ways to resolve the path
-        project_root = os.path.dirname(os.path.abspath(__file__))
-        
-        # First try: Direct join
-        possible_path = os.path.join(project_root, report_path)
-        
-        # Second try: As a directory + report.md
-        if os.path.isdir(possible_path):
-            report_file = os.path.join(possible_path, "report.md")
-        elif os.path.isdir(os.path.join(project_root, "reports", report_path)):
-            # Third try: With reports/ prefix
-            report_file = os.path.join(project_root, "reports", report_path, "report.md")
-        elif "report.md" in report_path:
-            # Fourth try: Path already includes report.md
-            report_file = os.path.join(project_root, report_path)
+        # Standard environment (not Vercel)
+        if os.path.isabs(report_path):
+            # Use absolute path directly
+            if os.path.isdir(report_path):
+                report_file = os.path.join(report_path, "report.md")
+            else:
+                # If it's a file path, use it directly
+                report_file = report_path
         else:
-            # If all else fails, assume it's in the reports directory
-            report_file = os.path.join(project_root, report_path, "report.md")
+            # Try different ways to resolve the path
+            project_root = os.path.dirname(os.path.abspath(__file__))
+            
+            # First try: Direct join
+            possible_path = os.path.join(project_root, report_path)
+            
+            # Second try: As a directory + report.md
+            if os.path.isdir(possible_path):
+                report_file = os.path.join(possible_path, "report.md")
+            elif os.path.isdir(os.path.join(project_root, "reports", report_path)):
+                # Third try: With reports/ prefix
+                report_file = os.path.join(project_root, "reports", report_path, "report.md")
+            elif "report.md" in report_path:
+                # Fourth try: Path already includes report.md
+                report_file = os.path.join(project_root, report_path)
+            else:
+                # If all else fails, assume it's in the reports directory
+                report_file = os.path.join(project_root, report_path, "report.md")
     
     logger.info(f"Attempting to read report file: {report_file}")
     
@@ -507,10 +645,20 @@ def get_report():
             report_content = f.read()
             
         logger.info(f"Successfully read report file: {len(report_content)} characters")
-        return jsonify({
+        logger.info("==== REPORT DEBUG END ====")
+        
+        # Return the report content
+        response = {
             "status": "success",
-            "content": report_content
-        })
+            "content": report_content,
+            "report_path": report_file,  # Include this for debugging
+            "is_vercel": is_vercel
+        }
+        
+        # Log the response for debugging
+        logger.info(f"Returning report with {len(report_content)} characters")
+        
+        return jsonify(response)
     except Exception as e:
         logger.exception(f"Error reading report file: {str(e)}")
         return jsonify({
