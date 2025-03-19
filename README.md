@@ -170,6 +170,7 @@ This tool is intended for security professionals and researchers. Always obtain 
 
 - OpenAI for their powerful language models (thanks for the AI that writes better code than most humans)
 - Playwright for web automation capabilities (making browsers do things they regret)
+- [Rogue](https://github.com/faizann24/rogue/) by Faizan Ahmad for inspiration and pioneering LLM-powered security testing (the OG security AI whisperer - thank you Faizan!)
 - The security research community for inspiration and guidance (the real MVPs)
 
 ## 📧 Contact
