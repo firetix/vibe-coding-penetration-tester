@@ -5,45 +5,65 @@
 
 # Vibe Penetration Tester  🎯
 > An intelligent web vulnerability scanner agent powered by Large Language Models
-
-**Vibe Coding**? Cool story. But your vibe might be "security breach waiting to happen." Introducing VibePenTester, the AI pen-tester who rolls its eyes at your half-baked code, discovers your vulnerabilities faster than your coworkers discover free pizza, and gently bullies your web app into compliance. Less "vibe check," more "reality check."
-
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-# What is it? 
+**Vibe Coding**? Cool story. But your vibe might be "security breach waiting to happen." Introducing VibePenTester, the AI pen-tester who rolls its eyes at your half-baked code, discovers your vulnerabilities faster than your coworkers discover free pizza, and gently bullies your web app into compliance. Less "vibe check," more "reality check."
 
-An advanced AI security testing agent that leverages Large Language Models to intelligently discover and validate web application vulnerabilities. Unlike traditional scanners that follow predefined patterns, VibePenTester thinks like a human penetration tester - analyzing application behavior, generating sophisticated test cases, and validating findings through autonomous decision making.
+## 🌟 Key Features
 
-## Features
+- **Intelligent Vulnerability Discovery**: Uses LLMs (OpenAI and Anthropic Claude) to understand application context and identify potential security weaknesses (and your career weaknesses too)
+- **Advanced Payload Generation**: Creates sophisticated test payloads tailored to the target application (more creative than your dating app profile)
+- **Context-Aware Testing**: Analyzes application behavior and responses to guide testing strategy (unlike your ex who never listened)
+- **Automated Exploit Verification**: Validates findings to eliminate false positives (we wish dating apps had this feature)
+- **Comprehensive Reporting**: Generates detailed vulnerability reports with reproduction steps (that even your manager can understand)
+- **Subdomain Enumeration**: Optional discovery of related subdomains (finds all your app's secret hangout spots)
+- **Traffic Monitoring**: Built-in proxy captures and analyzes all web traffic (like that one friend who knows all the gossip)
+- **Expandable Scope**: Option to recursively test discovered URLs (goes down rabbit holes so you don't have to)
 
-- **Advanced LLM-Powered Analysis**: Uses state-of-the-art language models to understand application context and behavior
-- **Multi-Agent Swarm Intelligence**: Deploys coordinated agent swarms for comprehensive security testing
-- **Autonomous Vulnerability Validation**: Self-validates findings to minimize false positives
-- **Modern Web Interface**: Clean, intuitive browser-based UI for managing scans
-- **Detailed Reporting**: Generates comprehensive reports with remediation recommendations
-- **Extensible Architecture**: Modular design allows for easy integration of new tools and techniques
+## 🚀 Quick Start
 
-## Installation
+### Prerequisites
+
+- Python 3.8+ (like your coffee, best when hot and fresh)
+- OpenAI API key (for using OpenAI models)
+- Anthropic API key (optional, for using Claude models)
+- Playwright (no actual playwright experience required)
+
+### Installation
 
 ```bash
+# Clone the repository (like stealing someone's homework, but legal)
 git clone https://github.com/yourusername/vibe_pen_tester.git
 cd vibe_pen_tester
+
+# Install dependencies (the digital equivalent of assembling IKEA furniture)
 pip install -r requirements.txt
 playwright install
 ```
 
-## Usage
-
-### Command Line
+### Basic Usage
 
 ```bash
-python main.py --url https://example.com --model gpt-4o
+# Basic scan of a single URL (for commitment-phobes)
+python main.py --url https://example.com
+
+# Advanced scan with subdomain enumeration and URL discovery (OpenAI)
+python main.py --url https://example.com --scope subdomain --model gpt-4o
+
+# Using Anthropic Claude models (for the AI hipsters)
+python main.py --url https://example.com --provider anthropic --model claude-3-7-sonnet-20250219
+
+# Using Anthropic Claude with extended thinking capabilities (when you want it to overthink like you do)
+python main.py --url https://example.com --provider anthropic --model claude-3-7-sonnet-latest --scope domain
+
+# Using faster Anthropic Claude model (for the impatient security professionals)
+python main.py --url https://example.com --provider anthropic --model claude-3-5-haiku-20241022
 ```
 
 ### Web Interface
 
-For a graphical interface, run:
+For a graphical interface (because command lines are so 1980s), run:
 
 ```bash
 python web_ui.py
@@ -51,81 +71,90 @@ python web_ui.py
 
 Then open your browser to [http://localhost:5050](http://localhost:5050)
 
-The web interface provides:
-- A simple form to enter the target URL
-- Real-time progress monitoring with status updates
-- Beautifully formatted vulnerability reports
-- Options to download reports in Markdown format
+## 🛠️ Command Line Options
 
-See [Web UI Instructions](README_WEB_UI.md) for more details.
+| Option | Description |
+|--------|-------------|
+| `--url` | Target URL to test (required, unless you want to test the void) |
+| `--scope` | Scan scope (url, domain, or subdomain, default: url) |
+| `--provider` | LLM provider to use (openai or anthropic, default: openai) |
+| `--model` | LLM model to use (OpenAI: gpt-4o; Anthropic: claude-3-7-sonnet-20250219, claude-3-7-sonnet-latest, claude-3-5-haiku-20241022) |
+| `--output` | Output directory for results (where the digital dirt gets stored) |
+| `--verbose` | Enable verbose logging (for those who enjoy reading horror stories in real-time) |
 
-## Options
+## 🏗️ Architecture
 
-- `--url`: Target URL to scan
-- `--model`: LLM model to use (default: gpt-4o)
-- `--provider`: LLM provider (openai or anthropic, default: openai)
-- `--scope`: Scan scope (url, domain, or subdomain, default: url)
-- `--output`: Output directory for reports
-- `--verbose`: Enable verbose logging
+VibePenTester is built with a modular architecture consisting of several key components (like a well-designed sandwich):
 
-## Architecture
-
-VibePenTester uses a swarm-based architecture where multiple specialized agents collaborate to thoroughly test application security. The system intelligently coordinates agent activities to maximize effectiveness while minimizing redundancy.
-
-### Core Components
-
-- **SwarmCoordinator**: Manages the overall testing process and agent coordination
-- **LLMProvider**: Unified interface to different LLM providers (OpenAI, Anthropic)
-- **Scanner**: Handles browser automation and page analysis
+- **SwarmCoordinator**: Orchestrates the scanning process and manages other components (the micromanager you actually want)
+- **LLMProvider**: Unified interface to different LLM providers (OpenAI and Anthropic) (the universal translator of AI dialects)
+- **Scanner**: Handles web page interaction and data collection (digital detective with OCD)
 - **Agents**: Specialized security testing agents focusing on different aspects
-  - Discovery agents for URL and attack surface identification
-  - Security testing agents for specific vulnerability types
-- **Tools**: Collection of security testing functions that agents can use
+  - Discovery agents for URL and attack surface identification (the nosy neighbors of the internet)
+  - Security testing agents for specific vulnerability types (specialized in judging your code choices)
+- **Tools**: Collection of testing and exploitation tools (like a Swiss Army knife, but for breaking things ethically)
+- **Proxy**: Monitors and captures network traffic (the internet equivalent of reading someone's diary)
+- **Reporter**: Analyzes findings and generates detailed reports (turns chaos into PowerPoint-ready content)
 
-### Security Lists
+## 📊 Example Report
 
-VibePenTester uses several wordlists for security testing:
+Reports are generated in both text and markdown formats, containing:
 
-- `lists/common_passwords.txt`: Common passwords for authentication testing
-- `lists/fuzz_dirs.txt`: Directory paths for brute force discovery
-- `lists/subdomains.txt`: Subdomain names for enumeration
+- Executive summary (for people who don't read past the first paragraph)
+- Detailed findings with severity ratings (from "meh" to "update your resume")
+- Technical details and reproduction steps (so detailed even your intern can understand)
+- Evidence and impact analysis (proof that we're not making this up)
+- Remediation recommendations (how to fix your life...err, code)
 
-These lists power the security testing capabilities, allowing for comprehensive vulnerability assessment.
+## 🔒 Security Considerations
 
-## Development
+- Always obtain proper authorization before testing (breaking and entering is only cool in movies)
+- Use responsibly and ethically (don't be that person)
+- Follow security testing best practices (like washing hands, but for hacking)
+- Be mindful of potential impact on target systems (they have feelings too...sort of)
 
-### Running Tests
+## 📋 TODOs
 
-VibePenTester includes a comprehensive test suite:
+- [x] Add support for Anthropic Claude models
+- [ ] Integrate vision API capabilities for visual analysis
+- [ ] Run against HackerOne reports to find first LLM-powered vulnerability in the wild
+- [ ] Implement more sophisticated planning algorithms
+- [ ] Add better execution strategies and error handling
+- [ ] Support for custom LLM model deployment
+- [ ] Add collaborative testing capabilities
+- [ ] Improve subdomain enumeration techniques
+- [ ] Add API security testing capabilities
+- [x] Add basic documentation and examples
 
-```bash
-# Run all tests with coverage
-./run_tests.sh
+## 🤝 Contributing
 
-# Run specific tests
-pytest tests/
-```
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
-### Web UI Development
+1. Fork the repository (copy someone else's work, but legally)
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request (and pray someone reviews it this century)
 
-The web interface is built using:
-- Flask (backend)
-- Bootstrap 5 (frontend styling)
-- Marked.js (Markdown rendering)
-- Highlight.js (syntax highlighting)
+## 📝 License
 
-To modify the web interface:
-1. Edit templates in the `templates/` directory
-2. Update the Flask routes in `web_ui.py`
-3. Run the server with `python web_ui.py` to test changes
+This project is licensed under the GPL3 - see the [LICENSE](LICENSE) file for details (the fine print nobody reads).
 
-### Adding New Security Tools
+## ⚠️ Disclaimer
 
-1. Add the tool function to `tools/general_tools.py` or the appropriate specialized tool module
-2. Update relevant agent classes to include the new tool in their available tools
-3. Make sure the tool integrates with the wordlists in the `lists/` directory when appropriate
-4. Add appropriate tests for the new tool
+This tool is intended for security professionals and researchers. Always obtain proper authorization before testing any systems you don't own. The authors are not responsible for any misuse or damage caused by this tool. If you get fired or arrested, that's on you.
 
-## License
+## 🙏 Acknowledgments
 
-MIT
+- OpenAI for their powerful language models (thanks for the AI that writes better code than most humans)
+- Playwright for web automation capabilities (making browsers do things they regret)
+- The security research community for inspiration and guidance (the real MVPs)
+
+## 📧 Contact
+
+For questions, feedback, or issues, please:
+- Open an issue in this repository (the digital equivalent of yelling into the void)
+- Contact the maintainers at [your-email@example.com]
+
+---
+Made with ❤️ and excessive caffeine by You
