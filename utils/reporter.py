@@ -121,6 +121,7 @@ class Reporter:
             "impact": self._get_impact(vuln),
             "reproduction": details_dict.get("reproduction_steps", []),
             "evidence": details_dict.get("evidence", vuln.get("poc", "")),
+            "exploitation_guide": self._get_exploitation_guide(vuln),
             "remediation": self._get_remediation(vuln),
             "references": self._get_references(vuln),
             "validated": vuln.get("validated", False),
@@ -200,6 +201,162 @@ class Reporter:
         else:
             return "Review the vulnerable component and implement security best practices for that specific technology or framework."
     
+    def _get_exploitation_guide(self, vuln: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a detailed exploitation guide for the vulnerability."""
+        if "details" in vuln and "exploitation_guide" in vuln["details"]:
+            return vuln["details"]["exploitation_guide"]
+        
+        # Default information
+        result = {
+            "summary": "This guide outlines the steps a malicious actor could take to exploit this vulnerability.",
+            "prerequisites": ["Access to a web browser", "Basic knowledge of web technologies"],
+            "steps": [],
+            "tools": [],
+            "difficulty": "Medium",
+            "detection_evasion": "This exploitation may be detected in security logs if monitoring is in place."
+        }
+        
+        # Generate specific exploitation steps based on vulnerability type
+        vuln_type = vuln.get("vulnerability_type", "").lower()
+        details = vuln.get("details", {})
+        
+        # Get evidence and payload if available
+        evidence = details.get("evidence", "") if isinstance(details, dict) else ""
+        payload = details.get("payload", "") if isinstance(details, dict) else ""
+        target = vuln.get("target", "")
+        
+        if "xss" in vuln_type:
+            result["summary"] = "This Cross-Site Scripting vulnerability can be exploited to execute malicious JavaScript in victims' browsers."
+            result["tools"] = ["Web browser", "Browser Developer Tools", "BurpSuite (optional)"]
+            result["difficulty"] = "Low to Medium"
+            
+            xss_steps = [
+                f"Navigate to the vulnerable page: {target}",
+                "Identify the vulnerable input field or parameter"
+            ]
+            
+            if payload:
+                xss_steps.append(f"Insert the following XSS payload: `{payload}`")
+            else:
+                xss_steps.append("Insert a basic XSS payload such as: `<script>alert(document.cookie)</script>`")
+            
+            xss_steps.extend([
+                "Submit the form or request",
+                "Verify that the JavaScript executes in the browser",
+                "For a real attack, the payload would typically steal cookies, capture keystrokes, or perform actions on behalf of the victim"
+            ])
+            
+            result["steps"] = xss_steps
+            
+        elif "sql" in vuln_type:
+            result["summary"] = "This SQL Injection vulnerability can be exploited to extract data from the database or potentially gain further access to the system."
+            result["tools"] = ["Web browser", "Browser Developer Tools", "SQLmap (optional)", "BurpSuite (optional)"]
+            result["difficulty"] = "Medium"
+            
+            sqli_steps = [
+                f"Navigate to the vulnerable page: {target}",
+                "Identify the vulnerable input field or parameter"
+            ]
+            
+            if payload:
+                sqli_steps.append(f"Use the following SQL Injection payload: `{payload}`")
+            else:
+                sqli_steps.append("Use a basic SQL Injection payload such as: `' OR 1=1 --`")
+            
+            sqli_steps.extend([
+                "Submit the form or request",
+                "Observe the results to confirm successful injection",
+                "For database enumeration, try payloads like: `' UNION SELECT table_name,column_name FROM information_schema.columns --`",
+                "Extract specific data with targeted queries once database structure is known"
+            ])
+            
+            result["steps"] = sqli_steps
+            
+        elif "csrf" in vuln_type:
+            result["summary"] = "This Cross-Site Request Forgery vulnerability can be exploited to perform actions on behalf of authenticated users without their knowledge."
+            result["tools"] = ["Text editor", "Web hosting or local server", "Web browser"]
+            result["difficulty"] = "Medium"
+            
+            csrf_steps = [
+                "Create a malicious HTML page that automatically submits a form to the vulnerable endpoint",
+                f"The form should target: {target}",
+                "Include all necessary parameters that the vulnerable form requires",
+                "Host the malicious HTML page on a server or locally",
+                "Trick the victim into visiting the malicious page while they're authenticated to the vulnerable site",
+                "When the victim loads the page, the form will automatically submit, performing the action without their knowledge"
+            ]
+            
+            result["steps"] = csrf_steps
+            
+        elif "auth" in vuln_type or "session" in vuln_type:
+            result["summary"] = "This authentication or session management vulnerability can be exploited to gain unauthorized access to user accounts."
+            result["tools"] = ["Web browser", "Browser Developer Tools", "BurpSuite (optional)"]
+            result["difficulty"] = "Medium to High"
+            
+            auth_steps = [
+                f"Navigate to the vulnerable authentication page: {target}",
+                "Identify the specific authentication weakness (weak passwords, session fixation, etc.)"
+            ]
+            
+            if "password" in vuln_type.lower():
+                auth_steps.extend([
+                    "Attempt to use common passwords from a wordlist",
+                    "Look for account lockout mechanisms and bypass methods",
+                    "If successful, you will gain access to the account"
+                ])
+            elif "session" in vuln_type.lower():
+                auth_steps.extend([
+                    "Examine the session cookies using browser developer tools",
+                    "Analyze the cookie pattern for predictability or other weaknesses",
+                    "Attempt to manipulate the session identifier",
+                    "If successful, you will gain access to another user's session"
+                ])
+            else:
+                auth_steps.extend([
+                    "Examine authentication mechanisms for bypass opportunities",
+                    "Look for direct object references, authentication state bugs, or logic flaws",
+                    "If successful, you will gain unauthorized access"
+                ])
+            
+            result["steps"] = auth_steps
+            
+        elif "idor" in vuln_type:
+            result["summary"] = "This Insecure Direct Object Reference vulnerability can be exploited to access or modify data belonging to other users."
+            result["tools"] = ["Web browser", "Browser Developer Tools", "BurpSuite (optional)"]
+            result["difficulty"] = "Low to Medium"
+            
+            idor_steps = [
+                f"Navigate to the vulnerable page: {target}",
+                "Identify the object reference parameter in the URL or request (usually an ID number)",
+                "Modify the parameter to reference another user's data (e.g., change id=123 to id=124)",
+                "Submit the request with the modified parameter",
+                "Verify that you can access data belonging to another user",
+                "For a systematic approach, try sequential values, UUIDs, or other predictable patterns"
+            ]
+            
+            result["steps"] = idor_steps
+            
+        else:
+            # Generic exploitation steps for unknown vulnerability types
+            result["steps"] = [
+                f"Navigate to the vulnerable target: {target}",
+                "Identify the input points or parameters that can be manipulated",
+                "Craft appropriate payloads for the suspected vulnerability",
+                "Submit the modified request and observe the response",
+                "Look for signs of successful exploitation in the application response",
+                "Refine the approach based on the observed results"
+            ]
+        
+        # Add post-exploitation guidance
+        result["post_exploitation"] = [
+            "Document all findings and successful exploitation methods",
+            "Consider the potential impact beyond the initial exploitation",
+            "Assess what sensitive data or functionality could be accessed",
+            "Determine if privilege escalation is possible from this entry point"
+        ]
+        
+        return result
+        
     def _get_references(self, vuln: Dict[str, Any]) -> List[str]:
         """Get references for the vulnerability or provide default ones."""
         if "details" in vuln and "references" in vuln["details"]:
@@ -211,26 +368,37 @@ class Reporter:
         if "xss" in vuln_type:
             return [
                 "https://owasp.org/www-community/attacks/xss/",
-                "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+                "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html",
+                "https://portswigger.net/web-security/cross-site-scripting"
             ]
         elif "sql" in vuln_type:
             return [
                 "https://owasp.org/www-community/attacks/SQL_Injection",
-                "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html"
+                "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+                "https://portswigger.net/web-security/sql-injection"
             ]
         elif "csrf" in vuln_type:
             return [
                 "https://owasp.org/www-community/attacks/csrf",
-                "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"
+                "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html",
+                "https://portswigger.net/web-security/csrf"
             ]
         elif "auth" in vuln_type or "session" in vuln_type:
             return [
                 "https://owasp.org/www-project-top-ten/2017/A2_2017-Broken_Authentication",
-                "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
+                "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+                "https://portswigger.net/web-security/authentication"
+            ]
+        elif "idor" in vuln_type:
+            return [
+                "https://owasp.org/www-project-top-ten/2017/A5_2017-Broken_Access_Control",
+                "https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html",
+                "https://portswigger.net/web-security/access-control/idor"
             ]
         else:
             return [
-                "https://owasp.org/www-project-top-ten/"
+                "https://owasp.org/www-project-top-ten/",
+                "https://portswigger.net/web-security"
             ]
     
     def _generate_markdown(self, report: Dict[str, Any]) -> str:
@@ -289,6 +457,48 @@ class Reporter:
             
             if finding['evidence']:
                 md += f"#### Evidence\n\n```\n{finding['evidence']}\n```\n\n"
+            
+            # Add exploitation guide section
+            if finding.get('exploitation_guide'):
+                guide = finding['exploitation_guide']
+                md += f"#### Exploitation Guide\n\n"
+                
+                if isinstance(guide, dict):
+                    if guide.get('summary'):
+                        md += f"**Summary:** {guide['summary']}\n\n"
+                    
+                    if guide.get('difficulty'):
+                        md += f"**Difficulty:** {guide['difficulty']}\n\n"
+                    
+                    if guide.get('prerequisites'):
+                        md += "**Prerequisites:**\n\n"
+                        for prereq in guide['prerequisites']:
+                            md += f"- {prereq}\n"
+                        md += "\n"
+                    
+                    if guide.get('tools'):
+                        md += "**Required Tools:**\n\n"
+                        for tool in guide['tools']:
+                            md += f"- {tool}\n"
+                        md += "\n"
+                    
+                    if guide.get('steps'):
+                        md += "**Detailed Exploitation Steps:**\n\n"
+                        for step_num, step in enumerate(guide['steps'], 1):
+                            md += f"{step_num}. {step}\n"
+                        md += "\n"
+                    
+                    if guide.get('post_exploitation'):
+                        md += "**Post-Exploitation Actions:**\n\n"
+                        for post_step in guide['post_exploitation']:
+                            md += f"- {post_step}\n"
+                        md += "\n"
+                    
+                    if guide.get('detection_evasion'):
+                        md += f"**Detection Considerations:** {guide['detection_evasion']}\n\n"
+                else:
+                    # If it's just a string
+                    md += guide + "\n\n"
             
             md += f"#### Remediation\n\n{finding['remediation']}\n\n"
             

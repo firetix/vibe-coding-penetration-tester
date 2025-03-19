@@ -1300,9 +1300,49 @@ class ValidationAgent(BaseAgent):
         """Validate a reported security finding to confirm it's a real vulnerability."""
         system_prompt = """
         You are a Security Validation specialist. Your job is to verify reported security vulnerabilities to ensure they are legitimate findings and not false positives.
-        Critically analyze the reported vulnerability and the evidence provided.
-        Attempt to reproduce the issue where possible and verify the actual impact.
-        Look for contextual factors that might mitigate the vulnerability or make it unexploitable in practice.
+        
+        For each finding:
+        1. Critically analyze the reported vulnerability and the evidence provided
+        2. Attempt to reproduce the issue where possible and verify the actual impact
+        3. Look for contextual factors that might mitigate the vulnerability or make it unexploitable in practice
+        4. Assess the potential risk and actual exploitability of the reported issue
+        5. Confirm that the evidence supports the reported vulnerability type and severity
+        
+        Be thorough but balanced in your analysis:
+        - Don't dismiss real vulnerabilities, but also don't accept unsubstantiated claims
+        - Consider the context of the application and environment
+        - Document your validation steps and reasoning in detail
+        - Use multiple validation techniques when appropriate (manual testing, tool-based verification, etc.)
+        - Focus on whether the vulnerability is actually exploitable, not just theoretically present
+        
+        For common vulnerability types, consider these specific validation approaches:
+        
+        XSS:
+        - Verify that the payload actually executes in the browser context
+        - Confirm that the injected script isn't neutralized by Content Security Policy or other defenses
+        - Check if the vulnerability affects authenticated sessions or sensitive contexts
+        
+        SQL Injection:
+        - Confirm that database errors or unexpected behavior actually occurs
+        - Verify that information extraction or manipulation is possible
+        - Check if the injection point allows meaningful access beyond simple error messages
+        
+        CSRF:
+        - Verify that the vulnerable action can be triggered without proper validation
+        - Confirm that the action affects authenticated user state or data
+        - Check if anti-CSRF tokens are missing or can be bypassed
+        
+        Authentication/Session Issues:
+        - Verify that the vulnerability allows actual bypassing of security controls
+        - Confirm that unauthorized access to protected resources is possible
+        - Check if other compensating controls mitigate the vulnerability
+        
+        IDOR:
+        - Verify that sensitive data or functions can actually be accessed
+        - Confirm that the access control bypass works in authenticated contexts
+        - Check if the vulnerability allows manipulation of other users' data
+        
+        Your goal is to validate vulnerabilities with high confidence, documenting exactly how they can be exploited.
         """
         
         # Check if this is a test vulnerability created for debugging purposes
@@ -1312,23 +1352,114 @@ class ValidationAgent(BaseAgent):
                 "validated": True,
                 "details": {
                     "validation_method": "Auto-validated for debugging",
-                    "note": "This is a test entry created for debugging the reporting system"
+                    "note": "This is a test entry created for debugging the reporting system",
+                    "validation_steps": ["Marked as validated for testing purposes"]
                 }
             }
         
-        input_data = {
-            "content": f"Validate the following security finding:\n{finding}\n\nPage information: {page_info}"
+        # Extract key information for validation
+        vuln_type = finding.get("vulnerability_type", "").lower()
+        target = finding.get("target", page.url)
+        severity = finding.get("severity", "medium").lower()
+        details = finding.get("details", {})
+        
+        self.logger.highlight(f"Validating {vuln_type} vulnerability on {target} (Severity: {severity})")
+        
+        # Add validation tools based on vulnerability type
+        validation_input = {
+            "content": f"""
+Validate the following security finding to determine if it's a real vulnerability:
+
+VULNERABILITY TYPE: {vuln_type}
+TARGET: {target}
+SEVERITY: {severity}
+EVIDENCE: {details.get('evidence', 'No specific evidence provided')}
+PAYLOAD: {details.get('payload', 'No specific payload provided')}
+
+FINDING DETAILS:
+{finding}
+
+PAGE INFORMATION:
+{page_info}
+
+Perform a thorough validation and provide a detailed analysis of your findings. 
+Include specific validation steps taken and whether they confirm the vulnerability.
+"""
         }
         
-        response = self.think(input_data, system_prompt)
+        # Run the LLM validation process
+        response = self.think(validation_input, system_prompt)
         
+        # Initialize result structure with enhanced validation data
         result = {
             "validated": False,
-            "details": {}
+            "details": {
+                "validation_steps": [],
+                "validation_evidence": "",
+                "validation_method": "LLM Analysis",
+                "confidence_level": "Low",
+                "exploitability": "Unknown",
+                "false_positive_risk": "High"
+            }
         }
         
-        if response.get("tool_calls"):
-            for tool_call in response["tool_calls"]:
+        # Process the LLM response for initial validation assessment
+        if response.get("content"):
+            content = response.get("content", "")
+            
+            # Look for validation markers in the LLM reasoning
+            validation_markers = [
+                ("confirmed", "verified", "validated", "reproducible", "exploitable"),
+                ("real vulnerability", "legitimate finding", "valid issue", "confirmed vulnerability")
+            ]
+            
+            # Look for false positive markers
+            false_positive_markers = [
+                ("false positive", "not validated", "cannot confirm", "couldn't reproduce"),
+                ("mitigated", "not exploitable", "no evidence", "insufficient evidence"),
+                ("theoretical", "not practically exploitable", "unexploitable")
+            ]
+            
+            # Initial validation based on LLM reasoning
+            validation_signals = sum(1 for markers in validation_markers for marker in markers if marker in content.lower())
+            false_positive_signals = sum(1 for markers in false_positive_markers for marker in markers if marker in content.lower())
+            
+            # Extract validation steps from the response
+            validation_steps = []
+            for line in content.split("\n"):
+                if any(step_marker in line.lower() for step_marker in ["step", "validation", "verified", "checked", "tested", "confirmed"]):
+                    if len(line.strip()) > 10:  # Only include meaningful lines
+                        validation_steps.append(line.strip())
+            
+            # Extract evidence from the response
+            validation_evidence = ""
+            if "evidence:" in content.lower():
+                evidence_section = content.lower().split("evidence:")[1].split("\n\n")[0]
+                validation_evidence = evidence_section
+            
+            # Update the validation steps if we found any
+            if validation_steps:
+                result["details"]["validation_steps"] = validation_steps
+            
+            if validation_evidence:
+                result["details"]["validation_evidence"] = validation_evidence
+            
+            # Initial validation decision based on LLM content analysis
+            if validation_signals > false_positive_signals and validation_signals >= 2:
+                result["validated"] = True
+                result["details"]["confidence_level"] = "Medium"
+                result["details"]["false_positive_risk"] = "Medium"
+            
+            # Look for high confidence validations
+            if validation_signals >= 4 and false_positive_signals == 0:
+                result["details"]["confidence_level"] = "High"
+                result["details"]["false_positive_risk"] = "Low"
+        
+        # Now try to validate with actual tools if initial LLM assessment seems positive
+        if response.get("tool_calls") or result["validated"]:
+            self.logger.info(f"Performing practical validation for {vuln_type}")
+            
+            for tool_call in response.get("tool_calls", []):
                 # Log the tool being called - safely accessing properties
                 if hasattr(tool_call, 'function') and hasattr(tool_call.function, 'name'):
                     tool_name = tool_call.function.name
@@ -1340,8 +1471,90 @@ class ValidationAgent(BaseAgent):
                 tool_result = self.execute_tool(tool_call)
                 
                 if isinstance(tool_result, dict):
-                    result["validated"] = tool_result.get("validated", False)
-                    result["details"] = tool_result
+                    # Tool explicitly validated the vulnerability
+                    if tool_result.get("validated", False):
+                        result["validated"] = True
+                        result["details"]["validation_method"] = f"Tool-based validation ({tool_name})"
+                        result["details"]["confidence_level"] = "High"
+                        result["details"]["false_positive_risk"] = "Low"
+                        
+                        # Add any tool-specific validation details
+                        if "validation_steps" in tool_result:
+                            result["details"]["validation_steps"] = tool_result["validation_steps"]
+                        
+                        if "evidence" in tool_result:
+                            result["details"]["validation_evidence"] = tool_result["evidence"]
+                        
+                        self.logger.success(f"Vulnerability validated using {tool_name}")
+                    
+                    # Special handling for XSS validation
+                    elif "xss" in vuln_type and tool_name in ["execute_js", "fill", "click"]:
+                        # Check for evidence in JS result
+                        if tool_result.get("success", False) and "alert" in str(tool_result.get("result", "")):
+                            result["validated"] = True
+                            result["details"]["validation_method"] = "JavaScript execution confirmed XSS"
+                            result["details"]["confidence_level"] = "High"
+                            result["details"]["validation_evidence"] = str(tool_result.get("result", ""))
+                            self.logger.success("XSS vulnerability validated through JavaScript execution")
+                    
+                    # Special handling for SQL injection validation
+                    elif "sql" in vuln_type and tool_name in ["fill", "submit"] and not result["validated"]:
+                        # Check page content for SQL error messages
+                        html_content = page.content().lower()
+                        db_error_indicators = [
+                            "sql syntax", "mysql_fetch", "mysqli_fetch", "ora-", "oracle error",
+                            "sql server", "syntax error", "unclosed quotation", "sql error",
+                            "pg:", "postgresql", "sqlite", "db2", "odbc driver", "sqlstate"
+                        ]
+                        
+                        if any(indicator in html_content for indicator in db_error_indicators):
+                            result["validated"] = True
+                            result["details"]["validation_method"] = "SQL error message detection"
+                            result["details"]["confidence_level"] = "Medium"
+                            result["details"]["validation_evidence"] = f"SQL error indicators found: {[i for i in db_error_indicators if i in html_content]}"
+                            self.logger.success("SQL Injection vulnerability validated through error message detection")
+                    
+                    # Add the tool result to the validation steps
+                    result["details"]["validation_steps"].append(f"Used {tool_name} to validate vulnerability")
+        
+        # Perform vulnerability-specific validation if not yet validated
+        if not result["validated"]:
+            # Try vulnerability-specific validation approaches
+            if "xss" in vuln_type:
+                # Try XSS validation by executing JavaScript to check for alert
+                try:
+                    if details.get("payload"):
+                        self.logger.info("Attempting to validate XSS by executing payload")
+                        js_result = self.browser_tools.execute_js(page, f"try {{ {details.get('payload')} }} catch(e) {{ return 'Error: ' + e.message; }}")
+                        
+                        if js_result and "alert" in str(js_result):
+                            result["validated"] = True
+                            result["details"]["validation_method"] = "Direct JavaScript execution"
+                            result["details"]["validation_evidence"] = str(js_result)
+                            self.logger.success("XSS vulnerability validated through direct JS execution")
+                except Exception as e:
+                    self.logger.error(f"Error validating XSS vulnerability: {str(e)}")
+            
+            elif "sql" in vuln_type:
+                # For SQL injection, check if error messages appear when submitting the payload
+                try:
+                    if details.get("payload") and details.get("form_selector") and details.get("input_field"):
+                        self.logger.info("Attempting to validate SQL injection by submitting payload")
+                        # This is a simplified approach - real validation would be more complex
+                        self.browser_tools.fill(page, details.get("input_field"), details.get("payload"))
+                        self.browser_tools.submit(page, details.get("form_selector"))
+                        
+                        # Check for SQL error indicators
+                        html_content = page.content().lower()
+                        db_error_indicators = ["sql syntax", "mysql", "oracle", "syntax error", "sql error"]
+                        
+                        if any(indicator in html_content for indicator in db_error_indicators):
+                            result["validated"] = True
+                            result["details"]["validation_method"] = "SQL error message detection"
+                            result["details"]["validation_evidence"] = f"SQL error indicators found after submitting payload"
+                            self.logger.success("SQL Injection vulnerability validated through error message detection")
+                except Exception as e:
+                    self.logger.error(f"Error validating SQL injection vulnerability: {str(e)}")
         
         # For debugging purposes, if this is a development environment, validate some findings
         # that otherwise might not be validated to test the reporting functionality
@@ -1350,5 +1563,11 @@ class ValidationAgent(BaseAgent):
             result["validated"] = True
             result["details"]["validation_method"] = "Auto-validated for debugging"
             result["details"]["note"] = "This validation is for testing purposes and may not represent a real vulnerability"
+        
+        # Log the final validation result
+        if result["validated"]:
+            self.logger.success(f"Validated {vuln_type} vulnerability with {result['details']['confidence_level']} confidence")
+        else:
+            self.logger.warning(f"Could not validate {vuln_type} vulnerability - likely a false positive")
         
         return result
