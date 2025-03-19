@@ -176,7 +176,7 @@ This tool is intended for security professionals and researchers. Always obtain 
 
 For questions, feedback, or issues, please:
 - Open an issue in this repository (the digital equivalent of yelling into the void)
-- Contact the maintainers at [your-email@example.com]
+- Contact the maintainers at [vibe_tester@r1015.org]
 
 ---
-Made with ❤️ and excessive caffeine by You
+Made with ❤️ and excessive caffeine by Simo
