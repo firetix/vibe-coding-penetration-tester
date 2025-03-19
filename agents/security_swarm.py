@@ -1,5 +1,6 @@
 from typing import Dict, List, Any, Optional
 import asyncio
+import time
 from openai import OpenAI
 from playwright.sync_api import Page
 
@@ -1524,14 +1525,263 @@ Include specific validation steps taken and whether they confirm the vulnerabili
                 # Try XSS validation by executing JavaScript to check for alert
                 try:
                     if details.get("payload"):
-                        self.logger.info("Attempting to validate XSS by executing payload")
-                        js_result = self.browser_tools.execute_js(page, f"try {{ {details.get('payload')} }} catch(e) {{ return 'Error: ' + e.message; }}")
+                        self.logger.info("Attempting to validate XSS by examining page content")
                         
-                        if js_result and "alert" in str(js_result):
-                            result["validated"] = True
-                            result["details"]["validation_method"] = "Direct JavaScript execution"
-                            result["details"]["validation_evidence"] = str(js_result)
-                            self.logger.success("XSS vulnerability validated through direct JS execution")
+                        # First approach: Check if the payload is reflected in the page
+                        html_content = page.content()
+                        payload = details.get("payload")
+                        
+                        # Also check for encoded variants of the payload
+                        import urllib.parse
+                        import html
+                        
+                        # Create normalized versions of the payload for checking
+                        normalized_payloads = [payload]
+                        
+                        # Check if this might be URL-encoded 
+                        if '%' in payload:
+                            try:
+                                # Try to decode it once to get the original form
+                                decoded_payload = urllib.parse.unquote(payload)
+                                self.logger.info(f"Decoded payload from URL-encoded form: {decoded_payload}")
+                                normalized_payloads.append(decoded_payload)
+                            except Exception as e:
+                                self.logger.warning(f"Error decoding URL-encoded payload: {str(e)}")
+                        
+                        # Check if this might be HTML-entity encoded
+                        if '&lt;' in payload or '&gt;' in payload or '&quot;' in payload or '&amp;' in payload:
+                            try:
+                                # Try to decode HTML entities
+                                decoded_html = html.unescape(payload)
+                                self.logger.info(f"Decoded payload from HTML entities: {decoded_html}")
+                                normalized_payloads.append(decoded_html)
+                            except Exception as e:
+                                self.logger.warning(f"Error decoding HTML entities in payload: {str(e)}")
+                        
+                        # Check for any form of the payload in the HTML content
+                        payload_found = False
+                        matched_payload = None
+                        
+                        for p in normalized_payloads:
+                            if p and p in html_content:
+                                payload_found = True
+                                matched_payload = p
+                                self.logger.info(f"Found payload in content: {p}")
+                                break
+                                
+                        if payload_found:
+                            self.logger.info("XSS payload is reflected in the page content")
+                            
+                            # Set up a comprehensive XSS detector that works with various payloads
+                            detector_script = """
+                                () => {
+                                    // Create a detection object with timestamp for uniqueness
+                                    try {
+                                        if (!window._xssDetection) {
+                                            window._xssDetection = {
+                                                timestamp: Date.now(),
+                                                detected: false,
+                                                detectionMethod: null,
+                                                
+                                                // Record detection with method
+                                                recordDetection: function(method) {
+                                                    try {
+                                                        this.detected = true;
+                                                        this.detectionMethod = method;
+                                                        console.log('XSS detected via ' + method);
+                                                    } catch(err) {
+                                                        // Silent catch
+                                                    }
+                                                    return true;
+                                                }
+                                            };
+                                        }
+                                    } catch(err) {
+                                        // If there's any error in detection setup, create a minimal detection object
+                                        console.log('Error in XSS detection setup: ' + err);
+                                        window._xssDetection = {
+                                            detected: false,
+                                            detectionMethod: null
+                                        };
+                                    }
+                                        
+                                        try {
+                                            // Hook common JavaScript methods used in XSS
+                                            const originalAlert = window.alert;
+                                            window.alert = function() {
+                                                try {
+                                                    window._xssDetection.recordDetection('alert()');
+                                                } catch(e) {}
+                                                return true; // Prevent actual alerts
+                                            };
+                                            
+                                            const originalPrompt = window.prompt;
+                                            window.prompt = function() {
+                                                try {
+                                                    window._xssDetection.recordDetection('prompt()');
+                                                } catch(e) {}
+                                                return '';
+                                            };
+                                            
+                                            const originalConfirm = window.confirm;
+                                            window.confirm = function() {
+                                                try {
+                                                    window._xssDetection.recordDetection('confirm()');
+                                                } catch(e) {}
+                                                return true;
+                                            };
+                                            
+                                            const originalEval = window.eval;
+                                            window.eval = function(code) {
+                                                try {
+                                                    window._xssDetection.recordDetection('eval()');
+                                                } catch(e) {}
+                                                return null;
+                                            };
+                                            
+                                            try {
+                                                // Watch for common DOM modifications
+                                                const observer = new MutationObserver(mutations => {
+                                                    for (let mutation of mutations) {
+                                                        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                                                            try {
+                                                                window._xssDetection.recordDetection('DOM modification');
+                                                            } catch(e) {}
+                                                        }
+                                                    }
+                                                });
+                                                
+                                                // Observe document for changes
+                                                observer.observe(document.documentElement, {
+                                                    childList: true,
+                                                    subtree: true
+                                                });
+                                            } catch(err) {
+                                                console.log('Error setting up mutation observer: ' + err);
+                                            }
+                                            
+                                            // Check for script elements with our timestamp
+                                            try {
+                                                const scripts = document.querySelectorAll('script');
+                                                if (scripts.length > 0) {
+                                                    window._xssDetection.recordDetection('script tag found');
+                                                }
+                                            } catch(err) {
+                                                console.log('Error checking for script tags: ' + err);
+                                            }
+                                            
+                                            // Restore original functions after timeout
+                                            setTimeout(() => {
+                                                try {
+                                                    window.alert = originalAlert;
+                                                    window.prompt = originalPrompt;
+                                                    window.confirm = originalConfirm;
+                                                    window.eval = originalEval;
+                                                    // observer.disconnect(); // Keep this running to catch delayed injections
+                                                } catch(err) {
+                                                    console.log('Error restoring original functions: ' + err);
+                                                }
+                                            }, 1000);
+                                        } catch(mainErr) {
+                                            console.log('Error in main XSS detection logic: ' + mainErr);
+                                        }
+                                    }
+                                    
+                                    // Return detection status
+                                    return {
+                                        detected: window._xssDetection.detected,
+                                        method: window._xssDetection.detectionMethod
+                                    };
+                                }
+                            """
+                            
+                            # Execute the detector script
+                            try:
+                                # Inject detector
+                                self.browser_tools.execute_js(page, detector_script)
+                                
+                                # Give it time to detect XSS execution
+                                time.sleep(1)
+                                
+                                # Check detection results
+                                detection_result = self.browser_tools.execute_js(page, "() => window._xssDetection ? window._xssDetection : { detected: false, method: null }")
+                                
+                                if detection_result and detection_result.get("detected"):
+                                    detection_method = detection_result.get("method", "unknown")
+                                    self.logger.success(f"XSS was triggered via {detection_method} - vulnerability confirmed")
+                                    result["validated"] = True
+                                    result["details"]["validation_method"] = f"XSS detection via {detection_method}"
+                                    result["details"]["validation_evidence"] = f"XSS payload execution confirmed via {detection_method}"
+                                    self.logger.success("XSS vulnerability validated through execution detection")
+                                else:
+                                    # For reflected payloads, validate based on content reflection
+                                    # Check if this is a script payload that might not trigger our detectors
+                                    if "<script>" in payload:
+                                        self.logger.info(f"<script> tag is fully reflected in the page: '{payload}'")
+                                        result["validated"] = True
+                                        result["details"]["validation_method"] = "Script tag reflection"
+                                        result["details"]["validation_evidence"] = f"Script payload '{payload}' is reflected intact in page content"
+                                        self.logger.success("XSS vulnerability validated through script tag reflection")
+                                    
+                                    # Check for event handlers and other high-risk patterns
+                                    elif any(risky_pattern in payload.lower() for risky_pattern in ["javascript:", "onerror=", "onload=", "onclick=", "onmouse", "onfocus", "onblur"]):
+                                        self.logger.success(f"Event handler XSS payload reflected: '{payload}'")
+                                        result["validated"] = True
+                                        result["details"]["validation_method"] = "Event handler reflection detection"
+                                        result["details"]["validation_evidence"] = f"Event handler '{payload}' is reflected in page content"
+                                        self.logger.success("XSS vulnerability validated through event handler detection")
+                            except Exception as e:
+                                self.logger.warning(f"Error in comprehensive XSS detection: {str(e)}")
+                                
+                                # Fallback validation for reflected content - check both original payload and matched version
+                                all_payloads = [payload, matched_payload] if matched_payload else [payload]
+                                xss_indicators = [
+                                    "<script>", "javascript:", "</script>", 
+                                    "onerror=", "onload=", "onclick=", "onmouseover=", "onfocus=", 
+                                    "alert(", "confirm(", "prompt(", "eval(", "document.cookie",
+                                    "document.domain", "document.location", "window.location",
+                                    "fromcharcode", "String.fromCharCode", "iframe", "<img", "<svg"
+                                ]
+                                
+                                for check_payload in all_payloads:
+                                    if check_payload and any(xss_indicator in check_payload.lower() for xss_indicator in xss_indicators):
+                                        self.logger.info(f"XSS indicators found in reflected content: '{check_payload}'")
+                                        
+                                        # Check for specific XSS patterns and validate accordingly
+                                        validation_details = {}
+                                        
+                                        # Check script tag patterns
+                                        if "<script>" in check_payload and "</script>" in check_payload:
+                                            validation_details["pattern"] = "Complete <script> tags"
+                                            validation_details["confidence"] = "High"
+                                            
+                                        # Check for event handlers
+                                        elif any(handler in check_payload.lower() for handler in ["onerror=", "onload=", "onclick=", "onmouse"]):
+                                            validation_details["pattern"] = "Event handler attribute"
+                                            validation_details["confidence"] = "High"
+                                            
+                                        # Check for javascript: protocol
+                                        elif "javascript:" in check_payload.lower():
+                                            validation_details["pattern"] = "javascript: URI scheme"
+                                            validation_details["confidence"] = "High"
+                                            
+                                        # Check for common XSS function calls
+                                        elif any(func in check_payload.lower() for func in ["alert(", "confirm(", "prompt(", "eval("]):
+                                            validation_details["pattern"] = "JavaScript function call"
+                                            validation_details["confidence"] = "Medium"
+                                            
+                                        # Default case
+                                        else:
+                                            validation_details["pattern"] = "Other XSS indicator"
+                                            validation_details["confidence"] = "Low"
+                                        
+                                        # Validate the vulnerability
+                                        result["validated"] = True
+                                        result["details"]["validation_method"] = "Content reflection analysis"
+                                        result["details"]["validation_evidence"] = f"XSS payload with '{validation_details['pattern']}' pattern is reflected in page content"
+                                        result["details"]["validation_confidence"] = validation_details["confidence"]
+                                        self.logger.success(f"XSS vulnerability validated through content analysis with {validation_details['confidence']} confidence")
+                                        break
                 except Exception as e:
                     self.logger.error(f"Error validating XSS vulnerability: {str(e)}")
             

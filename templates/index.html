@@ -573,44 +573,32 @@
                         progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
                         progressBar.classList.add('bg-success');
                         
+                        // Update the current task
+                        currentTaskEl.textContent = "Scan completed successfully";
+                        
                         // When scan is complete, mark ALL tasks as complete
-                        const actionPlanItems = actionPlanListEl.querySelectorAll('li');
-                        actionPlanItems.forEach(item => {
-                            // Skip the main plan title (first item)
-                            if (item.classList.contains('fw-bold') && item.classList.contains('bg-light')) {
-                                return;
-                            }
+                        const taskItems = actionPlanListEl.querySelectorAll('.task-item');
+                        taskItems.forEach(item => {
+                            // Get the task number and content elements
+                            const taskNumber = item.querySelector('.task-number');
+                            const taskStatus = item.querySelector('.task-status');
+                            const taskDescription = item.querySelector('.task-description');
                             
-                            // Skip vulnerability reports
-                            if (item.textContent.includes('VULNERABILITY') || item.textContent.includes('🔴')) {
-                                return;
-                            }
-                            
-                            // Extract the step number
-                            const stepMatch = item.textContent.match(/Step (\d+):/);
-                            if (stepMatch) {
-                                const stepNum = stepMatch[1];
-                                // Get task description, removing any "Pending" markers
-                                let taskDesc = item.textContent.replace(/Step \d+:\s*/, '').trim();
-                                taskDesc = taskDesc.replace(/\(Pending\)/g, '').trim();
+                            if (taskNumber && taskStatus) {
+                                // Update the number badge to completed style
+                                taskNumber.classList.remove('pending');
+                                taskNumber.classList.add('completed');
                                 
-                                // Create new content for the completed item
-                                item.className = 'list-group-item border-start border-success border-3';
-                                item.style.backgroundColor = '#f8fff8';
+                                // Update the status badge to completed
+                                taskStatus.classList.remove('pending');
+                                taskStatus.classList.add('completed');
+                                taskStatus.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Completed';
                                 
-                                item.innerHTML = `
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <span class="badge bg-success me-2">${stepNum}</span>
-                                            <span class="task-desc">${taskDesc}</span>
-                                        </div>
-                                        <div>
-                                            <span class="badge bg-light text-success border">
-                                                <i class="bi bi-check-circle-fill me-1"></i> Completed
-                                            </span>
-                                        </div>
-                                    </div>
-                                `;
+                                // Update the description text style
+                                if (taskDescription) {
+                                    taskDescription.classList.remove('fw-bold');
+                                    taskDescription.classList.add('fw-normal');
+                                }
                             }
                         });
                         
@@ -660,10 +648,16 @@
                 });
             }
             
-            // Function to update agent logs
+            // Function to update agent logs with improved ANSI code handling
             function updateAgentLogs(logs) {
                 if (!logs || logs.length === 0) {
                     return;
+                }
+                
+                // Function to strip ANSI color codes for the UI
+                function stripAnsiCodes(text) {
+                    if (!text) return text;
+                    return text.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
                 }
                 
                 // Check if we have new logs
@@ -675,8 +669,11 @@
                     
                     // Add only new logs
                     for (let i = prevLogsLength; i < logs.length; i++) {
-                        const logEntry = logs[i];
+                        let logEntry = logs[i];
                         const logLineEl = document.createElement('div');
+                        
+                        // Strip ANSI codes for clean display
+                        logEntry = stripAnsiCodes(logEntry);
                         
                         // Style differently based on log type
                         if (logEntry.includes('[VULNERABILITY]')) {
@@ -685,9 +682,17 @@
                         } else if (logEntry.includes('[PLANNER]')) {
                             logLineEl.classList.add('text-primary', 'fw-bold');
                             logLineEl.innerHTML = `<i class="bi bi-diagram-3"></i> ${logEntry}`;
-                        } else if (logEntry.includes('ACTION PLAN') || logEntry.includes('Security plan')) {
+                        } else if (logEntry.includes('ACTION PLAN') || 
+                                  logEntry.includes('Security plan') || 
+                                  logEntry.includes('GENERATING SECURITY') ||
+                                  logEntry.includes('Generating security')) {
                             logLineEl.classList.add('text-info', 'fw-bold');
                             logLineEl.textContent = logEntry;
+                        } else if (logEntry.includes('Task to agent mapping') || 
+                                  logEntry.includes('agent mapping') ||
+                                  logEntry.includes('Agent Task Allocation')) {
+                            logLineEl.classList.add('text-success', 'fw-bold');
+                            logLineEl.innerHTML = `<i class="bi bi-people-fill"></i> ${logEntry}`;
                         } else if (logEntry.includes('Step ')) {
                             logLineEl.classList.add('text-warning');
                             logLineEl.textContent = logEntry;
@@ -753,6 +758,9 @@
                 
                 // Check if we have a new plan or new steps
                 if (plan.length > 0) {
+                    // Keep track of task keys we've already displayed to avoid duplicates
+                    const displayedTasks = new Set();
+                    
                     // Clear placeholder on first update
                     if (actionPlanListEl.children.length <= 1 && 
                         actionPlanListEl.innerText.includes("Waiting for agent action plan")) {
@@ -760,26 +768,166 @@
                         actionPlanListEl.innerHTML = '';
                     }
                     
-                    // Add only new plan items
-                    for (let i = prevActionPlanLength; i < plan.length; i++) {
+                    // Collect information about existing tasks in the UI
+                    const existingItems = [];
+                    const existingUITasks = new Set();
+                    
+                    Array.from(actionPlanListEl.children).forEach((item, index) => {
+                        existingItems.push(item);
+                        
+                        // Skip the title/first item
+                        if (index > 0) {
+                            // Extract task description without status
+                            let taskText = item.querySelector('.task-description')?.textContent || item.textContent;
+                            taskText = taskText.replace(/\s*\((Pending|Completed)\)$/i, '').trim().toLowerCase();
+                            existingUITasks.add(taskText);
+                        }
+                    });
+                    
+                    // Update title if needed (first item)
+                    if (plan.length > 0 && plan[0] && existingItems.length > 0) {
+                        // Only update the title if it's significantly different
+                        // but preserve the existing title if it already looks good
+                        if (existingItems[0].textContent.trim() === "Waiting for agent action plan..." ||
+                            (plan[0].toLowerCase().includes("security") && 
+                            !existingItems[0].textContent.toLowerCase().includes("security"))) {
+                                
+                            console.log("Updating action plan title");
+                            existingItems[0].className = 'list-group-item fw-bold bg-light';
+                            existingItems[0].innerHTML = '<i class="bi bi-diagram-3"></i> ' + plan[0];
+                        }
+                    } else if (plan.length > 0 && plan[0] && existingItems.length === 0) {
+                        // Create title if it doesn't exist
+                        const titleItem = document.createElement('li');
+                        titleItem.className = 'list-group-item fw-bold bg-light';
+                        titleItem.innerHTML = '<i class="bi bi-diagram-3"></i> ' + plan[0];
+                        actionPlanListEl.appendChild(titleItem);
+                        existingItems.push(titleItem);
+                    }
+                    
+                    // For new server-side items, check if they already exist in UI
+                    for (let i = 1; i < plan.length; i++) {
                         const planItem = plan[i];
                         if (!planItem || planItem.trim() === '') continue;
                         
-                        console.log("Adding plan item:", planItem);
+                        // For duplicate detection, create a normalized key from the item
+                        let taskKey = planItem.trim().toLowerCase();
+                        // Remove step numbers and status markers for comparison
+                        taskKey = taskKey.replace(/step \d+:/i, '').replace(/\((pending|completed)\)/i, '').trim();
+                        
+                        // Skip if this task is already displayed or is a vulnerability entry
+                        if (displayedTasks.has(taskKey) || planItem.includes('VULNERABILITY')) {
+                            console.log("Skipping duplicate or vulnerability task:", planItem);
+                            continue;
+                        }
+                        
+                        // Check if this task already exists in the UI
+                        const taskExists = existingUITasks.has(taskKey);
+                        
+                        // If task already exists in UI, update its status if needed
+                        if (taskExists) {
+                            console.log("Task already exists in UI, checking if status needs update:", taskKey);
+                            
+                            // Find the existing item in the UI
+                            let existingItem = null;
+                            for (let j = 1; j < existingItems.length; j++) {
+                                const itemText = existingItems[j].querySelector('.task-description')?.textContent || 
+                                                existingItems[j].textContent;
+                                const normalizedText = itemText.replace(/\s*\((Pending|Completed)\)$/i, '').trim().toLowerCase();
+                                
+                                if (normalizedText === taskKey) {
+                                    existingItem = existingItems[j];
+                                    break;
+                                }
+                            }
+                            
+                            // If found, check if status needs to be updated
+                            if (existingItem && planItem.includes('(Completed)')) {
+                                console.log("Updating task status to completed:", taskKey);
+                                
+                                // Get the task number and status elements
+                                const taskNumber = existingItem.querySelector('.task-number');
+                                const taskStatus = existingItem.querySelector('.task-status');
+                                const taskDescription = existingItem.querySelector('.task-description');
+                                
+                                if (taskNumber && taskStatus) {
+                                    // Update to completed style
+                                    taskNumber.classList.remove('pending');
+                                    taskNumber.classList.add('completed');
+                                    
+                                    taskStatus.classList.remove('pending');
+                                    taskStatus.classList.add('completed');
+                                    taskStatus.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Completed';
+                                    
+                                    if (taskDescription) {
+                                        taskDescription.classList.remove('fw-bold');
+                                        taskDescription.classList.add('fw-normal');
+                                    }
+                                }
+                            }
+                            
+                            // Mark as displayed
+                            displayedTasks.add(taskKey);
+                            continue;
+                        }
+                        
+                        // This is a new task from the server, add it to UI
+                        displayedTasks.add(taskKey);
                         
                         const listItem = document.createElement('li');
                         listItem.className = 'list-group-item';
                         
-                        // Format differently based on content
-                        if (i === 0) {
-                            // This is the main plan
-                            listItem.className += ' fw-bold bg-light';
-                            listItem.innerHTML = '<i class="bi bi-diagram-3"></i> ' + planItem;
-                        } else if (planItem.includes('VULNERABILITY')) {
-                            // Don't show vulnerabilities in the action plan as per requirements
-                            continue;
+                        // Format task based on its type
+                        if (planItem.toLowerCase().includes('agent task allocation') || 
+                            planItem.toLowerCase().includes('task to agent mapping')) {
+                            // Agent mapping entry
+                            listItem.className = 'list-group-item task-item fade-in';
+                            
+                            const mappingText = planItem.includes(':') ? 
+                                planItem.split(':')[1].trim() : 
+                                planItem.replace(/agent task allocation/i, '').trim();
+                            
+                            // Split the agents by comma for better display
+                            const agents = mappingText.split(/,\s*/);
+                            const agentBadges = agents.map(agent => {
+                                return `<span class="badge bg-info me-1">${agent.trim()}</span>`;
+                            }).join(' ');
+                            
+                            listItem.innerHTML = `
+                                <div class="d-flex align-items-center w-100">
+                                    <div class="task-number completed">
+                                        <i class="bi bi-people-fill"></i>
+                                    </div>
+                                    <div class="task-content">
+                                        <span class="task-description">Agent Task Allocation</span>
+                                        <div class="mt-1">
+                                            ${agentBadges}
+                                        </div>
+                                    </div>
+                                    <div class="task-status completed">
+                                        <i class="bi bi-check-circle-fill me-1"></i> Assigned
+                                    </div>
+                                </div>
+                            `;
+                        } else if (planItem.toLowerCase().includes('generating security test plan')) {
+                            // Plan generation entry
+                            listItem.className = 'list-group-item task-item fade-in';
+                            
+                            listItem.innerHTML = `
+                                <div class="d-flex align-items-center w-100">
+                                    <div class="task-number completed">
+                                        <i class="bi bi-gear-fill"></i>
+                                    </div>
+                                    <div class="task-content">
+                                        <span class="task-description">Generating Security Test Plan</span>
+                                    </div>
+                                    <div class="task-status completed">
+                                        <i class="bi bi-check-circle-fill me-1"></i> Completed
+                                    </div>
+                                </div>
+                            `;
                         } else {
-                            // Determine if this task is completed or pending
+                            // Regular task entry
                             const isCompleted = planItem.includes('(Completed)');
                             const isPending = planItem.includes('(Pending)') || !isCompleted;
                             
@@ -827,8 +975,10 @@
                         }
                         
                         actionPlanListEl.appendChild(listItem);
+                        console.log("Added new task to UI:", taskKey);
                     }
                     
+                    // Update previous count for next time - we always count ALL tasks from server
                     prevActionPlanLength = plan.length;
                 } else {
                     // If we have an empty plan, just show a waiting message

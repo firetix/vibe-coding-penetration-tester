@@ -145,6 +145,53 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                     scan_status["action_plan"].append(f"Step {task_id}: {task_info['name']} (Pending)")
                     logger.debug(f"Added task to action plan: Step {task_id}: {task_info['name']} (Pending)")
         
+        # Create a function to check if a task already exists in the action plan
+        def task_exists_in_plan(task_name):
+            if not task_name:
+                return False
+            
+            task_name_lower = task_name.lower()
+            for item in scan_status["action_plan"]:
+                if task_name_lower in item.lower():
+                    return True
+            return False
+        
+        # Create a function to clear duplicate tasks from the action plan
+        def deduplicate_action_plan():
+            # Skip if plan is empty or just has the title
+            if len(scan_status["action_plan"]) <= 1:
+                return
+            
+            # Keep track of seen task names to identify duplicates
+            seen_tasks = set()
+            unique_plan = [scan_status["action_plan"][0]]  # Keep the title
+            
+            for i, item in enumerate(scan_status["action_plan"]):
+                # Skip the title item
+                if i == 0:
+                    continue
+                    
+                # Extract the core task name without status markers
+                task_name = re.sub(r'\s*\((Pending|Completed)\)$', '', item)
+                # Remove step number prefix if present
+                if "Step " in task_name:
+                    task_name = re.sub(r'^Step \d+:\s*', '', task_name)
+                
+                # Skip if we've seen this task before
+                task_key = task_name.strip().lower()
+                if task_key in seen_tasks:
+                    logger.debug(f"Removing duplicate task: {item}")
+                    continue
+                    
+                # Add to seen tasks and keep this item
+                seen_tasks.add(task_key)
+                unique_plan.append(item)
+            
+            # Update the plan if we removed any duplicates
+            if len(unique_plan) < len(scan_status["action_plan"]):
+                logger.info(f"Removed {len(scan_status['action_plan']) - len(unique_plan)} duplicate tasks from action plan")
+                scan_status["action_plan"] = unique_plan
+        
         # Initialize the action plan
         initialize_action_plan()
         
@@ -168,6 +215,34 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                         # Add completed marker
                         scan_status["action_plan"][i] = f"{clean_item} (Completed)"
                         logger.debug(f"Updated action plan item {i} to mark as completed: {scan_status['action_plan'][i]}")
+                        return  # Stop after the first match
+        
+        # Add a function to mark all tasks as completed at the end of the scan
+        def mark_all_tasks_completed():
+            logger.info("Marking all tasks as completed")
+            for task_id in task_mapping.keys():
+                if task_id not in scan_status["completed_tasks"]:
+                    mark_task_completed(task_id)
+            
+            # Also iterate through all action plan items to ensure everything is marked
+            for i, plan_item in enumerate(scan_status["action_plan"]):
+                # Skip the first item which is the main plan title
+                if i == 0:
+                    continue
+                    
+                # If item has (Pending) status, change to completed
+                if "(Pending)" in plan_item:
+                    clean_item = re.sub(r'\s*\((Pending|Completed)\)$', '', plan_item)
+                    scan_status["action_plan"][i] = f"{clean_item} (Completed)"
+                    logger.debug(f"Force marked plan item {i} as completed: {scan_status['action_plan'][i]}")
+        
+        # Function to strip ANSI color codes from log messages
+        def strip_ansi_codes(text):
+            if not text:
+                return text
+            # Pattern to match ANSI escape sequences
+            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+            return ansi_escape.sub('', text)
         
         # Construct the command
         cmd = [
@@ -195,7 +270,12 @@ def run_scan(url, model="gpt-4o", provider="openai"):
         while True:
             output_line = process.stdout.readline()
             if output_line:
-                logger.debug(f"Process output: {output_line.strip()}")
+                # Strip ANSI color codes for logging and pattern matching
+                clean_line = strip_ansi_codes(output_line.strip())
+                logger.debug(f"Process output: {clean_line}")
+                
+                # Log the raw line for debugging purposes
+                logger.debug(f"Raw process output: {repr(output_line.strip())}")
             
             if not output_line and process.poll() is not None:
                 logger.debug(f"Process ended with return code: {process.returncode}")
@@ -210,8 +290,112 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                 if len(scan_status["agent_logs"]) > 100:
                     scan_status["agent_logs"] = scan_status["agent_logs"][-100:]
             
+            # Clean output line for pattern matching
+            clean_line = strip_ansi_codes(output_line.strip())
+            
+            # Extract security action plans and steps - broaden pattern matching
+            # For action plans - match more patterns including agent mapping and security plan generation
+            if any(plan_marker in clean_line.upper() for plan_marker in 
+                   ["ACTION PLAN", "SECURITY PLAN", "TESTING PLAN", "ATTACK PLAN", "SCAN PLAN", 
+                    "PLANNER AGENT", "SECURITY TESTING PLAN", "GENERATING SECURITY", "TASK TO AGENT MAPPING"]):
+                logger.debug(f"Found action plan marker in: {clean_line}")
+                
+                # For agent mapping entries, format them specially
+                if "TASK TO AGENT MAPPING" in clean_line.upper() or "AGENT MAPPING" in clean_line.upper():
+                    # Extract the agent mapping information
+                    mapping_info = ""
+                    if ":" in clean_line:
+                        mapping_info = clean_line.split(":", 1)[1].strip()
+                    else:
+                        mapping_info = clean_line.strip()
+                    
+                    # Create a descriptive entry for the action plan
+                    plan_entry = f"Agent Task Allocation: {mapping_info}"
+                    
+                    # Add it as a task entry rather than replacing the whole plan
+                    if len(scan_status["action_plan"]) > 0:
+                        # Don't add if it's already in the plan
+                        if not any(plan_entry.lower() in item.lower() for item in scan_status["action_plan"]):
+                            scan_status["action_plan"].append(plan_entry)
+                            logger.info(f"Added agent mapping to action plan: {plan_entry}")
+                    else:
+                        # Initialize with a title if the plan is empty
+                        scan_status["action_plan"] = [f"Security Assessment for {scan_status['url']}"]
+                        scan_status["action_plan"].append(plan_entry)
+                        logger.info(f"Created new action plan with agent mapping: {plan_entry}")
+                    
+                    # Update current action
+                    scan_status["current_action"] = "Assigning Tasks to Agents"
+                    
+                    # Add a badge to indicate this is from the planner agent
+                    scan_status["agent_logs"].append(f"[PLANNER] Assigned security testing tasks to specialized agents")
+                
+                # For security plan generation entries
+                elif "GENERATING SECURITY" in clean_line.upper() or "GENERATING" in clean_line.upper() and "PLAN" in clean_line.upper():
+                    # Extract any additional info from the line
+                    plan_info = clean_line
+                    
+                    # Create a descriptive entry
+                    plan_entry = f"Generating Security Test Plan"
+                    
+                    # Add it as a task entry or as the main plan title
+                    if len(scan_status["action_plan"]) == 0:
+                        scan_status["action_plan"] = [f"Preparing Security Assessment for {scan_status['url']}"]
+                        logger.info(f"Created new action plan: {scan_status['action_plan'][0]}")
+                    
+                    # Add the generation step if not already present
+                    if not any("generating" in item.lower() for item in scan_status["action_plan"]):
+                        scan_status["action_plan"].append(plan_entry)
+                        logger.info(f"Added security plan generation to action plan: {plan_entry}")
+                    
+                    # Update current action
+                    scan_status["current_action"] = "Planning Security Tests"
+                    
+                    # Add a badge to indicate this is from the planner agent
+                    scan_status["agent_logs"].append(f"[PLANNER] Generating security testing plan for {scan_status['url']}")
+                
+                # For regular action plan entries
+                else:
+                    if ":" in clean_line:
+                        plan_parts = clean_line.split(":", 1)
+                        if len(plan_parts) > 1:
+                            plan_entry = plan_parts[1].strip()
+                        else:
+                            plan_entry = clean_line.strip()
+                    else:
+                        plan_entry = clean_line.strip()
+                    
+                    # Check if this is a main plan header or a task item
+                    if any(term.lower() in plan_entry.lower() for term in ["security assessment", "security testing plan", "security plan", "action plan"]):
+                        # This appears to be a main plan header
+                        if len(scan_status["action_plan"]) == 0:
+                            # Initialize with this as the main plan if empty
+                            scan_status["action_plan"] = [plan_entry]
+                            logger.info(f"Created new action plan title: {plan_entry}")
+                        else:
+                            # If we already have a plan, keep the existing header and just append any tasks
+                            logger.info(f"Received new plan title, but keeping existing: {scan_status['action_plan'][0]}")
+                    else:
+                        # This appears to be a task entry - add it if we have a plan, otherwise create one
+                        if len(scan_status["action_plan"]) == 0:
+                            scan_status["action_plan"] = [f"Security Assessment for {scan_status['url']}"]
+                            logger.info(f"Created default action plan title before adding task")
+                        
+                        # Add as a new task entry - don't add if duplicate
+                        normalized_entry = re.sub(r'\s*\((Pending|Completed)\)$', '', plan_entry).strip().lower()
+                        if not any(normalized_entry in re.sub(r'\s*\((Pending|Completed)\)$', '', item).strip().lower() 
+                                 for item in scan_status["action_plan"]):
+                            scan_status["action_plan"].append(f"{plan_entry} (Pending)")
+                            logger.info(f"Added new task to action plan: {plan_entry}")
+                        
+                        # Don't initialize action plan - was: scan_status["action_plan"] = [plan_entry]
+                        scan_status["current_action"] = "Planning Security Tests"
+                        
+                        # Add a badge to indicate this is from the planner agent
+                        scan_status["agent_logs"].append(f"[PLANNER] Created security testing plan for {scan_status['url']}")
+            
             # Update progress based on log messages
-            if "Starting security testing" in output_line:
+            if "Starting security testing" in clean_line:
                 scan_status["progress"] = 20
                 scan_status["current_task"] = "Starting security testing"
                 # Add to action plan if not already present
@@ -220,7 +404,7 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                 # Mark task 1 as completed
                 mark_task_completed(1)
                 logger.debug("Updated scan status: 20% - Starting security testing")
-            elif "Executing xss task" in output_line or "XSS" in output_line:
+            elif "Executing xss task" in clean_line or "XSS" in clean_line:
                 scan_status["progress"] = 40
                 scan_status["current_task"] = "Testing for XSS vulnerabilities"
                 scan_status["current_action"] = "XSS Testing"
@@ -236,11 +420,11 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                     scan_status["action_plan"].append("Step 3: Cross-Site Scripting (XSS) vulnerability scanning")
                 
                 # Mark XSS task as completed if it contains completion indicator
-                if any(term in output_line.lower() for term in ["xss completed", "xss scan complete", "xss testing finished"]):
+                if any(term in clean_line.lower() for term in ["xss completed", "xss scan complete", "xss testing finished"]):
                     mark_task_completed(3)
                 
                 logger.debug("Updated scan status: 40% - Testing for XSS vulnerabilities")
-            elif "Executing csrf task" in output_line or "CSRF" in output_line:
+            elif "Executing csrf task" in clean_line or "CSRF" in clean_line:
                 scan_status["progress"] = 60
                 scan_status["current_task"] = "Testing for CSRF vulnerabilities"
                 scan_status["current_action"] = "CSRF Testing"
@@ -256,11 +440,11 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                     scan_status["action_plan"].append("Step 4: Cross-Site Request Forgery (CSRF) vulnerability detection")
                 
                 # Mark CSRF task as completed if it contains completion indicator
-                if any(term in output_line.lower() for term in ["csrf completed", "csrf scan complete", "csrf testing finished"]):
+                if any(term in clean_line.lower() for term in ["csrf completed", "csrf scan complete", "csrf testing finished"]):
                     mark_task_completed(4)
                 
                 logger.debug("Updated scan status: 60% - Testing for CSRF vulnerabilities")
-            elif "Executing auth task" in output_line or "auth" in output_line.lower() or "password" in output_line.lower():
+            elif "Executing auth task" in clean_line or "auth" in clean_line.lower() or "password" in clean_line.lower():
                 scan_status["progress"] = 80
                 scan_status["current_task"] = "Testing authentication"
                 scan_status["current_action"] = "Authentication Testing"
@@ -276,11 +460,11 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                     scan_status["action_plan"].append("Step 5: Authentication security testing")
                 
                 # Mark auth task as completed if it contains completion indicator
-                if any(term in output_line.lower() for term in ["auth completed", "auth testing complete", "auth scan finished"]):
+                if any(term in clean_line.lower() for term in ["auth completed", "auth testing complete", "auth scan finished"]):
                     mark_task_completed(5)
                 
                 logger.debug("Updated scan status: 80% - Testing authentication")
-            elif "Security testing completed" in output_line or "report" in output_line.lower() or "generating" in output_line.lower():
+            elif "Security testing completed" in clean_line or "report" in clean_line.lower() or "generating" in clean_line.lower():
                 scan_status["progress"] = 90
                 scan_status["current_task"] = "Generating report"
                 scan_status["current_action"] = "Report Generation"
@@ -295,113 +479,30 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                 if not has_report_step:
                     scan_status["action_plan"].append("Step 9: Generating Security Assessment Report")
                 
+                # Run deduplication after modifying the plan
+                deduplicate_action_plan()
+                
                 logger.debug("Updated scan status: 90% - Generating report")
             
             # Look for specific task completion indicators
-            if "Task complete" in output_line or "Task completed" in output_line:
+            if "Task complete" in clean_line or "Task completed" in clean_line:
                 for task_id, task_info in task_mapping.items():
                     for keyword in task_info["keywords"]:
-                        if keyword.lower() in output_line.lower():
+                        if keyword.lower() in clean_line.lower():
                             mark_task_completed(task_id)
+                            # Run deduplication after marking tasks completed
+                            deduplicate_action_plan()
                             break
             
-            # Extract security action plans and steps - broaden pattern matching
-            # For action plans - match more patterns
-            if any(plan_marker in output_line.upper() for plan_marker in 
-                   ["ACTION PLAN", "SECURITY PLAN", "TESTING PLAN", "ATTACK PLAN", "SCAN PLAN", "PLANNER AGENT", "SECURITY TESTING PLAN"]):
-                logger.debug(f"Found action plan marker in: {output_line}")
-                if ":" in output_line:
-                    plan_parts = output_line.split(":", 1)
-                    if len(plan_parts) > 1:
-                        plan_entry = plan_parts[1].strip()
-                    else:
-                        plan_entry = output_line.strip()
-                else:
-                    plan_entry = output_line.strip()
-                
-                # Initialize with this as the main plan
-                scan_status["action_plan"] = [plan_entry]
-                scan_status["current_action"] = "Planning Security Tests"
-                logger.info(f"Created new action plan: {plan_entry}")
-                
-                # Add a badge to indicate this is from the planner agent
-                scan_status["agent_logs"].append(f"[PLANNER] Created security testing plan for {scan_status['url']}")
-                
-                # Look for various patterns that indicate the security plan's tasks
-                # First check for explicit mention of number of tasks - match both "tasks" and "task"
-                tasks_match = re.search(r'with\s+(\d+)\s+tasks?', output_line, re.IGNORECASE)
-                
-                # First try to extract real task names if they're listed in the logs
-                extracted_tasks = []
-                
-                # Look for task names in subsequent lines
-                next_lines = []
-                for _ in range(10):  # Check next 10 lines for possible tasks
-                    next_line = process.stdout.readline()
-                    if next_line:
-                        next_lines.append(next_line.strip())
-                        # Add to regular logs too
-                        log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {next_line.strip()}"
-                        scan_status["agent_logs"].append(log_entry)
-                        
-                        # Check if this line describes a task/step
-                        task_line_match = re.search(r'(Step|Task)\s+(\d+)[:\.\)]\s*(.*)', next_line, re.IGNORECASE)
-                        if task_line_match:
-                            task_num = int(task_line_match.group(2))
-                            task_desc = task_line_match.group(3).strip()
-                            if task_desc:
-                                while len(extracted_tasks) < task_num:
-                                    extracted_tasks.append(None)  # Pad the list if needed
-                                extracted_tasks.append(task_desc)
-                                logger.info(f"Found task {task_num} description: {task_desc}")
-                
-                # If tasks were mentioned but not described, use default names with more descriptive text
-                if tasks_match and not extracted_tasks:
-                    num_tasks = int(tasks_match.group(1))
-                    logger.info(f"Detected plan with {num_tasks} tasks but no descriptions found")
-                    
-                    # Default task descriptions
-                    default_tasks = [
-                        "Initial reconnaissance and target discovery",
-                        "Surface crawling and endpoint enumeration",
-                        "Cross-Site Scripting (XSS) vulnerability scanning",
-                        "Cross-Site Request Forgery (CSRF) vulnerability detection", 
-                        "Authentication security testing",
-                        "SQL Injection vulnerability detection",
-                        "Input validation and sanitization checks",
-                        "Security header verification",
-                        "Session management security analysis",
-                        "Sensitive data exposure detection"
-                    ]
-                    
-                    # Pre-populate action plan with placeholders using better descriptions
-                    for i in range(1, num_tasks + 1):
-                        if i <= len(default_tasks):
-                            task_desc = default_tasks[i-1]
-                        else:
-                            task_desc = f"Security test {i}"
-                            
-                        task_name = f"Step {i}: {task_desc} (Pending)"
-                        scan_status["action_plan"].append(task_name)
-                        logger.info(f"Added placeholder for task {i}: {task_desc}")
-                
-                # If we found actual task descriptions, use those
-                elif extracted_tasks:
-                    for i, task_desc in enumerate(extracted_tasks, 1):
-                        if task_desc:
-                            task_name = f"Step {i}: {task_desc} (Pending)"
-                            scan_status["action_plan"].append(task_name)
-                            logger.info(f"Added placeholder with real description for task {i}: {task_desc}")
-                
             # For steps - more flexible matching
-            elif (("Step " in output_line or "STEP " in output_line or "Task " in output_line or output_line.strip().startswith("-") or 
-                  output_line.strip().startswith("*") or output_line.strip().startswith("•") or
-                  output_line.strip().startswith("#") or
-                  (len(output_line.strip()) > 2 and output_line.strip()[0].isdigit() and output_line.strip()[1] in [".", ")", ":"]))
-                  and len(output_line.strip()) > 5):
+            elif (("Step " in clean_line or "STEP " in clean_line or "Task " in clean_line or clean_line.strip().startswith("-") or 
+                  clean_line.strip().startswith("*") or clean_line.strip().startswith("•") or
+                  clean_line.strip().startswith("#") or
+                  (len(clean_line.strip()) > 2 and clean_line.strip()[0].isdigit() and clean_line.strip()[1] in [".", ")", ":"]))
+                  and len(clean_line.strip()) > 5):
                 
                 # This looks like a step in an action plan
-                step_entry = output_line.strip()
+                step_entry = clean_line.strip()
                 
                 # Check if this is updating a pending step
                 step_match = re.search(r'Step\s+(\d+)', step_entry, re.IGNORECASE)
@@ -465,12 +566,12 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                         scan_status["current_action"] = step_entry[:50] + ("..." if len(step_entry) > 50 else "")
                 
             # For vulnerabilities
-            elif "Discovered vulnerability:" in output_line or "VULNERABILITY FOUND" in output_line.upper() or "FOUND VULNERABILITY" in output_line.upper():
+            elif "Discovered vulnerability:" in clean_line or "VULNERABILITY FOUND" in clean_line.upper() or "FOUND VULNERABILITY" in clean_line.upper():
                 try:
-                    if ":" in output_line:
-                        vuln_info = output_line.split(":", 1)[1].strip()
+                    if ":" in clean_line:
+                        vuln_info = clean_line.split(":", 1)[1].strip()
                     else:
-                        vuln_info = output_line.strip()
+                        vuln_info = clean_line.strip()
                     
                     scan_status["agent_logs"].append(f"[VULNERABILITY] {vuln_info}")
                     scan_status["current_action"] = f"Found: {vuln_info[:30]}..."
@@ -481,7 +582,7 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                     logger.error(f"Error processing vulnerability line: {str(e)}")
                 
             # Check for task execution in logs to update pending tasks
-            elif any(task_marker in output_line.lower() for task_marker in ["executing", "testing", "scanning", "checking", "generating", "executing tool"]):
+            elif any(task_marker in clean_line.lower() for task_marker in ["executing", "testing", "scanning", "checking", "generating", "executing tool"]):
                 # This might indicate a task is being executed
                 task_types = ["sqli", "sql injection", "xss", "cross-site", "csrf", "request forgery",
                              "auth", "authentication", "session", "idor", "access control"]
@@ -489,7 +590,7 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                 # Check which task type this might be
                 matched_type = None
                 for task_type in task_types:
-                    if task_type.lower() in output_line.lower():
+                    if task_type.lower() in clean_line.lower():
                         matched_type = task_type
                         break
                 
@@ -517,11 +618,95 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                         task_desc = updated_task.split(": ", 1)[1] if ": " in updated_task else updated_task
                         scan_status["current_action"] = f"Executing: {task_desc[:30]}..."
             
+            # Check for timestamp and potential task information (like agent mapping) logs
+            elif re.search(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', clean_line) and any(term in clean_line.lower() for term in ["agent", "task", "mapping", "scanner", "xss", "sqli", "csrf", "auth"]):
+                # This might be a formatted log entry with task information
+                logger.debug(f"Found potential task mapping information: {clean_line}")
+                
+                # Check for agent task mapping patterns
+                mapping_match = re.search(r'task to agent mapping[:\s]+(.+)', clean_line, re.IGNORECASE)
+                if mapping_match:
+                    # Extract agent mapping information
+                    mapping_info = mapping_match.group(1).strip()
+                    logger.info(f"Extracted agent mapping information: {mapping_info}")
+                    
+                    # Create a descriptive entry for the action plan
+                    plan_entry = f"Agent Task Allocation: {mapping_info}"
+                    
+                    # Add it as a task entry rather than replacing the whole plan
+                    if len(scan_status["action_plan"]) > 0:
+                        # Don't add if it's already in the plan
+                        if not any(plan_entry.lower() in item.lower() for item in scan_status["action_plan"]):
+                            scan_status["action_plan"].append(plan_entry)
+                            logger.info(f"Added agent mapping to action plan: {plan_entry}")
+                    else:
+                        # Initialize with a title if the plan is empty
+                        scan_status["action_plan"] = [f"Security Assessment for {scan_status['url']}"]
+                        scan_status["action_plan"].append(plan_entry)
+                        logger.info(f"Created new action plan with agent mapping: {plan_entry}")
+                    
+                    # Update current action
+                    scan_status["current_action"] = "Assigning Tasks to Agents"
+                    
+                    # Add a badge to indicate this is from the planner agent
+                    scan_status["agent_logs"].append(f"[PLANNER] Assigned security testing tasks to specialized agents")
+                    
+                    # Run deduplication
+                    deduplicate_action_plan()
+            
+            # Check for generating security plan entries with timestamps
+            elif re.search(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', clean_line) and any(term in clean_line.lower() for term in ["generating security", "generating plan", "security plan"]):
+                # This might be a security plan generation entry
+                logger.debug(f"Found potential security plan generation entry: {clean_line}")
+                
+                # Create a descriptive entry
+                plan_entry = "Generating Security Test Plan"
+                
+                # Extract additional context if available
+                plan_info = re.sub(r'\[[^\]]+\]', '', clean_line).strip()  # Remove bracketed content
+                plan_info = re.sub(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', '', plan_info).strip()  # Remove timestamps
+                
+                # Add context to the plan entry if it's meaningful
+                if len(plan_info) > 10 and not plan_info.lower().startswith(('debug', 'info', 'warning', 'error')):
+                    plan_entry = f"Generating Security Test Plan: {plan_info}"
+                
+                # Add it as a task entry or initialize the plan
+                if len(scan_status["action_plan"]) == 0:
+                    scan_status["action_plan"] = [f"Preparing Security Assessment for {scan_status['url']}"]
+                    logger.info(f"Created new action plan: {scan_status['action_plan'][0]}")
+                
+                # Add the generation step if not already present
+                if not any("generating" in item.lower() for item in scan_status["action_plan"]):
+                    scan_status["action_plan"].append(plan_entry)
+                    logger.info(f"Added security plan generation to action plan: {plan_entry}")
+                
+                # Update current action
+                scan_status["current_action"] = "Planning Security Tests"
+                
+                # Add a badge to indicate this is from the planner agent
+                scan_status["agent_logs"].append(f"[PLANNER] Generating security testing plan for {scan_status['url']}")
+                
+                # Run deduplication
+                deduplicate_action_plan()
+            
+            # Check for any security-related messages with timestamps that should update the current action
+            elif re.search(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', clean_line) and any(term in clean_line.lower() for term in ["security", "vulnerability", "scanning", "testing"]):
+                # This might be a significant log entry to update the current action
+                cleaned_message = re.sub(r'\[[^\]]+\]', '', clean_line).strip()  # Remove bracketed content
+                cleaned_message = re.sub(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', '', cleaned_message).strip()  # Remove timestamps
+                
+                # Only use messages that are concise enough for the action badge
+                if len(cleaned_message) <= 50:
+                    # Update current action if it's a meaningful message
+                    if not cleaned_message.lower().startswith(('debug', 'info', 'warning', 'error')):
+                        scan_status["current_action"] = cleaned_message
+                        logger.debug(f"Updated current action from log: {cleaned_message}")
+            
             # Look for specific security plan markers in the logs
-            elif "Creating security plan with" in output_line:
+            elif "Creating security plan with" in clean_line:
                 # This is a clear indicator that a security plan was created
                 # Extract the number of tasks if available
-                tasks_count_match = re.search(r"Creating security plan with\s+(\d+)\s+tasks?", output_line)
+                tasks_count_match = re.search(r"Creating security plan with\s+(\d+)\s+tasks?", clean_line)
                 if tasks_count_match:
                     tasks_count = int(tasks_count_match.group(1))
                     logger.info(f"Detected security plan with {tasks_count} tasks")
@@ -553,13 +738,13 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                             logger.info(f"Added placeholder for security task {i}: {default_security_tasks[i-1]}")
             
             # Extract task details from logs - look for task arguments
-            elif any(x in output_line.lower() for x in ["security plan", "planner", "security testing plan"]) or ("tasks" in output_line.lower() and ("type" in output_line.lower() and "target" in output_line.lower())):
+            elif any(x in clean_line.lower() for x in ["security plan", "planner", "security testing plan"]) or ("tasks" in clean_line.lower() and ("type" in clean_line.lower() and "target" in clean_line.lower())):
                 try:
                     # This looks like task information from the planner agent
                     logger.info("Found potential task details in logs from planner agent")
                     
                     # Add a planner agent log entry
-                    if "security plan" in output_line.lower() or "planner" in output_line.lower():
+                    if "security plan" in clean_line.lower() or "planner" in clean_line.lower():
                         scan_status["agent_logs"].append(f"[PLANNER] Processing security testing plan")
                     
                     # Look for task type and target patterns - match different formats
@@ -569,19 +754,19 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                     
                     # Try specific patterns for the log format you provided
                     # Example: {"type":"sqli","target":"snippets.gtl?uid=cheddar","priority":"high"}
-                    format0_matches = re.finditer(r'[{"]type[":]+"([^"]+)"[,:\s]+[":]?target[":]+"([^"]+)"', output_line)
+                    format0_matches = re.finditer(r'[{"]type[":]+"([^"]+)"[,:\s]+[":]?target[":]+"([^"]+)"', clean_line)
                     for match in format0_matches:
                         task_matches.append(match)
                     
                     # Try the {'type': 'xxx', 'target': 'yyy'} format
                     if not task_matches:
-                        format1_matches = re.finditer(r"[{']type['\"]?:\s*['\"]([^'\"]+)['\"],\s*['\"]?target['\"]?:\s*['\"]([^'\"]+)", output_line)
+                        format1_matches = re.finditer(r"[{']type['\"]?:\s*['\"]([^'\"]+)['\"],\s*['\"]?target['\"]?:\s*['\"]([^'\"]+)", clean_line)
                         for match in format1_matches:
                             task_matches.append(match)
                     
                     # If nothing found, try the simpler 'type=xxx target=yyy' format
                     if not task_matches:
-                        format2_matches = re.finditer(r"type\s*=\s*[\'\"]?([^\'\"}\s,]+)[\'\"]?[,\s]+target\s*=\s*[\'\"]?([^\'\"}\s,]+)", output_line)
+                        format2_matches = re.finditer(r"type\s*=\s*[\'\"]?([^\'\"}\s,]+)[\'\"]?[,\s]+target\s*=\s*[\'\"]?([^\'\"}\s,]+)", clean_line)
                         for match in format2_matches:
                             task_matches.append(match)
                     
@@ -614,14 +799,7 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                             task_desc = f"{task_type.upper()} testing on {task_target}"
                             
                             # Check if we already have a step with this info
-                            step_exists = False
-                            for plan_item in scan_status["action_plan"]:
-                                if task_type.lower() in plan_item.lower() and task_target.lower() in plan_item.lower():
-                                    step_exists = True
-                                    break
-                            
-                            # If not, add it
-                            if not step_exists:
+                            if not task_exists_in_plan(task_desc):
                                 # Find an appropriate step number - check the most recently added pending step
                                 step_num = i
                                 for j, plan_item in enumerate(scan_status["action_plan"]):
@@ -636,6 +814,9 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                                 new_step = f"Step {step_num}: {task_desc} (Pending)"
                                 scan_status["action_plan"].append(new_step)
                                 logger.info(f"Added new task from details: {new_step}")
+                        
+                        # Deduplicate after adding all tasks
+                        deduplicate_action_plan()
                 except Exception as e:
                     logger.error(f"Error processing task details: {str(e)}")
                     
@@ -653,10 +834,10 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                     scan_status["action_plan"].append("Step 4: Test authentication mechanisms")
                 if scan_status["progress"] >= 90:
                     scan_status["action_plan"].append("Step 5: Generate security report")
-            elif "Report saved to" in output_line:
+            elif "Report saved to" in clean_line:
                 # Extract and validate report path
                 try:
-                    report_path = output_line.split("Report saved to ")[1].strip()
+                    report_path = clean_line.split("Report saved to ")[1].strip()
                     logger.info(f"Found report path in output: {report_path}")
                     
                     # Check if this is an absolute path
@@ -709,11 +890,15 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                     scan_status["progress"] = 100
                     scan_status["current_task"] = "Scan completed"
                     logger.debug("Updated scan status: 100% - Scan completed")
+                    # Run deduplication before marking tasks as completed
+                    deduplicate_action_plan()
+                    mark_all_tasks_completed()
+                    logger.info("All tasks marked as completed")
                 except Exception as e:
                     logger.exception(f"Error processing report path: {str(e)}")
                     # Still try to extract the path even if validation fails
                     try:
-                        report_path = output_line.split("Report saved to ")[1].strip()
+                        report_path = clean_line.split("Report saved to ")[1].strip()
                         scan_status["report_path"] = report_path
                     except:
                         logger.error("Failed to extract report path")
@@ -731,7 +916,15 @@ def run_scan(url, model="gpt-4o", provider="openai"):
             scan_status["error"] = f"Scan failed: {stderr}"
             scan_status["current_task"] = "Scan failed"
             scan_status["progress"] = 100
-        
+        else:
+            # If scan completed successfully, mark all tasks as completed
+            scan_status["progress"] = 100
+            scan_status["current_task"] = "Scan completed"
+            # Run deduplication before marking tasks as completed
+            deduplicate_action_plan()
+            mark_all_tasks_completed()
+            logger.info("All tasks marked as completed")
+
         # If report path not found in logs, try to find it
         if not scan_status["report_path"]:
             logger.warning("Report path not found in process output, searching for most recent report")
