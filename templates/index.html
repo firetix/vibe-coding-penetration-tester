@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VibePenTester - Web Security Scanner</title>
+    <!-- Vercel Analytics -->
+    <script>
+        window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+    </script>
+    <script defer src="/_vercel/insights/script.js"></script>
+    <!-- End Vercel Analytics -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
@@ -243,6 +249,7 @@
                                     <select class="form-select" id="provider" name="provider">
                                         <option value="openai" selected>OpenAI</option>
                                         <option value="anthropic">Anthropic</option>
+                                        <option value="ollama">Ollama (Local)</option>
                                     </select>
                                     <div class="form-text">Select the AI provider for the agent swarm</div>
                                 </div>
@@ -262,9 +269,37 @@
                                             <option value="claude-3-sonnet">Claude 3 Sonnet</option>
                                             <option value="claude-3-haiku">Claude 3 Haiku</option>
                                         </optgroup>
+                                        <optgroup label="Ollama Models" id="ollama-models" style="display:none">
+                                            <option value="llama3">Llama 3</option>
+                                            <option value="llama3:8b">Llama 3 (8B)</option>
+                                            <option value="mistral">Mistral</option>
+                                            <option value="mixtral">Mixtral</option>
+                                            <option value="phi3">Phi-3</option>
+                                            <option value="gemma:7b">Gemma (7B)</option>
+                                            <option value="deepseek-coder">DeepSeek Coder</option>
+                                        </optgroup>
                                     </select>
                                     <div class="form-text">Select the AI model for security testing</div>
                                 </div>
+                            </div>
+                            
+                            <!-- API Token fields - conditionally displayed based on provider -->
+                            <div class="mb-3" id="openai-token-container">
+                                <label for="openai_api_key" class="form-label">OpenAI API Key <span class="text-muted">(Optional)</span></label>
+                                <input type="password" class="form-control" id="openai_api_key" name="openai_api_key" placeholder="sk-...">
+                                <div class="form-text">Enter your OpenAI API key or leave blank to use environment variable</div>
+                            </div>
+                            
+                            <div class="mb-3" id="anthropic-token-container" style="display:none">
+                                <label for="anthropic_api_key" class="form-label">Anthropic API Key <span class="text-muted">(Optional)</span></label>
+                                <input type="password" class="form-control" id="anthropic_api_key" name="anthropic_api_key" placeholder="sk-ant-...">
+                                <div class="form-text">Enter your Anthropic API key or leave blank to use environment variable</div>
+                            </div>
+                            
+                            <div class="mb-3" id="ollama-url-container" style="display:none">
+                                <label for="ollama_url" class="form-label">Ollama Server URL</label>
+                                <input type="text" class="form-control" id="ollama_url" name="ollama_url" value="http://localhost:11434">
+                                <div class="form-text">URL of your Ollama server (local or remote)</div>
                             </div>
                             
                             <div class="d-grid gap-2">
@@ -430,24 +465,106 @@
                 breaks: true
             });
             
+            // Add Ollama URL field dynamically when Ollama is selected
+            function createOllamaUrlField() {
+                // Check if the field already exists
+                if (document.getElementById('ollama-url-group')) {
+                    return;
+                }
+                
+                // Create the new form group
+                const ollamaUrlGroup = document.createElement('div');
+                ollamaUrlGroup.className = 'mb-3';
+                ollamaUrlGroup.id = 'ollama-url-group';
+                
+                // Create label
+                const label = document.createElement('label');
+                label.htmlFor = 'ollama_url';
+                label.className = 'form-label';
+                label.textContent = 'Ollama Server URL';
+                
+                // Create input
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'form-control';
+                input.id = 'ollama_url';
+                input.name = 'ollama_url';
+                input.value = 'http://localhost:11434';
+                input.required = true;
+                
+                // Create help text
+                const helpText = document.createElement('div');
+                helpText.className = 'form-text';
+                helpText.textContent = 'URL of your Ollama server';
+                
+                // Append all elements
+                ollamaUrlGroup.appendChild(label);
+                ollamaUrlGroup.appendChild(input);
+                ollamaUrlGroup.appendChild(helpText);
+                
+                // Insert before the scan button
+                document.querySelector('.d-grid.gap-2').before(ollamaUrlGroup);
+            }
+            
+            function removeOllamaUrlField() {
+                const ollamaUrlGroup = document.getElementById('ollama-url-group');
+                if (ollamaUrlGroup) {
+                    ollamaUrlGroup.remove();
+                }
+            }
+            
             // Handle provider change to update model dropdown
             document.getElementById('provider').addEventListener('change', function() {
                 const provider = this.value;
                 const openaiModels = document.getElementById('openai-models');
                 const anthropicModels = document.getElementById('anthropic-models');
+                const ollamaModels = document.getElementById('ollama-models');
                 const modelSelect = document.getElementById('model');
                 
+                // Hide all model groups first
+                openaiModels.style.display = 'none';
+                anthropicModels.style.display = 'none';
+                ollamaModels.style.display = 'none';
+                
+                // Show appropriate model group based on provider
                 if (provider === 'openai') {
-                    openaiModels.style.display = 'block';
-                    anthropicModels.style.display = 'none';
-                    // Select first OpenAI model
-                    modelSelect.value = 'gpt-4o';
+                    openaiModels.style.display = '';
+                    modelSelect.value = openaiModels.querySelector('option').value;
                 } else if (provider === 'anthropic') {
-                    openaiModels.style.display = 'none';
-                    anthropicModels.style.display = 'block';
-                    // Select first Anthropic model
-                    modelSelect.value = 'claude-3-5-sonnet';
+                    anthropicModels.style.display = '';
+                    modelSelect.value = anthropicModels.querySelector('option').value;
+                } else if (provider === 'ollama') {
+                    ollamaModels.style.display = '';
+                    modelSelect.value = ollamaModels.querySelector('option').value;
                 }
+                
+                // Toggle API token input fields based on provider
+                const openaiTokenContainer = document.getElementById('openai-token-container');
+                const anthropicTokenContainer = document.getElementById('anthropic-token-container');
+                const ollamaUrlContainer = document.getElementById('ollama-url-container');
+                
+                // Hide all token containers first
+                openaiTokenContainer.style.display = 'none';
+                anthropicTokenContainer.style.display = 'none';
+                ollamaUrlContainer.style.display = 'none';
+                
+                // Show the appropriate token container
+                if (provider === 'openai') {
+                    openaiTokenContainer.style.display = '';
+                } else if (provider === 'anthropic') {
+                    anthropicTokenContainer.style.display = '';
+                } else if (provider === 'ollama') {
+                    ollamaUrlContainer.style.display = '';
+                }
+            });
+            
+            // Initialize token containers on page load
+            document.addEventListener('DOMContentLoaded', function() {
+                const provider = document.getElementById('provider').value;
+                // Show the appropriate token container based on initial provider selection
+                document.getElementById('openai-token-container').style.display = provider === 'openai' ? '' : 'none';
+                document.getElementById('anthropic-token-container').style.display = provider === 'anthropic' ? '' : 'none';
+                document.getElementById('ollama-url-container').style.display = provider === 'ollama' ? '' : 'none';
             });
             
             scanForm.addEventListener('submit', function(e) {
@@ -457,8 +574,22 @@
                 const provider = document.getElementById('provider').value;
                 const model = document.getElementById('model').value;
                 
+                // Get Ollama URL if applicable
+                let ollamaUrl = null;
+                if (provider === 'ollama') {
+                    const ollamaUrlField = document.getElementById('ollama_url');
+                    if (ollamaUrlField) {
+                        ollamaUrl = ollamaUrlField.value;
+                    }
+                }
+                
                 if (!url) {
                     alert('Please enter a valid URL');
+                    return;
+                }
+                
+                if (provider === 'ollama' && (!ollamaUrl || ollamaUrl.trim() === '')) {
+                    alert('Please enter the Ollama server URL');
                     return;
                 }
                 
@@ -474,7 +605,13 @@
                 progressBar.textContent = '0%';
                 
                 // Show model information
-                const providerDisplay = provider === 'openai' ? 'OpenAI' : 'Anthropic';
+                let providerDisplay = 'OpenAI';
+                if (provider === 'anthropic') {
+                    providerDisplay = 'Anthropic';
+                } else if (provider === 'ollama') {
+                    providerDisplay = 'Ollama (Local)';
+                }
+                
                 document.getElementById('statusPanelTitle').innerHTML = 
                     `<i class="bi bi-robot"></i> Agent Swarm Status <span class="badge bg-secondary ms-2 fs-6">Using ${providerDisplay} ${model}</span>`;
                 
@@ -485,17 +622,38 @@
                 startScanBtn.disabled = true;
                 startScanBtn.innerHTML = '<span class="loader"></span> Deploying Agent Swarm...';
                 
+                // Build the request body
+                const formData = {
+                    'url': url,
+                    'provider': provider,
+                    'model': model
+                };
+                
+                // Add Ollama URL if applicable
+                if (provider === 'ollama' && ollamaUrl) {
+                    formData['ollama_url'] = ollamaUrl;
+                }
+                
+                // Add API keys if provided
+                if (provider === 'openai') {
+                    const openaiKey = document.getElementById('openai_api_key').value;
+                    if (openaiKey) {
+                        formData['openai_api_key'] = openaiKey;
+                    }
+                } else if (provider === 'anthropic') {
+                    const anthropicKey = document.getElementById('anthropic_api_key').value;
+                    if (anthropicKey) {
+                        formData['anthropic_api_key'] = anthropicKey;
+                    }
+                }
+                
                 // Start the scan
                 fetch('/scan', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: new URLSearchParams({
-                        'url': url,
-                        'provider': provider,
-                        'model': model
-                    })
+                    body: new URLSearchParams(formData)
                 })
                 .then(response => response.json())
                 .then(data => {

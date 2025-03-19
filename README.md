@@ -19,7 +19,7 @@
 
 ## 🌟 Key Features
 
-- **Intelligent Vulnerability Discovery**: Uses LLMs (OpenAI and Anthropic Claude) to understand application context and identify potential security weaknesses (and your career weaknesses too)
+- **Intelligent Vulnerability Discovery**: Uses LLMs (OpenAI, Anthropic Claude, and local Ollama models) to understand application context and identify potential security weaknesses (and your career weaknesses too)
 - **Advanced Payload Generation**: Creates sophisticated test payloads tailored to the target application (more creative than your dating app profile)
 - **Context-Aware Testing**: Analyzes application behavior and responses to guide testing strategy (unlike your ex who never listened)
 - **Automated Exploit Verification**: Validates findings to eliminate false positives (we wish dating apps had this feature)
@@ -35,6 +35,7 @@
 - Python 3.8+ (like your coffee, best when hot and fresh)
 - OpenAI API key (for using OpenAI models)
 - Anthropic API key (optional, for using Claude models)
+- Ollama (optional, for running models locally without API keys)
 - Playwright (no actual playwright experience required)
 
 ### Installation
@@ -66,6 +67,18 @@ python main.py --url https://example.com --provider anthropic --model claude-3-7
 
 # Using faster Anthropic Claude model (for the impatient security professionals)
 python main.py --url https://example.com --provider anthropic --model claude-3-5-haiku-20241022
+
+# Using Ollama with Llama 3 locally (for the privacy-focused or those without API keys)
+python main.py --url https://example.com --provider ollama --model llama3
+
+# Using Ollama with a more capable model (best for thorough security testing)
+python main.py --url https://example.com --provider ollama --model mixtral
+
+# Using Ollama with a lightweight model (faster but with fallback mechanisms)
+python main.py --url https://example.com --provider ollama --model deepseek-r1
+
+# Using Ollama with a custom server URL (for remote Ollama instances)
+python main.py --url https://example.com --provider ollama --model llama3 --ollama-url http://ollama-server:11434
 ```
 
 ### Web Interface
@@ -78,16 +91,35 @@ python web_ui.py
 
 Then open your browser to [http://localhost:5050](http://localhost:5050)
 
+#### Web Interface Features
+
+- **Direct API Key Input**: You can now enter your OpenAI or Anthropic API keys directly in the web interface, without setting environment variables
+- **Local Model Support**: Run security tests using Ollama with any locally available model
+- **Customizable Ollama Settings**: Configure Ollama server URL and model selection in the UI
+- **Smart Model Detection**: Automatic adjustment for smaller models with appropriate fallbacks
+- **Real-time Scan Progress**: Watch as the AI agents work through the security testing process
+- **Interactive Reports**: View detailed findings with vulnerability explanations and remediation suggestions
+- **Mobile Responsive**: Works on desktops, tablets, and mobile devices
+
+### Vercel Deployment
+
+You can now deploy VibePenTester to Vercel as a web application:
+
+1. Follow the instructions in [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md)
+2. Set up environment variables for API keys (optional)
+3. Connect Google Analytics to track usage
+
 ## 🛠️ Command Line Options
 
 | Option | Description |
 |--------|-------------|
 | `--url` | Target URL to test (required, unless you want to test the void) |
 | `--scope` | Scan scope (url, domain, or subdomain, default: url) |
-| `--provider` | LLM provider to use (openai or anthropic, default: openai) |
-| `--model` | LLM model to use (OpenAI: gpt-4o; Anthropic: claude-3-7-sonnet-20250219, claude-3-7-sonnet-latest, claude-3-5-haiku-20241022) |
+| `--provider` | LLM provider to use (openai, anthropic, or ollama, default: openai) |
+| `--model` | LLM model to use (OpenAI: gpt-4o; Anthropic: claude-3-7-sonnet-20250219, claude-3-7-sonnet-latest, claude-3-5-haiku-20241022; Ollama: llama3, mixtral, etc.) |
 | `--output` | Output directory for results (where the digital dirt gets stored) |
 | `--verbose` | Enable verbose logging (for those who enjoy reading horror stories in real-time) |
+| `--ollama-url` | Ollama server URL (used only with --provider=ollama, default: http://localhost:11434) |
 
 ## 🏗️ Architecture
 
@@ -95,7 +127,7 @@ VibePenTester is built with a modular architecture consisting of several key com
 
 - **OpenAI Swarm**: The backbone of our multi-agent system, leveraging OpenAI's powerful swarm architecture to coordinate multiple specialized agents (it's like The Avengers, but for hacking)
 - **SwarmCoordinator**: Orchestrates the scanning process and manages other components (the micromanager you actually want)
-- **LLMProvider**: Unified interface to different LLM providers (OpenAI and Anthropic) (the universal translator of AI dialects)
+- **LLMProvider**: Unified interface to different LLM providers (OpenAI, Anthropic, and Ollama) (the universal translator of AI dialects)
 - **Scanner**: Handles web page interaction and data collection (digital detective with OCD)
 - **Agents**: Specialized security testing agents focusing on different aspects
   - Discovery agents for URL and attack surface identification (the nosy neighbors of the internet)
@@ -103,6 +135,43 @@ VibePenTester is built with a modular architecture consisting of several key com
 - **Tools**: Collection of testing and exploitation tools (like a Swiss Army knife, but for breaking things ethically)
 - **Proxy**: Monitors and captures network traffic (the internet equivalent of reading someone's diary)
 - **Reporter**: Analyzes findings and generates detailed reports (turns chaos into PowerPoint-ready content)
+
+## 🔄 Small Model Support
+
+When using resource-constrained local models via Ollama, VibePenTester adapts intelligently:
+
+- **Smart Function Calling**: Advanced JSON extraction capabilities for models with limited function calling abilities
+- **Fallback Mechanisms**: Multi-tiered fallbacks when tool calls aren't generated properly:
+  - Text parsing to extract test plans from unstructured outputs
+  - Default security plans based on OWASP top vulnerabilities
+- **Context Optimization**: Reduced memory context window to stay within token limits of smaller models
+- **Temperature Tuning**: Lower temperature settings (0.2) for more deterministic outputs with local models
+- **Prompt Engineering**: Simplified system prompts with explicit examples for models like deepseek-r1
+- **Default Testing Plans**: Automatic generation of sensible testing plans when a model can't create one
+
+These features ensure VibePenTester works effectively even with smaller open-source models (deepseek-r1, phi, gemma, mistral) that may have limited tool usage capabilities.
+
+### Troubleshooting Ollama Integration
+
+If you encounter issues with Ollama:
+
+1. **Connectivity Problems**: 
+   - Ensure Ollama is running with `ollama serve`
+   - Check that the default URL (http://localhost:11434) is accessible
+   - For remote servers, verify network connectivity and firewall settings
+
+2. **Model Availability**:
+   - Pull required models first: `ollama pull llama3`
+   - For smaller models, try using our built-in fallbacks: `--provider ollama --model deepseek-r1`
+
+3. **Performance Issues**:
+   - For local resource constraints, use smaller models like Phi-2 or Gemma
+   - For comprehensive security testing, prefer larger models like Llama3, Mixtral, or DeepSeek-Coder
+   - Set appropriate CUDA environment variables for GPU acceleration
+
+4. **Function Calling Problems**:
+   - If security plans seem incomplete, the fallback mechanisms will automatically engage
+   - For best results with smaller models, stick to simpler target websites
 
 ## 📊 Example Report
 
@@ -124,11 +193,12 @@ Reports are generated in both text and markdown formats, containing:
 ## 📋 TODOs
 
 - [x] Add support for Anthropic Claude models
+- [x] Support for custom LLM model deployment (via Ollama integration)
+- [x] Enhanced PlannerAgent to support smaller models with limited capabilities (like deepseek-r1)
 - [ ] Integrate vision API capabilities for visual analysis
 - [ ] Run against HackerOne reports to find first LLM-powered vulnerability in the wild
-- [ ] Implement more sophisticated planning algorithms
-- [ ] Add better execution strategies and error handling
-- [ ] Support for custom LLM model deployment
+- [x] Implement more sophisticated planning algorithms with fallback mechanisms
+- [x] Add better execution strategies and error handling for Ollama models
 - [ ] Add collaborative testing capabilities
 - [ ] Improve subdomain enumeration techniques
 - [ ] Add API security testing capabilities

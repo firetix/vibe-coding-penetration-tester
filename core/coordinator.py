@@ -12,7 +12,8 @@ from utils.reporter import Reporter
 class SwarmCoordinator:
     """Coordinates the activities of multiple specialized security testing agents operating in a swarm."""
     
-    def __init__(self, url: str, model: str, provider: str, scope: str, output_dir: str, config: Dict[str, Any]):
+    def __init__(self, url: str, model: str, provider: str, scope: str, output_dir: str, config: Dict[str, Any], 
+                 openai_api_key: str = None, anthropic_api_key: str = None):
         self.url = url
         self.model = model
         self.provider = provider
@@ -21,7 +22,12 @@ class SwarmCoordinator:
         self.config = config
         self.logger = get_logger()
         
-        self.llm_provider = LLMProvider(provider=provider, model=model)
+        self.llm_provider = LLMProvider(
+            provider=provider, 
+            model=model,
+            openai_api_key=openai_api_key,
+            anthropic_api_key=anthropic_api_key
+        )
         self.scanner = Scanner()
         self.reporter = Reporter(output_dir)
         

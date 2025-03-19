@@ -40,7 +40,9 @@ class BaseAgent:
             messages.append({"role": "system", "content": system_prompt})
         
         # Add context from memory
-        for mem in self.memory[-5:]:  # Only use the last 5 memory items to avoid context overflow
+        # Use fewer memory items for Ollama to reduce context length
+        memory_limit = 3 if hasattr(self.llm_provider, 'provider') and self.llm_provider.provider == "ollama" else 5
+        for mem in self.memory[-memory_limit:]:
             messages.append(mem)
         
         # Add the current input
@@ -52,10 +54,21 @@ class BaseAgent:
             input_text = f"Process the following information: {input_data}"
             messages.append({"role": "user", "content": input_text})
         
+        # Adjust temperature based on provider
+        # Use lower temperature for Ollama to improve reliability
+        temperature = 0.5 if hasattr(self.llm_provider, 'provider') and self.llm_provider.provider == "ollama" else 0.7
+        
+        # Check if we're using a small Ollama model that might need even more temperature adjustment
+        if (hasattr(self.llm_provider, 'provider') and self.llm_provider.provider == "ollama" and
+            hasattr(self.llm_provider, 'model') and 
+            any(small_model in self.llm_provider.model.lower() for small_model in ["r1", "deepseek", "phi", "gemma", "mistral"])):
+            temperature = 0.2  # Even lower temperature for smaller models
+            self.logger.debug(f"Using low temperature (0.2) for small Ollama model: {self.llm_provider.model}")
+        
         # Generate response
         raw_response = self.llm_provider.chat_completion(
             messages=messages,
-            temperature=0.7,
+            temperature=temperature,
             tools=self.tools if self.tools else None
         )
         

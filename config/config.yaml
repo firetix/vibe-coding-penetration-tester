@@ -32,3 +32,8 @@ llm:
   anthropic:
     temperature: 0.7
     max_tokens: 4000
+  ollama:
+    temperature: 0.7
+    max_tokens: 4000
+    # Default model to use if none specified
+    default_model: "llama3"

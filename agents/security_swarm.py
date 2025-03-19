@@ -212,26 +212,47 @@ class PlannerAgent(BaseAgent):
         super().__init__("PlannerAgent", "security_planner", llm_provider, tools)
         # Initialize browser tools
         self.browser_tools = BrowserTools(debug=True)
+        
+        # Track if we're using Ollama for special handling
+        self.is_ollama = llm_provider.provider == "ollama"
+        self.model_name = llm_provider.model
     
     def create_plan(self, url: str, page_info: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a comprehensive security testing plan based on page analysis."""
-        system_prompt = """
-        You are a security planning expert. Your job is to analyze web pages and create comprehensive security testing plans.
-        Focus on these common web vulnerabilities:
-        1. Cross-Site Scripting (XSS)
-        2. SQL Injection
-        3. Cross-Site Request Forgery (CSRF)
-        4. Authentication/Session issues
-        5. Insecure Direct Object References
+        # Determine if we should use a simplified prompt for smaller models
+        is_small_model = self.is_ollama and any(model_id in self.model_name.lower() 
+                                              for model_id in ["r1", "deepseek", "phi", "gemma", "mistral"])
         
-        For Google Gruyere application, pay special attention to:
-        - The snippets.gtl endpoint with the uid parameter, which is known to be vulnerable to XSS
-        - Any form submission that processes user input
-        - Parameters that might be processed on the server side
-        
-        Evaluate the page content, forms, inputs, and overall structure to identify potential security risks.
-        Create a prioritized list of security tests targeting the most critical components first.
-        """
+        if is_small_model:
+            self.logger.info(f"Using simplified prompt for smaller Ollama model: {self.model_name}")
+            system_prompt = """
+            Create a security testing plan for web applications. Focus on these vulnerabilities:
+            1. XSS: Test form inputs and URL parameters for script injection
+            2. SQL Injection: Test search forms and ID parameters 
+            3. CSRF: Check if forms use tokens
+            4. Auth Issues: Test login forms
+            5. IDOR: Test access to resources using different IDs
+            
+            Respond with a list of security tests to run.
+            """
+        else:
+            system_prompt = """
+            You are a security planning expert. Your job is to analyze web pages and create comprehensive security testing plans.
+            Focus on these common web vulnerabilities:
+            1. Cross-Site Scripting (XSS)
+            2. SQL Injection
+            3. Cross-Site Request Forgery (CSRF)
+            4. Authentication/Session issues
+            5. Insecure Direct Object References
+            
+            For Google Gruyere application, pay special attention to:
+            - The snippets.gtl endpoint with the uid parameter, which is known to be vulnerable to XSS
+            - Any form submission that processes user input
+            - Parameters that might be processed on the server side
+            
+            Evaluate the page content, forms, inputs, and overall structure to identify potential security risks.
+            Create a prioritized list of security tests targeting the most critical components first.
+            """
         
         # Check if URL might be Google Gruyere
         is_gruyere = "gruyere" in url.lower()
@@ -250,6 +271,13 @@ class PlannerAgent(BaseAgent):
             "content": content_text
         }
         
+        # Add extra instruction for Ollama models to help them with tool usage
+        if self.is_ollama:
+            input_data["content"] += "\n\nIMPORTANT: You must respond using the create_security_plan function with a list of tasks to test for vulnerabilities."
+            if is_small_model:
+                # Add even more explicit instructions for small models
+                input_data["content"] += "\nExample usage: create_security_plan(tasks=[{\"type\": \"xss\", \"target\": \"search form\", \"priority\": \"high\"}])"
+        
         response = self.think(input_data, system_prompt)
         
         if response.get("tool_calls"):
@@ -266,9 +294,168 @@ class PlannerAgent(BaseAgent):
             
             return self.execute_tool(tool_call)
         else:
-            # Fallback if no tool call was made
-            self.logger.warning("PlannerAgent did not generate a tool call for planning")
-            return {"tasks": []}
+            # Fallback if no tool call was made - parse the text response if available
+            self.logger.warning("PlannerAgent did not generate a tool call for planning, attempting fallback parsing")
+            
+            # Extract plan from text content if available
+            content = response.get("content", "")
+            if content and (self.is_ollama or "plan" in content.lower() or "task" in content.lower()):
+                self.logger.info("Attempting to parse security plan from text content")
+                return self._parse_plan_from_text(content, url)
+            else:
+                # Use default minimal plan if no useful content
+                self.logger.warning("Using default minimal security plan")
+                return self._create_default_plan(url)
+    
+    def _parse_plan_from_text(self, content: str, url: str) -> Dict[str, Any]:
+        """Attempt to parse a security plan from text content."""
+        self.logger.info("Parsing security plan from text content")
+        
+        # Initialize empty plan
+        plan = {"tasks": []}
+        
+        # Look for task descriptions in the text
+        lines = content.split('\n')
+        current_type = None
+        task_count = 0
+        
+        # Common security test types to look for
+        test_types = {
+            "xss": ["xss", "cross-site scripting", "script injection"],
+            "sqli": ["sql", "sqli", "injection", "database"],
+            "csrf": ["csrf", "cross-site request forgery", "token"],
+            "auth": ["auth", "login", "password", "authentication", "session"],
+            "idor": ["idor", "insecure direct object", "access control"],
+            "scan": ["scan", "reconnaissance", "header", "information disclosure"]
+        }
+        
+        # Process each line
+        for line in lines:
+            line = line.strip().lower()
+            
+            # Skip empty lines
+            if not line:
+                continue
+                
+            # Try to determine task type
+            detected_type = None
+            for test_type, keywords in test_types.items():
+                if any(keyword in line for keyword in keywords):
+                    detected_type = test_type
+                    break
+            
+            # If we found a type, create a new task
+            if detected_type:
+                current_type = detected_type
+                
+                # Extract target from line if possible
+                target = url
+                
+                # Look for form or parameter references
+                if "form" in line:
+                    target = "input forms"
+                elif "param" in line:
+                    target = "URL parameters"
+                elif "search" in line:
+                    target = "search functionality"
+                elif "login" in line:
+                    target = "login form"
+                
+                # Determine priority based on keywords
+                priority = "medium"
+                if any(word in line for word in ["critical", "severe", "important", "high"]):
+                    priority = "high"
+                elif any(word in line for word in ["minor", "low", "minimal"]):
+                    priority = "low"
+                
+                # Create task
+                task = {
+                    "type": current_type,
+                    "target": target,
+                    "priority": priority
+                }
+                
+                plan["tasks"].append(task)
+                task_count += 1
+        
+        # If we couldn't parse any tasks, fall back to default plan
+        if task_count == 0:
+            self.logger.warning("Could not parse any tasks from text, using default plan")
+            return self._create_default_plan(url)
+        else:
+            self.logger.info(f"Successfully parsed {task_count} tasks from text content")
+            return plan
+    
+    def _create_default_plan(self, url: str) -> Dict[str, Any]:
+        """Create a default security testing plan covering OWASP top vulnerabilities."""
+        self.logger.info("Creating default security testing plan based on OWASP Top 10")
+        
+        # Create a default plan covering the main vulnerability types
+        default_plan = {
+            "tasks": [
+                {
+                    "type": "xss",
+                    "target": "all input forms",
+                    "priority": "high"
+                },
+                {
+                    "type": "sqli",
+                    "target": "search functionality",
+                    "priority": "high"
+                },
+                {
+                    "type": "csrf",
+                    "target": "form submissions",
+                    "priority": "medium"
+                },
+                {
+                    "type": "auth",
+                    "target": "login functionality",
+                    "priority": "high"
+                },
+                {
+                    "type": "idor",
+                    "target": "user-specific resources",
+                    "priority": "medium"
+                },
+                {
+                    "type": "scan",
+                    "target": url,
+                    "priority": "medium"
+                }
+            ]
+        }
+        
+        # Check if Gruyere-specific plan is needed
+        if "gruyere" in url.lower():
+            self.logger.info("Using Gruyere-specific default plan")
+            gruyere_plan = {
+                "tasks": [
+                    {
+                        "type": "xss",
+                        "target": "snippets.gtl?uid parameter",
+                        "priority": "high"
+                    },
+                    {
+                        "type": "sqli", 
+                        "target": "search functionality",
+                        "priority": "high"
+                    },
+                    {
+                        "type": "csrf",
+                        "target": "form submissions",
+                        "priority": "medium"
+                    },
+                    {
+                        "type": "scan",
+                        "target": url,
+                        "priority": "medium"
+                    }
+                ]
+            }
+            return gruyere_plan
+        
+        return default_plan
 
 class ScannerAgent(BaseAgent):
     """Agent specializing in general security scanning."""

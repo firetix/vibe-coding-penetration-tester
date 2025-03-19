@@ -13,10 +13,11 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="VibePenTester - Advanced AI Security Testing Agent")
     parser.add_argument("--url", type=str, required=True, help="Target URL to scan")
     parser.add_argument("--model", type=str, default="gpt-4o", help="LLM model to use")
-    parser.add_argument("--provider", type=str, default="openai", choices=["openai", "anthropic"], help="LLM provider")
+    parser.add_argument("--provider", type=str, default="openai", choices=["openai", "anthropic", "ollama"], help="LLM provider")
     parser.add_argument("--scope", type=str, default="url", choices=["url", "domain", "subdomain"], help="Scan scope")
     parser.add_argument("--output", type=str, default="reports", help="Output directory for reports")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--ollama-url", type=str, default="http://localhost:11434", help="Ollama server URL (used only with --provider=ollama)")
     return parser.parse_args()
 
 def main():
@@ -29,6 +30,17 @@ def main():
     
     # Load configuration
     config = load_config()
+    
+    # Set Ollama URL in environment if using Ollama provider
+    if args.provider == "ollama":
+        os.environ["OLLAMA_BASE_URL"] = args.ollama_url
+        logger.info(f"Using Ollama server at {args.ollama_url}")
+        
+        # If no specific model is provided, use the default from config
+        if args.model == "gpt-4o":  # This is the default model, so user didn't specify one
+            default_ollama_model = config.get("llm", {}).get("ollama", {}).get("default_model", "llama3")
+            logger.info(f"No specific model provided for Ollama, using default: {default_ollama_model}")
+            args.model = default_ollama_model
     
     # Prepare output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

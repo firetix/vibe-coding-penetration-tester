@@ -10,19 +10,55 @@ import re
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory
 
-# Setup logging
+# Setup logging - check if we're in a cloud environment like Vercel
+import sys
+import os
+
+# Determine if we're running in Vercel or similar read-only environment
+is_vercel = os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV') is not None
+
+# Configure appropriate logging handlers
+log_handlers = [logging.StreamHandler()]
+if not is_vercel:
+    try:
+        # Only add file handler in non-Vercel environment
+        log_handlers.append(logging.FileHandler('web_ui.log'))
+    except OSError as e:
+        print(f"Warning: Could not create log file, continuing with stream logging only: {str(e)}", file=sys.stderr)
+
+# Setup the logger
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('web_ui.log')
-    ]
+    handlers=log_handlers
 )
 logger = logging.getLogger('web_ui')
 
+# Log the environment we're running in
+if is_vercel:
+    logger.info("Running in Vercel environment, file logging disabled")
+
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
+
+# In Vercel, use /tmp for storing reports since the main directory is read-only
+if is_vercel:
+    app.config['UPLOAD_FOLDER'] = '/tmp/vibe_pen_tester_reports'
+    logger.info(f"Using Vercel-compatible tmp directory for reports: {app.config['UPLOAD_FOLDER']}")
+else:
+    app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
+    logger.info(f"Using standard directory for reports: {app.config['UPLOAD_FOLDER']}")
+
+# Make sure reports directory exists
+try:
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    logger.info(f"Successfully created reports directory: {app.config['UPLOAD_FOLDER']}")
+except Exception as e:
+    logger.error(f"Failed to create reports directory: {str(e)}")
+    # Fall back to /tmp if we can't create the standard directory
+    if not is_vercel:
+        app.config['UPLOAD_FOLDER'] = '/tmp/vibe_pen_tester_reports'
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        logger.info(f"Using fallback tmp directory for reports: {app.config['UPLOAD_FOLDER']}")
 
 # Store scan status
 scan_status = {
@@ -60,8 +96,15 @@ def start_scan():
     url = request.form.get('url')
     model = request.form.get('model', 'gpt-4o')  # Default to gpt-4o if not specified
     provider = request.form.get('provider', 'openai')  # Default to openai if not specified
+    ollama_url = request.form.get('ollama_url', 'http://localhost:11434')  # Default Ollama URL
+    
+    # Get API keys from the form if provided
+    openai_api_key = request.form.get('openai_api_key')
+    anthropic_api_key = request.form.get('anthropic_api_key')
     
     logger.info(f"Requested scan for URL: {url} using {provider} model: {model}")
+    if provider == "ollama":
+        logger.info(f"Using Ollama server at: {ollama_url}")
     
     if not url:
         logger.warning("Rejected scan request: No URL provided")
@@ -78,6 +121,7 @@ def start_scan():
         "url": url,
         "model": model,
         "provider": provider,
+        "ollama_url": ollama_url if provider == "ollama" else None,
         "report_path": "",
         "error": None,
         "agent_logs": [],
@@ -88,7 +132,17 @@ def start_scan():
     logger.info(f"Scan status initialized for {url} with {provider} model: {model}")
     
     # Start scan in a background thread
-    scan_thread = threading.Thread(target=run_scan, args=(url, model, provider))
+    scan_thread = threading.Thread(
+        target=run_scan, 
+        args=(
+            url, 
+            model, 
+            provider, 
+            ollama_url if provider == "ollama" else None,
+            openai_api_key,
+            anthropic_api_key
+        )
+    )
     scan_thread.daemon = True
     scan_thread.start()
     logger.info(f"Scan thread started for {url}")
@@ -98,10 +152,12 @@ def start_scan():
         "message": f"Scan started for {url} using {provider}:{model}"
     })
 
-def run_scan(url, model="gpt-4o", provider="openai"):
+def run_scan(url, model="gpt-4o", provider="openai", ollama_url=None, openai_api_key=None, anthropic_api_key=None):
     global scan_status
     
     logger.info(f"Starting scan process for {url} using {provider} model: {model}")
+    if provider == "ollama" and ollama_url:
+        logger.info(f"Using Ollama server at: {ollama_url}")
     
     try:
         # Generate a timestamp for the report directory
@@ -244,680 +300,54 @@ def run_scan(url, model="gpt-4o", provider="openai"):
             ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
             return ansi_escape.sub('', text)
         
-        # Construct the command
-        cmd = [
-            "python", 
-            "main.py",
-            "--url", url,
-            "--scope", "url",
-            "--model", model,
-            "--provider", provider
-        ]
-        logger.info(f"Constructed command: {' '.join(cmd)}")
+        # Set Ollama URL in environment if using Ollama provider
+        if provider == "ollama" and ollama_url:
+            os.environ["OLLAMA_BASE_URL"] = ollama_url
+            logger.info(f"Using Ollama server at {ollama_url}")
         
-        # Run the command
-        logger.info("Starting subprocess")
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True
-        )
-        logger.debug(f"Subprocess started with PID: {process.pid}")
+        # Set API keys in environment if provided
+        if provider == "openai" and openai_api_key:
+            os.environ["OPENAI_API_KEY"] = openai_api_key
+            logger.info("Using OpenAI API key from form input")
         
-        # Monitor output
-        logger.info("Monitoring subprocess output")
-        while True:
-            output_line = process.stdout.readline()
-            if output_line:
-                # Strip ANSI color codes for logging and pattern matching
-                clean_line = strip_ansi_codes(output_line.strip())
-                logger.debug(f"Process output: {clean_line}")
-                
-                # Log the raw line for debugging purposes
-                logger.debug(f"Raw process output: {repr(output_line.strip())}")
-            
-            if not output_line and process.poll() is not None:
-                logger.debug(f"Process ended with return code: {process.returncode}")
-                break
-            
-            # Add all output lines to agent logs (limit to last 100 entries)
-            if output_line.strip():
-                # Add timestamp to log entries
-                log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {output_line.strip()}"
-                scan_status["agent_logs"].append(log_entry)
-                # Keep only the last 100 log entries
-                if len(scan_status["agent_logs"]) > 100:
-                    scan_status["agent_logs"] = scan_status["agent_logs"][-100:]
-            
-            # Clean output line for pattern matching
-            clean_line = strip_ansi_codes(output_line.strip())
-            
-            # Extract security action plans and steps - broaden pattern matching
-            # For action plans - match more patterns including agent mapping and security plan generation
-            if any(plan_marker in clean_line.upper() for plan_marker in 
-                   ["ACTION PLAN", "SECURITY PLAN", "TESTING PLAN", "ATTACK PLAN", "SCAN PLAN", 
-                    "PLANNER AGENT", "SECURITY TESTING PLAN", "GENERATING SECURITY", "TASK TO AGENT MAPPING"]):
-                logger.debug(f"Found action plan marker in: {clean_line}")
-                
-                # For agent mapping entries, format them specially
-                if "TASK TO AGENT MAPPING" in clean_line.upper() or "AGENT MAPPING" in clean_line.upper():
-                    # Extract the agent mapping information
-                    mapping_info = ""
-                    if ":" in clean_line:
-                        mapping_info = clean_line.split(":", 1)[1].strip()
-                    else:
-                        mapping_info = clean_line.strip()
-                    
-                    # Create a descriptive entry for the action plan
-                    plan_entry = f"Agent Task Allocation: {mapping_info}"
-                    
-                    # Add it as a task entry rather than replacing the whole plan
-                    if len(scan_status["action_plan"]) > 0:
-                        # Don't add if it's already in the plan
-                        if not any(plan_entry.lower() in item.lower() for item in scan_status["action_plan"]):
-                            scan_status["action_plan"].append(plan_entry)
-                            logger.info(f"Added agent mapping to action plan: {plan_entry}")
-                    else:
-                        # Initialize with a title if the plan is empty
-                        scan_status["action_plan"] = [f"Security Assessment for {scan_status['url']}"]
-                        scan_status["action_plan"].append(plan_entry)
-                        logger.info(f"Created new action plan with agent mapping: {plan_entry}")
-                    
-                    # Update current action
-                    scan_status["current_action"] = "Assigning Tasks to Agents"
-                    
-                    # Add a badge to indicate this is from the planner agent
-                    scan_status["agent_logs"].append(f"[PLANNER] Assigned security testing tasks to specialized agents")
-                
-                # For security plan generation entries
-                elif "GENERATING SECURITY" in clean_line.upper() or "GENERATING" in clean_line.upper() and "PLAN" in clean_line.upper():
-                    # Extract any additional info from the line
-                    plan_info = clean_line
-                    
-                    # Create a descriptive entry
-                    plan_entry = f"Generating Security Test Plan"
-                    
-                    # Add it as a task entry or as the main plan title
-                    if len(scan_status["action_plan"]) == 0:
-                        scan_status["action_plan"] = [f"Preparing Security Assessment for {scan_status['url']}"]
-                        logger.info(f"Created new action plan: {scan_status['action_plan'][0]}")
-                    
-                    # Add the generation step if not already present
-                    if not any("generating" in item.lower() for item in scan_status["action_plan"]):
-                        scan_status["action_plan"].append(plan_entry)
-                        logger.info(f"Added security plan generation to action plan: {plan_entry}")
-                    
-                    # Update current action
-                    scan_status["current_action"] = "Planning Security Tests"
-                    
-                    # Add a badge to indicate this is from the planner agent
-                    scan_status["agent_logs"].append(f"[PLANNER] Generating security testing plan for {scan_status['url']}")
-                
-                # For regular action plan entries
-                else:
-                    if ":" in clean_line:
-                        plan_parts = clean_line.split(":", 1)
-                        if len(plan_parts) > 1:
-                            plan_entry = plan_parts[1].strip()
-                        else:
-                            plan_entry = clean_line.strip()
-                    else:
-                        plan_entry = clean_line.strip()
-                    
-                    # Check if this is a main plan header or a task item
-                    if any(term.lower() in plan_entry.lower() for term in ["security assessment", "security testing plan", "security plan", "action plan"]):
-                        # This appears to be a main plan header
-                        if len(scan_status["action_plan"]) == 0:
-                            # Initialize with this as the main plan if empty
-                            scan_status["action_plan"] = [plan_entry]
-                            logger.info(f"Created new action plan title: {plan_entry}")
-                        else:
-                            # If we already have a plan, keep the existing header and just append any tasks
-                            logger.info(f"Received new plan title, but keeping existing: {scan_status['action_plan'][0]}")
-                    else:
-                        # This appears to be a task entry - add it if we have a plan, otherwise create one
-                        if len(scan_status["action_plan"]) == 0:
-                            scan_status["action_plan"] = [f"Security Assessment for {scan_status['url']}"]
-                            logger.info(f"Created default action plan title before adding task")
-                        
-                        # Add as a new task entry - don't add if duplicate
-                        normalized_entry = re.sub(r'\s*\((Pending|Completed)\)$', '', plan_entry).strip().lower()
-                        if not any(normalized_entry in re.sub(r'\s*\((Pending|Completed)\)$', '', item).strip().lower() 
-                                 for item in scan_status["action_plan"]):
-                            scan_status["action_plan"].append(f"{plan_entry} (Pending)")
-                            logger.info(f"Added new task to action plan: {plan_entry}")
-                        
-                        # Don't initialize action plan - was: scan_status["action_plan"] = [plan_entry]
-                        scan_status["current_action"] = "Planning Security Tests"
-                        
-                        # Add a badge to indicate this is from the planner agent
-                        scan_status["agent_logs"].append(f"[PLANNER] Created security testing plan for {scan_status['url']}")
-            
-            # Update progress based on log messages
-            if "Starting security testing" in clean_line:
-                scan_status["progress"] = 20
-                scan_status["current_task"] = "Starting security testing"
-                # Add to action plan if not already present
-                if len(scan_status["action_plan"]) <= 1:
-                    scan_status["action_plan"].append("Step 1: Target discovery and reconnaissance")
-                # Mark task 1 as completed
-                mark_task_completed(1)
-                logger.debug("Updated scan status: 20% - Starting security testing")
-            elif "Executing xss task" in clean_line or "XSS" in clean_line:
-                scan_status["progress"] = 40
-                scan_status["current_task"] = "Testing for XSS vulnerabilities"
-                scan_status["current_action"] = "XSS Testing"
-                
-                # Add to action plan if not already in the plan
-                has_xss_step = False
-                for step in scan_status["action_plan"]:
-                    if "XSS" in step.upper():
-                        has_xss_step = True
-                        break
-                
-                if not has_xss_step:
-                    scan_status["action_plan"].append("Step 3: Cross-Site Scripting (XSS) vulnerability scanning")
-                
-                # Mark XSS task as completed if it contains completion indicator
-                if any(term in clean_line.lower() for term in ["xss completed", "xss scan complete", "xss testing finished"]):
-                    mark_task_completed(3)
-                
-                logger.debug("Updated scan status: 40% - Testing for XSS vulnerabilities")
-            elif "Executing csrf task" in clean_line or "CSRF" in clean_line:
-                scan_status["progress"] = 60
-                scan_status["current_task"] = "Testing for CSRF vulnerabilities"
-                scan_status["current_action"] = "CSRF Testing"
-                
-                # Add to action plan if not already in the plan
-                has_csrf_step = False
-                for step in scan_status["action_plan"]:
-                    if "CSRF" in step.upper():
-                        has_csrf_step = True
-                        break
-                
-                if not has_csrf_step:
-                    scan_status["action_plan"].append("Step 4: Cross-Site Request Forgery (CSRF) vulnerability detection")
-                
-                # Mark CSRF task as completed if it contains completion indicator
-                if any(term in clean_line.lower() for term in ["csrf completed", "csrf scan complete", "csrf testing finished"]):
-                    mark_task_completed(4)
-                
-                logger.debug("Updated scan status: 60% - Testing for CSRF vulnerabilities")
-            elif "Executing auth task" in clean_line or "auth" in clean_line.lower() or "password" in clean_line.lower():
-                scan_status["progress"] = 80
-                scan_status["current_task"] = "Testing authentication"
-                scan_status["current_action"] = "Authentication Testing"
-                
-                # Add to action plan if not already in the plan
-                has_auth_step = False
-                for step in scan_status["action_plan"]:
-                    if any(auth_term in step.lower() for auth_term in ["auth", "login", "password", "credential"]):
-                        has_auth_step = True
-                        break
-                
-                if not has_auth_step:
-                    scan_status["action_plan"].append("Step 5: Authentication security testing")
-                
-                # Mark auth task as completed if it contains completion indicator
-                if any(term in clean_line.lower() for term in ["auth completed", "auth testing complete", "auth scan finished"]):
-                    mark_task_completed(5)
-                
-                logger.debug("Updated scan status: 80% - Testing authentication")
-            elif "Security testing completed" in clean_line or "report" in clean_line.lower() or "generating" in clean_line.lower():
-                scan_status["progress"] = 90
-                scan_status["current_task"] = "Generating report"
-                scan_status["current_action"] = "Report Generation"
-                
-                # Add to action plan if not already in the plan
-                has_report_step = False
-                for step in scan_status["action_plan"]:
-                    if "report" in step.lower():
-                        has_report_step = True
-                        break
-                
-                if not has_report_step:
-                    scan_status["action_plan"].append("Step 9: Generating Security Assessment Report")
-                
-                # Run deduplication after modifying the plan
-                deduplicate_action_plan()
-                
-                logger.debug("Updated scan status: 90% - Generating report")
-            
-            # Look for specific task completion indicators
-            if "Task complete" in clean_line or "Task completed" in clean_line:
-                for task_id, task_info in task_mapping.items():
-                    for keyword in task_info["keywords"]:
-                        if keyword.lower() in clean_line.lower():
-                            mark_task_completed(task_id)
-                            # Run deduplication after marking tasks completed
-                            deduplicate_action_plan()
-                            break
-            
-            # For steps - more flexible matching
-            elif (("Step " in clean_line or "STEP " in clean_line or "Task " in clean_line or clean_line.strip().startswith("-") or 
-                  clean_line.strip().startswith("*") or clean_line.strip().startswith("•") or
-                  clean_line.strip().startswith("#") or
-                  (len(clean_line.strip()) > 2 and clean_line.strip()[0].isdigit() and clean_line.strip()[1] in [".", ")", ":"]))
-                  and len(clean_line.strip()) > 5):
-                
-                # This looks like a step in an action plan
-                step_entry = clean_line.strip()
-                
-                # Check if this is updating a pending step
-                step_match = re.search(r'Step\s+(\d+)', step_entry, re.IGNORECASE)
-                task_match = re.search(r'Task\s+(\d+)', step_entry, re.IGNORECASE)
-                step_num = None
-                
-                if step_match:
-                    step_num = int(step_match.group(1))
-                elif task_match:
-                    step_num = int(task_match.group(1))
-                
-                if step_num is not None and len(scan_status["action_plan"]) > step_num:
-                    # Build a pattern that will match a placeholder with this step number,
-                    # but with any task description
-                    placeholder_pattern = f"Step {step_num}:[^(]*\\(Pending\\)"
-                    found_placeholder = False
-                    
-                    for i, plan_item in enumerate(scan_status["action_plan"]):
-                        if re.search(placeholder_pattern, plan_item, re.IGNORECASE):
-                            # Extract the description from the pending item if we want to preserve it
-                            try:
-                                pending_desc = re.search(f"Step {step_num}: (.*) \\(Pending\\)", plan_item, re.IGNORECASE).group(1)
-                                
-                                # If the current step has better description, use it
-                                if ":" in step_entry:
-                                    active_desc = step_entry.split(":", 1)[1].strip()
-                                    # Use the best description (current or previous)
-                                    better_desc = active_desc if len(active_desc) > 10 else pending_desc
-                                    
-                                    # Create a more informative step entry without the "pending" tag
-                                    updated_step = f"Step {step_num}: {better_desc}"
-                                else:
-                                    # No good description in current log, use the one from placeholder
-                                    updated_step = f"Step {step_num}: {pending_desc}"
-                            except:
-                                # If we can't extract, just use the current entry
-                                updated_step = step_entry
-                                
-                            # Replace the placeholder with the actual step
-                            logger.info(f"Replacing placeholder step {step_num} with actual step: {updated_step}")
-                            scan_status["action_plan"][i] = updated_step
-                            found_placeholder = True
-                            break
-                    
-                    # If no placeholder was found, append as a new step
-                    if not found_placeholder:
-                        scan_status["action_plan"].append(step_entry)
-                        logger.info(f"Added step to action plan: {step_entry}")
-                else:
-                    # No placeholder found or no step number, just append
-                    scan_status["action_plan"].append(step_entry)
-                    logger.info(f"Added step to action plan: {step_entry}")
-                
-                # Also use this as the current action if it's descriptive enough
-                if len(step_entry) > 10:
-                    if ":" in step_entry:
-                        action_desc = step_entry.split(":", 1)[1].strip()
-                        if action_desc:
-                            scan_status["current_action"] = action_desc[:50] + ("..." if len(action_desc) > 50 else "")
-                    else:
-                        scan_status["current_action"] = step_entry[:50] + ("..." if len(step_entry) > 50 else "")
-                
-            # For vulnerabilities
-            elif "Discovered vulnerability:" in clean_line or "VULNERABILITY FOUND" in clean_line.upper() or "FOUND VULNERABILITY" in clean_line.upper():
-                try:
-                    if ":" in clean_line:
-                        vuln_info = clean_line.split(":", 1)[1].strip()
-                    else:
-                        vuln_info = clean_line.strip()
-                    
-                    scan_status["agent_logs"].append(f"[VULNERABILITY] {vuln_info}")
-                    scan_status["current_action"] = f"Found: {vuln_info[:30]}..."
-                    
-                    # Don't add vulnerabilities to the action plan, only to logs
-                    logger.info(f"Found vulnerability: {vuln_info}")
-                except Exception as e:
-                    logger.error(f"Error processing vulnerability line: {str(e)}")
-                
-            # Check for task execution in logs to update pending tasks
-            elif any(task_marker in clean_line.lower() for task_marker in ["executing", "testing", "scanning", "checking", "generating", "executing tool"]):
-                # This might indicate a task is being executed
-                task_types = ["sqli", "sql injection", "xss", "cross-site", "csrf", "request forgery",
-                             "auth", "authentication", "session", "idor", "access control"]
-                
-                # Check which task type this might be
-                matched_type = None
-                for task_type in task_types:
-                    if task_type.lower() in clean_line.lower():
-                        matched_type = task_type
-                        break
-                
-                if matched_type:
-                    # Try to find a pending task that matches this type
-                    found = False
-                    matched_index = -1
-                    
-                    # Go through all action plan items looking for pending ones
-                    for i, plan_item in enumerate(scan_status["action_plan"]):
-                        if "(Pending)" in plan_item and matched_type.lower() in plan_item.lower():
-                            # Found a matching pending task
-                            matched_index = i
-                            found = True
-                            break
-                    
-                    if found and matched_index >= 0:
-                        # Update the pending task to remove the pending marker
-                        current_task = scan_status["action_plan"][matched_index]
-                        updated_task = current_task.replace("(Pending)", "").strip()
-                        scan_status["action_plan"][matched_index] = updated_task
-                        logger.info(f"Updated task from pending to active: {updated_task}")
-                        
-                        # Set as current action
-                        task_desc = updated_task.split(": ", 1)[1] if ": " in updated_task else updated_task
-                        scan_status["current_action"] = f"Executing: {task_desc[:30]}..."
-            
-            # Check for timestamp and potential task information (like agent mapping) logs
-            elif re.search(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', clean_line) and any(term in clean_line.lower() for term in ["agent", "task", "mapping", "scanner", "xss", "sqli", "csrf", "auth"]):
-                # This might be a formatted log entry with task information
-                logger.debug(f"Found potential task mapping information: {clean_line}")
-                
-                # Check for agent task mapping patterns
-                mapping_match = re.search(r'task to agent mapping[:\s]+(.+)', clean_line, re.IGNORECASE)
-                if mapping_match:
-                    # Extract agent mapping information
-                    mapping_info = mapping_match.group(1).strip()
-                    logger.info(f"Extracted agent mapping information: {mapping_info}")
-                    
-                    # Create a descriptive entry for the action plan
-                    plan_entry = f"Agent Task Allocation: {mapping_info}"
-                    
-                    # Add it as a task entry rather than replacing the whole plan
-                    if len(scan_status["action_plan"]) > 0:
-                        # Don't add if it's already in the plan
-                        if not any(plan_entry.lower() in item.lower() for item in scan_status["action_plan"]):
-                            scan_status["action_plan"].append(plan_entry)
-                            logger.info(f"Added agent mapping to action plan: {plan_entry}")
-                    else:
-                        # Initialize with a title if the plan is empty
-                        scan_status["action_plan"] = [f"Security Assessment for {scan_status['url']}"]
-                        scan_status["action_plan"].append(plan_entry)
-                        logger.info(f"Created new action plan with agent mapping: {plan_entry}")
-                    
-                    # Update current action
-                    scan_status["current_action"] = "Assigning Tasks to Agents"
-                    
-                    # Add a badge to indicate this is from the planner agent
-                    scan_status["agent_logs"].append(f"[PLANNER] Assigned security testing tasks to specialized agents")
-                    
-                    # Run deduplication
-                    deduplicate_action_plan()
-            
-            # Check for generating security plan entries with timestamps
-            elif re.search(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', clean_line) and any(term in clean_line.lower() for term in ["generating security", "generating plan", "security plan"]):
-                # This might be a security plan generation entry
-                logger.debug(f"Found potential security plan generation entry: {clean_line}")
-                
-                # Create a descriptive entry
-                plan_entry = "Generating Security Test Plan"
-                
-                # Extract additional context if available
-                plan_info = re.sub(r'\[[^\]]+\]', '', clean_line).strip()  # Remove bracketed content
-                plan_info = re.sub(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', '', plan_info).strip()  # Remove timestamps
-                
-                # Add context to the plan entry if it's meaningful
-                if len(plan_info) > 10 and not plan_info.lower().startswith(('debug', 'info', 'warning', 'error')):
-                    plan_entry = f"Generating Security Test Plan: {plan_info}"
-                
-                # Add it as a task entry or initialize the plan
-                if len(scan_status["action_plan"]) == 0:
-                    scan_status["action_plan"] = [f"Preparing Security Assessment for {scan_status['url']}"]
-                    logger.info(f"Created new action plan: {scan_status['action_plan'][0]}")
-                
-                # Add the generation step if not already present
-                if not any("generating" in item.lower() for item in scan_status["action_plan"]):
-                    scan_status["action_plan"].append(plan_entry)
-                    logger.info(f"Added security plan generation to action plan: {plan_entry}")
-                
-                # Update current action
-                scan_status["current_action"] = "Planning Security Tests"
-                
-                # Add a badge to indicate this is from the planner agent
-                scan_status["agent_logs"].append(f"[PLANNER] Generating security testing plan for {scan_status['url']}")
-                
-                # Run deduplication
-                deduplicate_action_plan()
-            
-            # Check for any security-related messages with timestamps that should update the current action
-            elif re.search(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', clean_line) and any(term in clean_line.lower() for term in ["security", "vulnerability", "scanning", "testing"]):
-                # This might be a significant log entry to update the current action
-                cleaned_message = re.sub(r'\[[^\]]+\]', '', clean_line).strip()  # Remove bracketed content
-                cleaned_message = re.sub(r'\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}', '', cleaned_message).strip()  # Remove timestamps
-                
-                # Only use messages that are concise enough for the action badge
-                if len(cleaned_message) <= 50:
-                    # Update current action if it's a meaningful message
-                    if not cleaned_message.lower().startswith(('debug', 'info', 'warning', 'error')):
-                        scan_status["current_action"] = cleaned_message
-                        logger.debug(f"Updated current action from log: {cleaned_message}")
-            
-            # Look for specific security plan markers in the logs
-            elif "Creating security plan with" in clean_line:
-                # This is a clear indicator that a security plan was created
-                # Extract the number of tasks if available
-                tasks_count_match = re.search(r"Creating security plan with\s+(\d+)\s+tasks?", clean_line)
-                if tasks_count_match:
-                    tasks_count = int(tasks_count_match.group(1))
-                    logger.info(f"Detected security plan with {tasks_count} tasks")
-                    
-                    # If we don't already have a plan, create one
-                    if len(scan_status["action_plan"]) == 0:
-                        scan_status["action_plan"] = [f"Security Assessment Plan for {scan_status['url']}"]
-                    
-                    # Use default security tasks - will be replaced when actual tasks are found
-                    default_security_tasks = [
-                        "SQL Injection testing",
-                        "Cross-Site Scripting (XSS) vulnerability scanning",
-                        "Cross-Site Request Forgery (CSRF) protection check",
-                        "Authentication & Authorization testing", 
-                        "Session management security analysis",
-                        "Access control verification",
-                        "Security header verification",
-                        "Input validation tests",
-                        "Sensitive data exposure checks",
-                        "Error handling & information leakage tests"
-                    ]
-                    
-                    # Add tasks with pending status
-                    for i in range(1, min(tasks_count + 1, len(default_security_tasks) + 1)):
-                        # Check if we already have enough tasks
-                        if i > len(scan_status["action_plan"]) - 1:  # -1 for the title
-                            task_name = f"Step {i}: {default_security_tasks[i-1]} (Pending)"
-                            scan_status["action_plan"].append(task_name)
-                            logger.info(f"Added placeholder for security task {i}: {default_security_tasks[i-1]}")
-            
-            # Extract task details from logs - look for task arguments
-            elif any(x in clean_line.lower() for x in ["security plan", "planner", "security testing plan"]) or ("tasks" in clean_line.lower() and ("type" in clean_line.lower() and "target" in clean_line.lower())):
-                try:
-                    # This looks like task information from the planner agent
-                    logger.info("Found potential task details in logs from planner agent")
-                    
-                    # Add a planner agent log entry
-                    if "security plan" in clean_line.lower() or "planner" in clean_line.lower():
-                        scan_status["agent_logs"].append(f"[PLANNER] Processing security testing plan")
-                    
-                    # Look for task type and target patterns - match different formats
-                    # Format 1: {'type': 'xxx', 'target': 'yyy', 'priority': 'zzz'}
-                    # Format 2: type=xxx target=yyy
-                    task_matches = []
-                    
-                    # Try specific patterns for the log format you provided
-                    # Example: {"type":"sqli","target":"snippets.gtl?uid=cheddar","priority":"high"}
-                    format0_matches = re.finditer(r'[{"]type[":]+"([^"]+)"[,:\s]+[":]?target[":]+"([^"]+)"', clean_line)
-                    for match in format0_matches:
-                        task_matches.append(match)
-                    
-                    # Try the {'type': 'xxx', 'target': 'yyy'} format
-                    if not task_matches:
-                        format1_matches = re.finditer(r"[{']type['\"]?:\s*['\"]([^'\"]+)['\"],\s*['\"]?target['\"]?:\s*['\"]([^'\"]+)", clean_line)
-                        for match in format1_matches:
-                            task_matches.append(match)
-                    
-                    # If nothing found, try the simpler 'type=xxx target=yyy' format
-                    if not task_matches:
-                        format2_matches = re.finditer(r"type\s*=\s*[\'\"]?([^\'\"}\s,]+)[\'\"]?[,\s]+target\s*=\s*[\'\"]?([^\'\"}\s,]+)", clean_line)
-                        for match in format2_matches:
-                            task_matches.append(match)
-                    
-                    tasks_found = []
-                    for match in task_matches:
-                        try:
-                            task_type = match.group(1)
-                            task_target = match.group(2)
-                            
-                            # Clean up the values
-                            task_type = task_type.strip("'\" ")
-                            task_target = task_target.strip("'\" ")
-                            
-                            # Only add if we have valid values
-                            if task_type and task_target:
-                                tasks_found.append((task_type, task_target))
-                        except Exception as e:
-                            logger.error(f"Error extracting task match: {str(e)}")
-                    
-                    # If we found tasks, ensure they're represented in the action plan
-                    if tasks_found:
-                        logger.info(f"Extracted {len(tasks_found)} tasks from logs")
-                        
-                        # Make sure we have a basic action plan
-                        if len(scan_status["action_plan"]) == 0:
-                            scan_status["action_plan"] = [f"Security Assessment of {scan_status['url']}"]
-                        
-                        # For each task, either add it or update an existing one
-                        for i, (task_type, task_target) in enumerate(tasks_found, 1):
-                            task_desc = f"{task_type.upper()} testing on {task_target}"
-                            
-                            # Check if we already have a step with this info
-                            if not task_exists_in_plan(task_desc):
-                                # Find an appropriate step number - check the most recently added pending step
-                                step_num = i
-                                for j, plan_item in enumerate(scan_status["action_plan"]):
-                                    if plan_item.lower().startswith("step "):
-                                        step_match = re.search(r"Step\s+(\d+)", plan_item, re.IGNORECASE)
-                                        if step_match:
-                                            last_step = int(step_match.group(1))
-                                            if last_step >= step_num:
-                                                step_num = last_step + 1
-                                
-                                # Add the new step with pending status
-                                new_step = f"Step {step_num}: {task_desc} (Pending)"
-                                scan_status["action_plan"].append(new_step)
-                                logger.info(f"Added new task from details: {new_step}")
-                        
-                        # Deduplicate after adding all tasks
-                        deduplicate_action_plan()
-                except Exception as e:
-                    logger.error(f"Error processing task details: {str(e)}")
-                    
-            # Generate a default action plan if we have logs but no plan detected
-            if len(scan_status["agent_logs"]) > 10 and len(scan_status["action_plan"]) == 0:
-                logger.info("Generating default action plan based on scan progress")
-                scan_status["action_plan"] = ["Security Assessment of " + scan_status["url"]]
-                if scan_status["progress"] >= 20:
-                    scan_status["action_plan"].append("Step 1: Initialize scanner and target discovery")
-                if scan_status["progress"] >= 40:
-                    scan_status["action_plan"].append("Step 2: Test for XSS vulnerabilities")
-                if scan_status["progress"] >= 60:
-                    scan_status["action_plan"].append("Step 3: Test for CSRF vulnerabilities")
-                if scan_status["progress"] >= 80:
-                    scan_status["action_plan"].append("Step 4: Test authentication mechanisms")
-                if scan_status["progress"] >= 90:
-                    scan_status["action_plan"].append("Step 5: Generate security report")
-            elif "Report saved to" in clean_line:
-                # Extract and validate report path
-                try:
-                    report_path = clean_line.split("Report saved to ")[1].strip()
-                    logger.info(f"Found report path in output: {report_path}")
-                    
-                    # Check if this is an absolute path
-                    if os.path.isabs(report_path):
-                        # Convert to relative path from the project root
-                        project_root = os.path.dirname(os.path.abspath(__file__))
-                        if report_path.startswith(project_root):
-                            report_path = os.path.relpath(report_path, project_root)
-                            logger.debug(f"Converted to relative path: {report_path}")
-                    
-                    # Verify the path exists
-                    if report_path.startswith('reports/'):
-                        # Path is already relative to project root
-                        full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), report_path)
-                    else:
-                        # Try both as is and with 'reports/' prefix
-                        full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), report_path)
-                        if not os.path.exists(full_path):
-                            alt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports', report_path)
-                            if os.path.exists(alt_path):
-                                full_path = alt_path
-                                report_path = os.path.join('reports', report_path)
-                                logger.debug(f"Adjusted path to: {report_path}")
-                    
-                    if os.path.exists(full_path):
-                        logger.info(f"Verified report path exists: {full_path}")
-                        # Check if this is a file or directory
-                        if os.path.isdir(full_path):
-                            # Check if report.md exists in this directory
-                            report_file = os.path.join(full_path, "report.md")
-                            if os.path.exists(report_file):
-                                logger.info(f"Found report.md in {full_path}")
-                                scan_status["report_path"] = report_path
-                            else:
-                                logger.warning(f"report.md not found in {full_path}")
-                                scan_status["report_path"] = report_path  # Still use the path, will handle missing file error later
-                        else:
-                            # The path is a file
-                            logger.warning(f"Report path is a file, not a directory: {full_path}")
-                            # Use the directory containing the file
-                            report_dir = os.path.dirname(full_path)
-                            report_path = os.path.dirname(report_path)
-                            logger.info(f"Using directory: {report_dir}")
-                            scan_status["report_path"] = report_path
-                    else:
-                        logger.error(f"Report path does not exist: {full_path}")
-                        # Still store the path, we'll try to find a report later
-                        scan_status["report_path"] = report_path
-                        
-                    scan_status["progress"] = 100
-                    scan_status["current_task"] = "Scan completed"
-                    logger.debug("Updated scan status: 100% - Scan completed")
-                    # Run deduplication before marking tasks as completed
-                    deduplicate_action_plan()
-                    mark_all_tasks_completed()
-                    logger.info("All tasks marked as completed")
-                except Exception as e:
-                    logger.exception(f"Error processing report path: {str(e)}")
-                    # Still try to extract the path even if validation fails
-                    try:
-                        report_path = clean_line.split("Report saved to ")[1].strip()
-                        scan_status["report_path"] = report_path
-                    except:
-                        logger.error("Failed to extract report path")
-                    scan_status["progress"] = 100
-                    scan_status["current_task"] = "Scan completed with path errors"
+        if provider == "anthropic" and anthropic_api_key:
+            os.environ["ANTHROPIC_API_KEY"] = anthropic_api_key
+            logger.info("Using Anthropic API key from form input")
         
-        # Get final process output
-        stdout, stderr = process.communicate()
-        if stderr:
-            logger.warning(f"Process stderr: {stderr}")
+        # Prepare output directory based on sanitized URL and timestamp
+        sanitized_url = re.sub(r'[^\w\-_]', '_', url.replace('://', '_'))
+        output_dir = os.path.join(app.config['UPLOAD_FOLDER'], f"{sanitized_url}_{timestamp}")
+        os.makedirs(output_dir, exist_ok=True)
+        logger.debug(f"Created output directory: {output_dir}")
         
-        # Check if process failed
-        if process.returncode != 0:
-            logger.error(f"Process failed with return code {process.returncode}: {stderr}")
-            scan_status["error"] = f"Scan failed: {stderr}"
-            scan_status["current_task"] = "Scan failed"
-            scan_status["progress"] = 100
-        else:
-            # If scan completed successfully, mark all tasks as completed
+        # Add a placeholder for the report path
+        scan_status["report_path"] = os.path.join(output_dir, "report.md")
+        
+        # Initialize and run the scan
+        try:
+            # Import here to avoid circular imports
+            from core.coordinator import SwarmCoordinator
+            from utils.config import load_config
+            
+            # Load configuration
+            config = load_config()
+            
+            # Initialize the swarm coordinator
+            coordinator = SwarmCoordinator(
+                url=url,
+                model=model,
+                provider=provider,
+                scope="url",  # Always use url scope in web UI
+                output_dir=output_dir,
+                config=config,
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key
+            )
+            
+            # Run the scan and get results
+            coordinator.run()
+            
+            # Scan completed, mark all tasks as completed
             scan_status["progress"] = 100
             scan_status["current_task"] = "Scan completed"
             # Run deduplication before marking tasks as completed
@@ -925,58 +355,68 @@ def run_scan(url, model="gpt-4o", provider="openai"):
             mark_all_tasks_completed()
             logger.info("All tasks marked as completed")
 
-        # If report path not found in logs, try to find it
-        if not scan_status["report_path"]:
-            logger.warning("Report path not found in process output, searching for most recent report")
-            # Look for the most recently created report directory
-            reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
-            logger.debug(f"Searching for reports in: {reports_dir}")
-            
-            # Check if reports directory exists
-            if not os.path.exists(reports_dir):
-                logger.error(f"Reports directory does not exist: {reports_dir}")
-                scan_status["error"] = f"Reports directory does not exist: {reports_dir}"
-                return
+            # If report path not found, try to find it
+            if not scan_status["report_path"]:
+                logger.warning("Report path not found, searching for most recent report")
+                # Look for the most recently created report directory
+                reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
+                logger.debug(f"Searching for reports in: {reports_dir}")
                 
-            try:
-                report_dirs = [d for d in os.listdir(reports_dir) if os.path.isdir(os.path.join(reports_dir, d))]
-                logger.debug(f"Found report directories: {report_dirs}")
-                
-                if not report_dirs:
-                    logger.error("No report directories found in reports folder")
-                    scan_status["error"] = "No report directories found"
+                # Check if reports directory exists
+                if not os.path.exists(reports_dir):
+                    logger.error(f"Reports directory does not exist: {reports_dir}")
+                    scan_status["error"] = f"Reports directory does not exist: {reports_dir}"
                     return
                     
-                # Get all modification times for debugging
-                mod_times = {d: os.path.getmtime(os.path.join(reports_dir, d)) for d in report_dirs}
-                logger.debug(f"Directory modification times: {mod_times}")
-                
-                report_dirs.sort(key=lambda d: os.path.getmtime(os.path.join(reports_dir, d)), reverse=True)
-                logger.debug(f"Sorted report directories: {report_dirs}")
-                
-                if report_dirs:
-                    most_recent = report_dirs[0]
-                    logger.info(f"Using most recent report directory: {most_recent}")
-                    most_recent_path = os.path.join(reports_dir, most_recent)
+                try:
+                    report_dirs = [d for d in os.listdir(reports_dir) if os.path.isdir(os.path.join(reports_dir, d))]
+                    logger.debug(f"Found report directories: {report_dirs}")
                     
-                    # Check if report.md exists in this directory
-                    report_file = os.path.join(most_recent_path, "report.md")
-                    if os.path.exists(report_file):
-                        logger.info(f"Found report.md in {most_recent_path}")
-                        scan_status["report_path"] = os.path.join('reports', most_recent)
+                    if not report_dirs:
+                        logger.error("No report directories found in reports folder")
+                        scan_status["error"] = "No report directories found"
+                        return
+                        
+                    # Get all modification times for debugging
+                    mod_times = {d: os.path.getmtime(os.path.join(reports_dir, d)) for d in report_dirs}
+                    logger.debug(f"Directory modification times: {mod_times}")
+                    
+                    report_dirs.sort(key=lambda d: os.path.getmtime(os.path.join(reports_dir, d)), reverse=True)
+                    logger.debug(f"Sorted report directories: {report_dirs}")
+                    
+                    if report_dirs:
+                        most_recent = report_dirs[0]
+                        logger.info(f"Using most recent report directory: {most_recent}")
+                        most_recent_path = os.path.join(reports_dir, most_recent)
+                        
+                        # Check if report.md exists in this directory
+                        report_file = os.path.join(most_recent_path, "report.md")
+                        if os.path.exists(report_file):
+                            logger.info(f"Found report.md in {most_recent_path}")
+                            scan_status["report_path"] = os.path.join('reports', most_recent)
+                        else:
+                            logger.error(f"report.md not found in {most_recent_path}")
+                            # List all files in the directory for debugging
+                            files = os.listdir(most_recent_path)
+                            logger.debug(f"Files in directory: {files}")
+                            scan_status["error"] = f"report.md not found in most recent report directory"
                     else:
-                        logger.error(f"report.md not found in {most_recent_path}")
-                        # List all files in the directory for debugging
-                        files = os.listdir(most_recent_path)
-                        logger.debug(f"Files in directory: {files}")
-                        scan_status["error"] = f"report.md not found in most recent report directory"
-                else:
-                    logger.error("No report directories found after sorting")
-                    scan_status["error"] = "No report directories found"
-            except Exception as e:
-                logger.exception(f"Error finding report directory: {str(e)}")
-                scan_status["error"] = f"Error finding report directory: {str(e)}"
+                        logger.error("No report directories found after sorting")
+                        scan_status["error"] = "No report directories found"
+                except Exception as e:
+                    logger.exception(f"Error finding report directory: {str(e)}")
+                    scan_status["error"] = f"Error finding report directory: {str(e)}"
                 
+        except Exception as e:
+            logger.exception(f"Exception during scan: {str(e)}")
+            scan_status["error"] = str(e)
+            scan_status["current_task"] = "Scan failed"
+            scan_status["progress"] = 100
+        finally:
+            # Ensure scan status is updated
+            scan_status["is_running"] = False
+            logger.info("Scan process completed, is_running set to False")
+
     except Exception as e:
         logger.exception(f"Exception during scan: {str(e)}")
         scan_status["error"] = str(e)
@@ -1090,8 +530,8 @@ def download_report(filename):
             "message": f"Error serving report file: {str(e)}"
         }), 500
 
-if __name__ == '__main__':
-    # Create templates directory if it doesn't exist
-    os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'), exist_ok=True)
-    # Use port 5050 to avoid conflicts with macOS AirPlay service on port 5000
-    app.run(debug=True, host='0.0.0.0', port=5050)
+if __name__ == "__main__":
+    # We already created the upload folder at the start
+    # Just log that we're starting the server
+    logger.info(f"Starting web server on port {int(os.environ.get('PORT', 5050))}")
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5050)), debug=not is_vercel)

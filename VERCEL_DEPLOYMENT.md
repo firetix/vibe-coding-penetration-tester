@@ -1,0 +1,134 @@
+# Deploying VibePenTester to Vercel
+
+This document provides step-by-step instructions for deploying the VibePenTester application to Vercel.
+
+## Prerequisites
+
+1. Create a Vercel account at [vercel.com](https://vercel.com) if you don't have one already
+2. Install the Vercel CLI: `npm i -g vercel`
+3. Obtain API keys for OpenAI and/or Anthropic (optional)
+
+## Setup Steps
+
+### 1. Prepare Your Project
+
+Your project already contains the necessary files for Vercel deployment:
+- `vercel.json` - Configuration for Vercel deployment
+- `requirements-vercel.txt` - Python dependencies for Vercel
+
+### 2. Set Up Environment Variables
+
+1. Create a `.env` file based on the provided `.env.example`:
+   ```
+   cp .env.example .env
+   ```
+
+2. Fill in your actual API keys and Google Analytics Measurement ID in the `.env` file:
+   ```
+   OPENAI_API_KEY=sk-your-real-openai-key
+   ANTHROPIC_API_KEY=sk-ant-your-real-anthropic-key
+   GA_MEASUREMENT_ID=G-YOURACTUALID
+   ```
+
+### 3. Deploy to Vercel
+
+#### Option 1: Using Vercel CLI
+
+1. Login to Vercel:
+   ```
+   vercel login
+   ```
+
+2. Deploy the application:
+   ```
+   vercel
+   ```
+
+3. During deployment, Vercel will prompt you to confirm settings:
+   - Set the build command to: `pip install -r requirements-vercel.txt`
+   - Set the output directory to: ` ` (leave empty)
+   - Add the environment variables from your `.env` file
+
+4. Once deployed, Vercel will provide a URL for your application.
+
+#### Option 2: Using Vercel Dashboard
+
+1. Push your code to a GitHub repository
+
+2. Log in to [Vercel Dashboard](https://vercel.com/dashboard)
+
+3. Click "Add New" > "Project"
+
+4. Import your GitHub repository
+
+5. Configure the project:
+   - Framework Preset: Other
+   - Build Command: `pip install -r requirements-vercel.txt`
+   - Output Directory: leave empty
+   - Install Command: leave default
+
+6. Add environment variables:
+   - `OPENAI_API_KEY`: Your OpenAI API key
+   - `ANTHROPIC_API_KEY`: Your Anthropic API key  
+
+7. Click "Deploy"
+
+### 4. Verify Deployment
+
+1. Visit your deployed application URL provided by Vercel
+
+2. Test the functionality by running a scan on a website
+
+3. Check that Vercel Analytics is collecting data by visiting the Analytics tab in your Vercel project dashboard
+
+## Troubleshooting
+
+### File System Issues
+
+- Vercel uses a read-only file system, so our application is configured to use `/tmp` for storing logs and reports
+- If you see errors related to file permissions or "Read-only file system", verify that the application is properly detecting the Vercel environment
+- The environment variables `VERCEL=1` and `VERCEL_ENV=production` should be set for proper detection
+
+### Deployment Script
+
+We've included a convenient deployment script that handles Vercel-specific configuration:
+
+```bash
+# Run the automated deployment script
+./deploy-to-vercel.sh
+```
+
+This script will:
+1. Check for Vercel CLI
+2. Set up necessary environment variables
+3. Deploy to Vercel with proper configuration
+
+### Other Common Issues
+
+- If you encounter issues with Playwright on Vercel, you may need to use a [custom build step](https://vercel.com/docs/concepts/functions/edge-functions/playwright) to install browsers
+
+- For large scans, you might encounter timeout issues as Vercel has a [maximum execution time](https://vercel.com/docs/functions/serverless-functions/runtimes#execution-timeout). Consider limiting the scan scope for the hosted version.
+
+- Check the Vercel logs if something isn't working as expected: `vercel logs <deployment-url>`
+
+## Additional Configuration
+
+### Custom Domain
+
+1. Go to your Vercel project dashboard
+
+2. Navigate to "Settings" > "Domains"
+
+3. Add your custom domain and follow the verification process
+
+### Setting Up Analytics
+
+Vercel Analytics is automatically enabled for your project. To view analytics:
+
+1. Go to your Vercel project dashboard
+
+2. Navigate to the "Analytics" tab
+
+3. You'll see visitor data, performance metrics, and other insights
+
+For more advanced analytics options, you can also integrate with other platforms through Vercel integrations. 
