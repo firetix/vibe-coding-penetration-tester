@@ -11,6 +11,12 @@
 
 **Vibe Coding**? Cool story. But your vibe might be "security breach waiting to happen." Introducing VibePenTester, the AI pen-tester who rolls its eyes at your half-baked code, discovers your vulnerabilities faster than your coworkers discover free pizza, and gently bullies your web app into compliance. Less "vibe check," more "reality check."
 
+<p align="center">
+  <img src="demo.gif" alt="demo" width="270"/>
+</p>
+
+
+
 ## 🌟 Key Features
 
 - **Intelligent Vulnerability Discovery**: Uses LLMs (OpenAI and Anthropic Claude) to understand application context and identify potential security weaknesses (and your career weaknesses too)
