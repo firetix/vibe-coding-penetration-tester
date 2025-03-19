@@ -109,6 +109,16 @@ You can now deploy VibePenTester to Vercel as a web application:
 2. Set up environment variables for API keys (optional)
 3. Connect Google Analytics to track usage
 
+### 🔬 Sample Reports & Live Demo
+
+Why take our word for it? We've got receipts for days. Check out the `/reports_samples/` directory to see actual vulnerabilities detected in the wild. These aren't made-up examples — they're real bugs that could have tanked someone's weekend if we hadn't vibed with their code first.
+
+**✨ Live Demo: [vibehack.io](http://vibehack.io/)** 
+
+We've deployed a fully functional instance to Vercel because we're that confident in our tool (or possibly that reckless with our API credits). Test it out before installing — your DevOps team will thank you later.
+
+Remember: Your code might be passing all the tests, but are those tests passing the vibe check? Probably not. Good vibes don't protect against XSS, and your DevSecOps pipeline probably smells like corporate middle-management. Let us help before your "move fast and break things" philosophy becomes "move fast and break customer data regulations."
+
 ## 🛠️ Command Line Options
 
 | Option | Description |
