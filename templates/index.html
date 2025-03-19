@@ -135,6 +135,68 @@
             font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
             font-size: 14px;
         }
+        .task-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            transition: all 0.2s ease;
+        }
+        .task-item:hover {
+            background-color: rgba(0,0,0,0.02);
+        }
+        .task-number {
+            min-width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            margin-right: 15px;
+        }
+        .task-number.completed {
+            background-color: #48bb78;
+        }
+        .task-number.pending {
+            background-color: #f6ad55;
+        }
+        .task-status {
+            margin-left: auto;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .task-status.completed {
+            background-color: #c6f6d5;
+            color: #22543d;
+        }
+        .task-status.pending {
+            background-color: #feebc8;
+            color: #744210;
+        }
+        .task-content {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .task-description {
+            transition: all 0.3s ease;
+        }
+        .completed .task-description {
+            text-decoration: none;
+            color: #2d3748;
+        }
+        .task-item.fade-in {
+            animation: fadeIn 0.5s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -716,86 +778,61 @@
                         } else if (planItem.includes('VULNERABILITY')) {
                             // Don't show vulnerabilities in the action plan as per requirements
                             continue;
-                        } else if (planItem.includes('(Pending)')) {
-                            // This is a pending task
-                            const pendingMatch = planItem.match(/Step (\d+):\s*(.*?)\s*\(Pending\)/i);
-                            if (pendingMatch) {
-                                const stepNum = pendingMatch[1];
-                                const taskDesc = pendingMatch[2].trim();
-                                
-                                // Create a more informative pending task display
-                                listItem.className += ' text-muted border-start border-warning border-3';
-                                listItem.style.backgroundColor = '#fffbf3'; // Very light yellow
-                                listItem.innerHTML = `
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <span class="badge bg-warning text-dark me-2">${stepNum}</span>
-                                            <span class="task-desc">${taskDesc}</span>
-                                        </div>
-                                        <div>
-                                            <span class="badge bg-light text-secondary border">
-                                                <i class="bi bi-hourglass me-1"></i> Pending
-                                            </span>
-                                        </div>
-                                    </div>
-                                `;
-                            } else {
-                                listItem.className += ' text-muted border-start border-warning border-3';
-                                listItem.style.backgroundColor = '#fffbf3';
-                                listItem.innerHTML = `<i class="bi bi-hourglass me-1"></i> ${planItem}`;
-                            }
                         } else {
-                            // This is a step 
-                            // Check for "Step X" pattern
+                            // Determine if this task is completed or pending
+                            const isCompleted = planItem.includes('(Completed)');
+                            const isPending = planItem.includes('(Pending)') || !isCompleted;
+                            
+                            // Extract step number and description
+                            let stepNum = '';
+                            let stepDesc = '';
+                            
+                            // Try to extract step number and text using various patterns
                             const stepMatch = planItem.match(/Step (\d+)[:\-]?\s*(.*)/i);
                             if (stepMatch) {
-                                const stepNum = stepMatch[1];
-                                const stepText = stepMatch[2] || planItem.replace(/Step \d+[:\-]?\s*/i, '');
-                                
-                                // Style completed steps with a green indicator
-                                listItem.className += ' border-start border-success border-3';
-                                listItem.style.backgroundColor = '#f8fff8'; // Very light green
-                                
-                                listItem.innerHTML = `
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <span class="badge bg-success me-2">${stepNum}</span>
-                                            <span class="task-desc">${stepText}</span>
-                                        </div>
-                                        <div>
-                                            <span class="badge bg-light text-success border">
-                                                <i class="bi bi-check-circle-fill me-1"></i> Completed
-                                            </span>
-                                        </div>
-                                    </div>
-                                `;
-                            } 
-                            // Check for numbered list pattern (1. 2. etc)
-                            else if (/^\d+[\.\)]/.test(planItem.trim())) {
+                                stepNum = stepMatch[1];
+                                stepDesc = stepMatch[2].replace(/\s*\((Completed|Pending)\)$/, '').trim();
+                            } else if (/^\d+[\.\)]/.test(planItem.trim())) {
+                                // Numbered list pattern (1. 2. etc)
                                 const parts = planItem.trim().split(/[\.\)]\s+/, 2);
                                 if (parts.length > 1) {
-                                    const stepNum = parts[0];
-                                    const stepText = parts[1];
-                                    listItem.innerHTML = `<span class="badge bg-info me-2">${stepNum}</span> ${stepText}`;
+                                    stepNum = parts[0];
+                                    stepDesc = parts[1].replace(/\s*\((Completed|Pending)\)$/, '').trim();
                                 } else {
-                                    listItem.textContent = planItem;
+                                    stepDesc = planItem.replace(/\s*\((Completed|Pending)\)$/, '').trim();
                                 }
+                            } else {
+                                // Default case
+                                stepDesc = planItem.replace(/\s*\((Completed|Pending)\)$/, '').trim();
                             }
-                            // Check for bullet point pattern
-                            else if (/^[\-\*\•]/.test(planItem.trim())) {
-                                const stepText = planItem.trim().replace(/^[\-\*\•]\s*/, '');
-                                listItem.innerHTML = `<span class="badge bg-secondary me-2"><i class="bi bi-dot"></i></span> ${stepText}`;
-                            }
-                            // Default formatting
-                            else {
-                                listItem.textContent = planItem;
-                            }
+                            
+                            // Set the appropriate class for the task item
+                            listItem.className = 'list-group-item task-item fade-in';
+                            
+                            // Create the inner HTML for the task item
+                            listItem.innerHTML = `
+                                <div class="task-number ${isCompleted ? 'completed' : 'pending'}">
+                                    ${stepNum || '<i class="bi bi-check"></i>'}
+                                </div>
+                                <div class="task-content">
+                                    <span class="task-description ${isCompleted ? 'fw-normal' : 'fw-bold'}">${stepDesc}</span>
+                                </div>
+                                <div class="task-status ${isCompleted ? 'completed' : 'pending'}">
+                                    ${isCompleted ? 
+                                        '<i class="bi bi-check-circle-fill me-1"></i> Completed' : 
+                                        '<i class="bi bi-hourglass-split me-1"></i> Pending'
+                                    }
+                                </div>
+                            `;
                         }
                         
                         actionPlanListEl.appendChild(listItem);
                     }
                     
                     prevActionPlanLength = plan.length;
+                } else {
+                    // If we have an empty plan, just show a waiting message
+                    actionPlanListEl.innerHTML = '<li class="list-group-item text-center text-muted">Waiting for agent action plan...</li>';
                 }
             }
             

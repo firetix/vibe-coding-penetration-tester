@@ -34,7 +34,8 @@ scan_status = {
     "error": None,
     "agent_logs": [],
     "action_plan": [],
-    "current_action": ""
+    "current_action": "",
+    "completed_tasks": []  # New field to track completed tasks by ID
 }
 
 @app.route('/')
@@ -80,8 +81,9 @@ def start_scan():
         "report_path": "",
         "error": None,
         "agent_logs": [],
-        "action_plan": ["Preparing Security Assessment for " + url],
-        "current_action": "Initializing Security Agents"
+        "action_plan": [],
+        "current_action": "Initializing Security Agents",
+        "completed_tasks": []
     }
     logger.info(f"Scan status initialized for {url} with {provider} model: {model}")
     
@@ -110,6 +112,62 @@ def run_scan(url, model="gpt-4o", provider="openai"):
         scan_status["current_task"] = "Running scan"
         scan_status["progress"] = 10
         logger.debug("Updated scan status: 10% - Running scan")
+        
+        # Define task IDs and their relationships
+        task_mapping = {
+            1: {"name": "Target discovery and reconnaissance", "keywords": ["target", "discovery", "reconnaissance", "scan initialization"]},
+            2: {"name": "Surface crawling and endpoint enumeration", "keywords": ["crawl", "endpoint", "enumeration", "mapping"]},
+            3: {"name": "Cross-Site Scripting (XSS) vulnerability scanning", "keywords": ["xss", "cross-site scripting"]},
+            4: {"name": "Cross-Site Request Forgery (CSRF) vulnerability detection", "keywords": ["csrf", "cross-site request forgery"]},
+            5: {"name": "Authentication security testing", "keywords": ["auth", "login", "password", "credential"]},
+            6: {"name": "SQL Injection vulnerability detection", "keywords": ["sql", "injection", "sqli"]},
+            7: {"name": "Input validation and sanitization checks", "keywords": ["input validation", "sanitization", "validate"]},
+            8: {"name": "Security header verification", "keywords": ["security header", "header verification", "http header"]},
+        }
+        
+        # Initialize the action plan with default tasks
+        def initialize_action_plan():
+            # Create header if not exists
+            if len(scan_status["action_plan"]) == 0:
+                scan_status["action_plan"] = [f"Preparing Security Assessment for {scan_status['url']}"]
+                
+            # Add all tasks to the action plan with pending status
+            for task_id, task_info in task_mapping.items():
+                # Check if this task already exists in the plan
+                task_exists = False
+                for item in scan_status["action_plan"]:
+                    if task_info["name"].lower() in item.lower():
+                        task_exists = True
+                        break
+                        
+                if not task_exists:
+                    # Add the task with the step number and pending status
+                    scan_status["action_plan"].append(f"Step {task_id}: {task_info['name']} (Pending)")
+                    logger.debug(f"Added task to action plan: Step {task_id}: {task_info['name']} (Pending)")
+        
+        # Initialize the action plan
+        initialize_action_plan()
+        
+        # Function to mark a task as completed
+        def mark_task_completed(task_id):
+            if task_id not in scan_status["completed_tasks"]:
+                logger.info(f"Marking task {task_id} as completed: {task_mapping.get(task_id, {}).get('name', 'Unknown task')}")
+                scan_status["completed_tasks"].append(task_id)
+                
+                # Update action plan list with completion status
+                for i, plan_item in enumerate(scan_status["action_plan"]):
+                    # Skip the first item which is the main plan title
+                    if i == 0:
+                        continue
+                        
+                    task_name = task_mapping.get(task_id, {}).get('name', '')
+                    # Check if this plan item corresponds to the completed task
+                    if task_name and task_name.lower() in plan_item.lower():
+                        # Remove any existing status markers
+                        clean_item = re.sub(r'\s*\((Pending|Completed)\)$', '', plan_item)
+                        # Add completed marker
+                        scan_status["action_plan"][i] = f"{clean_item} (Completed)"
+                        logger.debug(f"Updated action plan item {i} to mark as completed: {scan_status['action_plan'][i]}")
         
         # Construct the command
         cmd = [
@@ -159,6 +217,8 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                 # Add to action plan if not already present
                 if len(scan_status["action_plan"]) <= 1:
                     scan_status["action_plan"].append("Step 1: Target discovery and reconnaissance")
+                # Mark task 1 as completed
+                mark_task_completed(1)
                 logger.debug("Updated scan status: 20% - Starting security testing")
             elif "Executing xss task" in output_line or "XSS" in output_line:
                 scan_status["progress"] = 40
@@ -173,7 +233,11 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                         break
                 
                 if not has_xss_step:
-                    scan_status["action_plan"].append("Step 2: Cross-Site Scripting (XSS) Vulnerability Testing")
+                    scan_status["action_plan"].append("Step 3: Cross-Site Scripting (XSS) vulnerability scanning")
+                
+                # Mark XSS task as completed if it contains completion indicator
+                if any(term in output_line.lower() for term in ["xss completed", "xss scan complete", "xss testing finished"]):
+                    mark_task_completed(3)
                 
                 logger.debug("Updated scan status: 40% - Testing for XSS vulnerabilities")
             elif "Executing csrf task" in output_line or "CSRF" in output_line:
@@ -189,7 +253,11 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                         break
                 
                 if not has_csrf_step:
-                    scan_status["action_plan"].append("Step 3: Cross-Site Request Forgery (CSRF) Vulnerability Testing")
+                    scan_status["action_plan"].append("Step 4: Cross-Site Request Forgery (CSRF) vulnerability detection")
+                
+                # Mark CSRF task as completed if it contains completion indicator
+                if any(term in output_line.lower() for term in ["csrf completed", "csrf scan complete", "csrf testing finished"]):
+                    mark_task_completed(4)
                 
                 logger.debug("Updated scan status: 60% - Testing for CSRF vulnerabilities")
             elif "Executing auth task" in output_line or "auth" in output_line.lower() or "password" in output_line.lower():
@@ -205,7 +273,11 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                         break
                 
                 if not has_auth_step:
-                    scan_status["action_plan"].append("Step 4: Authentication & Authorization Testing")
+                    scan_status["action_plan"].append("Step 5: Authentication security testing")
+                
+                # Mark auth task as completed if it contains completion indicator
+                if any(term in output_line.lower() for term in ["auth completed", "auth testing complete", "auth scan finished"]):
+                    mark_task_completed(5)
                 
                 logger.debug("Updated scan status: 80% - Testing authentication")
             elif "Security testing completed" in output_line or "report" in output_line.lower() or "generating" in output_line.lower():
@@ -221,9 +293,17 @@ def run_scan(url, model="gpt-4o", provider="openai"):
                         break
                 
                 if not has_report_step:
-                    scan_status["action_plan"].append("Step 5: Generating Security Assessment Report")
+                    scan_status["action_plan"].append("Step 9: Generating Security Assessment Report")
                 
                 logger.debug("Updated scan status: 90% - Generating report")
+            
+            # Look for specific task completion indicators
+            if "Task complete" in output_line or "Task completed" in output_line:
+                for task_id, task_info in task_mapping.items():
+                    for keyword in task_info["keywords"]:
+                        if keyword.lower() in output_line.lower():
+                            mark_task_completed(task_id)
+                            break
             
             # Extract security action plans and steps - broaden pattern matching
             # For action plans - match more patterns

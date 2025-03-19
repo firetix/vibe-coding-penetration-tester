@@ -231,11 +231,14 @@ class BaseAgent:
                 function_name = tool_call.function.name
                 arguments_str = tool_call.function.arguments
                 tool_call_id = getattr(tool_call, 'id', 'unknown_id')
+                # Make sure we have a type field for consistent message formatting
+                tool_type = "function"
             else:
                 # Handle dict format for older versions or different structures
                 function_name = tool_call.get('function', {}).get('name', '')
                 arguments_str = tool_call.get('function', {}).get('arguments', '{}')
                 tool_call_id = tool_call.get('id', 'unknown_id')
+                tool_type = tool_call.get('type', 'function')
             
             # Debug info
             self.logger.debug(f"Executing tool: {function_name}")
