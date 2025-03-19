@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibePenTester - Web Security Scanner</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .agent-badge {
+            position: fixed;
+            top: 10px;
+            right: 20px;
+            z-index: 1000;
+            padding: 8px 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 20px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(66, 153, 225, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(66, 153, 225, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(66, 153, 225, 0); }
+        }
+        .header {
+            background-color: #3c4b64;
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .main-content {
+            padding: 40px 0;
+        }
+        .card {
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin-bottom: 30px;
+        }
+        .scan-form {
+            background-color: white;
+            border-radius: 10px;
+            padding: 25px;
+        }
+        .progress {
+            height: 25px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 10px;
+        }
+        .progress-bar {
+            background-color: #4299e1;
+        }
+        .status-panel {
+            background-color: #eef2ff;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #4299e1;
+            margin-bottom: 20px;
+        }
+        .report-container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-top: 30px;
+        }
+        .report-content {
+            line-height: 1.6;
+        }
+        .btn-primary {
+            background-color: #4299e1;
+            border-color: #4299e1;
+        }
+        .btn-primary:hover {
+            background-color: #3182ce;
+            border-color: #3182ce;
+        }
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .alert-severity-high {
+            background-color: #fed7d7;
+            border-left: 5px solid #e53e3e;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .alert-severity-medium {
+            background-color: #feebc8;
+            border-left: 5px solid #dd6b20;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .alert-severity-low {
+            background-color: #bee3f8;
+            border-left: 5px solid #3182ce;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        code {
+            font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="agent-badge bg-primary text-white">
+        <i class="bi bi-robot"></i> AI AGENT POWERED
+    </div>
+    <div class="header">
+        <div class="container">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-shield-check fs-1 me-3"></i>
+                <div>
+                    <h1 class="mb-0">VibePenTester</h1>
+                    <p class="mb-0">Web Security Scanner</p>
+                    <div class="badge bg-primary mt-2 fw-bold">
+                        <i class="bi bi-robot me-1"></i> POWERED BY MULTI-AGENT TECHNOLOGY
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container main-content">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card scan-form">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h3 class="card-title mb-0">Start Security Scan</h3>
+                            <span class="badge bg-info p-2">
+                                <i class="bi bi-cpu"></i> Uses AI Agents for Enhanced Discovery
+                            </span>
+                        </div>
+                        <form id="scan-form">
+                            <div class="mb-3">
+                                <label for="url" class="form-label">Target URL</label>
+                                <input type="url" class="form-control form-control-lg" id="url" name="url" 
+                                       placeholder="https://example.com" required>
+                                <div class="form-text">Enter the full URL you want to scan for vulnerabilities</div>
+                            </div>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="provider" class="form-label">LLM Provider</label>
+                                    <select class="form-select" id="provider" name="provider">
+                                        <option value="openai" selected>OpenAI</option>
+                                        <option value="anthropic">Anthropic</option>
+                                    </select>
+                                    <div class="form-text">Select the AI provider for the agent swarm</div>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <label for="model" class="form-label">LLM Model</label>
+                                    <select class="form-select" id="model" name="model">
+                                        <optgroup label="OpenAI Models" id="openai-models">
+                                            <option value="gpt-4o" selected>GPT-4o</option>
+                                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                            <option value="gpt-4">GPT-4</option>
+                                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                        </optgroup>
+                                        <optgroup label="Anthropic Models" id="anthropic-models" style="display:none">
+                                            <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+                                            <option value="claude-3-opus">Claude 3 Opus</option>
+                                            <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                                            <option value="claude-3-haiku">Claude 3 Haiku</option>
+                                        </optgroup>
+                                    </select>
+                                    <div class="form-text">Select the AI model for security testing</div>
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary btn-lg" id="start-scan-btn">
+                                    <i class="bi bi-robot"></i> Deploy Agent Swarm
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="scan-status-panel" class="card d-none">
+                    <div class="card-body">
+                        <h3 class="card-title mb-4" id="statusPanelTitle">
+                            <i class="bi bi-robot"></i> Agent Swarm Status
+                            <span class="badge bg-secondary ms-2 fs-6">Multiple agents working in parallel</span>
+                        </h3>
+                        <div class="status-panel mb-4">
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="me-2"><i class="bi bi-globe fs-4"></i></div>
+                                <div style="flex-grow: 1;">
+                                    <div class="text-muted">Target</div>
+                                    <div class="alert alert-primary py-2 mb-0 mt-1">
+                                        <i class="bi bi-bullseye"></i>
+                                        <span class="fw-bold" id="status-url">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center">
+                                <div class="me-2"><i class="bi bi-cpu fs-4"></i></div>
+                                <div style="flex-grow: 1;">
+                                    <div class="text-muted">Current Agent Task</div>
+                                    <div class="alert alert-success py-2 mb-0 mt-1">
+                                        <i class="bi bi-activity"></i>
+                                        <span class="fw-bold" id="current-task">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3 d-flex align-items-center">
+                                <div class="me-2"><i class="bi bi-lightning-fill fs-4 text-warning"></i></div>
+                                <div style="flex-grow: 1;">
+                                    <div class="text-muted">Active Agent Operation</div>
+                                    <div id="current-action-container" class="mt-1">
+                                        <span id="current-action-badge" class="badge bg-primary px-3 py-2">Initializing</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3 px-3 py-2 bg-light rounded border border-secondary">
+                                <i class="bi bi-info-circle"></i> The system uses multiple AI agents to discover, analyze, and test security vulnerabilities in parallel.
+                            </div>
+                        </div>
+                        <div class="progress mb-2">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" id="progress-bar" style="width: 0%">0%</div>
+                        </div>
+                        
+                        <!-- Agent Action Plan -->
+                        <div class="card mt-4 border-primary">
+                            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="bi bi-list-check"></i> Security Agent Action Plan
+                                </div>
+                                <div>
+                                    <span class="badge bg-light text-primary">Generated by Planner Agent</span>
+                                </div>
+                            </div>
+                            <div class="card-body p-0">
+                                <ul class="list-group list-group-flush" id="action-plan-list">
+                                    <li class="list-group-item text-center text-muted">Waiting for agent action plan...</li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <!-- Agent Logs -->
+                        <div class="card mt-4">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="bi bi-terminal"></i> Agent Activity Log
+                                </div>
+                                <div>
+                                    <span class="badge bg-success" id="current-action-badge">Initializing</span>
+                                </div>
+                            </div>
+                            <div class="card-body p-0">
+                                <div id="agent-logs" class="bg-dark text-light p-3" style="height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px; border-radius: 6px; border: 1px solid #6c757d;">
+                                    <div class="text-muted">Waiting for agent logs...</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-end mt-3">
+                            <button class="btn btn-secondary" id="cancel-btn">Cancel Scan</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="report-container" class="report-container d-none">
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="report-header mb-4">
+                                <div>
+                                    <h2>Security Assessment Report</h2>
+                                    <div class="badge bg-success mb-2">
+                                        <i class="bi bi-robot"></i> Generated by AI Agent Swarm
+                                    </div>
+                                </div>
+                                <div>
+                                    <button class="btn btn-outline-primary me-2" id="download-report-btn">
+                                        <i class="bi bi-download"></i> Download Report
+                                    </button>
+                                    <button class="btn btn-outline-secondary" id="new-scan-btn">
+                                        <i class="bi bi-arrow-repeat"></i> New Scan
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="report-content" class="report-content">
+                        <!-- Report content will be loaded here -->
+                    </div>
+                </div>
+
+                <div id="error-container" class="alert alert-danger d-none" role="alert">
+                    <h4 class="alert-heading"><i class="bi bi-exclamation-triangle-fill"></i> Error</h4>
+                    <p id="error-message">An error occurred during the scan.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const scanForm = document.getElementById('scan-form');
+            const scanStatusPanel = document.getElementById('scan-status-panel');
+            const reportContainer = document.getElementById('report-container');
+            const errorContainer = document.getElementById('error-container');
+            const startScanBtn = document.getElementById('start-scan-btn');
+            const cancelBtn = document.getElementById('cancel-btn');
+            const newScanBtn = document.getElementById('new-scan-btn');
+            const downloadReportBtn = document.getElementById('download-report-btn');
+            const progressBar = document.getElementById('progress-bar');
+            const currentTaskEl = document.getElementById('current-task');
+            const statusUrlEl = document.getElementById('status-url');
+            const reportContentEl = document.getElementById('report-content');
+            const errorMessageEl = document.getElementById('error-message');
+            const agentLogsEl = document.getElementById('agent-logs');
+            const actionPlanListEl = document.getElementById('action-plan-list');
+            const currentActionBadgeEl = document.getElementById('current-action-badge');
+            
+            let statusCheckInterval;
+            let isCancelled = false;
+            let prevLogsLength = 0;
+            let prevActionPlanLength = 0;
+            
+            // Initialize marked.js
+            marked.setOptions({
+                highlight: function(code, lang) {
+                    if (lang && hljs.getLanguage(lang)) {
+                        return hljs.highlight(code, { language: lang }).value;
+                    }
+                    return hljs.highlightAuto(code).value;
+                },
+                breaks: true
+            });
+            
+            // Handle provider change to update model dropdown
+            document.getElementById('provider').addEventListener('change', function() {
+                const provider = this.value;
+                const openaiModels = document.getElementById('openai-models');
+                const anthropicModels = document.getElementById('anthropic-models');
+                const modelSelect = document.getElementById('model');
+                
+                if (provider === 'openai') {
+                    openaiModels.style.display = 'block';
+                    anthropicModels.style.display = 'none';
+                    // Select first OpenAI model
+                    modelSelect.value = 'gpt-4o';
+                } else if (provider === 'anthropic') {
+                    openaiModels.style.display = 'none';
+                    anthropicModels.style.display = 'block';
+                    // Select first Anthropic model
+                    modelSelect.value = 'claude-3-5-sonnet';
+                }
+            });
+            
+            scanForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const url = document.getElementById('url').value;
+                const provider = document.getElementById('provider').value;
+                const model = document.getElementById('model').value;
+                
+                if (!url) {
+                    alert('Please enter a valid URL');
+                    return;
+                }
+                
+                // Reset UI
+                isCancelled = false;
+                reportContainer.classList.add('d-none');
+                errorContainer.classList.add('d-none');
+                
+                // Update status elements
+                statusUrlEl.textContent = url;
+                currentTaskEl.textContent = 'Initializing scan';
+                progressBar.style.width = '0%';
+                progressBar.textContent = '0%';
+                
+                // Show model information
+                const providerDisplay = provider === 'openai' ? 'OpenAI' : 'Anthropic';
+                document.getElementById('statusPanelTitle').innerHTML = 
+                    `<i class="bi bi-robot"></i> Agent Swarm Status <span class="badge bg-secondary ms-2 fs-6">Using ${providerDisplay} ${model}</span>`;
+                
+                // Show status panel
+                scanStatusPanel.classList.remove('d-none');
+                
+                // Disable the start button during scan
+                startScanBtn.disabled = true;
+                startScanBtn.innerHTML = '<span class="loader"></span> Deploying Agent Swarm...';
+                
+                // Start the scan
+                fetch('/scan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        'url': url,
+                        'provider': provider,
+                        'model': model
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Start polling for status
+                        checkStatus();
+                        statusCheckInterval = setInterval(checkStatus, 2000);
+                    } else {
+                        showError(data.message);
+                    }
+                })
+                .catch(error => {
+                    showError('Failed to start scan: ' + error);
+                });
+            });
+            
+            function checkStatus() {
+                if (isCancelled) {
+                    clearInterval(statusCheckInterval);
+                    return;
+                }
+                
+                fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    // Update progress bar
+                    progressBar.style.width = data.progress + '%';
+                    progressBar.textContent = data.progress + '%';
+                    
+                    // Update current task
+                    currentTaskEl.textContent = data.current_task;
+                    
+                    // Update agent logs
+                    updateAgentLogs(data.agent_logs);
+                    
+                    // Update action plan
+                    updateActionPlan(data.action_plan);
+                    
+                    // Update current action badge
+                    updateCurrentAction(data.current_action);
+                    
+                    // Check if scan has completed or failed
+                    if (!data.is_running) {
+                        clearInterval(statusCheckInterval);
+                        
+                        if (data.error) {
+                            showError(data.error);
+                        } else {
+                            // Load the report
+                            loadReport();
+                        }
+                    }
+                })
+                .catch(error => {
+                    clearInterval(statusCheckInterval);
+                    showError('Failed to check status: ' + error);
+                });
+            }
+            
+            function loadReport() {
+                fetch('/report')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Render markdown to HTML
+                        reportContentEl.innerHTML = marked.parse(data.content);
+                        
+                        // Keep status panel visible and show report
+                        // scanStatusPanel.classList.add('d-none'); // Removed to keep logs visible
+                        reportContainer.classList.remove('d-none');
+                        
+                        // Update progress bar to 100% and turn it green
+                        progressBar.style.width = '100%';
+                        progressBar.textContent = '100%';
+                        progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                        progressBar.classList.add('bg-success');
+                        
+                        // When scan is complete, mark ALL tasks as complete
+                        const actionPlanItems = actionPlanListEl.querySelectorAll('li');
+                        actionPlanItems.forEach(item => {
+                            // Skip the main plan title (first item)
+                            if (item.classList.contains('fw-bold') && item.classList.contains('bg-light')) {
+                                return;
+                            }
+                            
+                            // Skip vulnerability reports
+                            if (item.textContent.includes('VULNERABILITY') || item.textContent.includes('🔴')) {
+                                return;
+                            }
+                            
+                            // Extract the step number
+                            const stepMatch = item.textContent.match(/Step (\d+):/);
+                            if (stepMatch) {
+                                const stepNum = stepMatch[1];
+                                // Get task description, removing any "Pending" markers
+                                let taskDesc = item.textContent.replace(/Step \d+:\s*/, '').trim();
+                                taskDesc = taskDesc.replace(/\(Pending\)/g, '').trim();
+                                
+                                // Create new content for the completed item
+                                item.className = 'list-group-item border-start border-success border-3';
+                                item.style.backgroundColor = '#f8fff8';
+                                
+                                item.innerHTML = `
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span class="badge bg-success me-2">${stepNum}</span>
+                                            <span class="task-desc">${taskDesc}</span>
+                                        </div>
+                                        <div>
+                                            <span class="badge bg-light text-success border">
+                                                <i class="bi bi-check-circle-fill me-1"></i> Completed
+                                            </span>
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                        });
+                        
+                        // Update status panel title to indicate completion
+                        document.getElementById('statusPanelTitle').innerHTML = 
+                            '<i class="bi bi-check-circle-fill text-success"></i> Scan Complete - Agent Activity Log';
+                        
+                        // Add a heading to the report to show it's complete
+                        const completionBanner = document.createElement('div');
+                        completionBanner.className = 'alert alert-success mb-4';
+                        completionBanner.innerHTML = '<i class="bi bi-check-circle-fill"></i> Security scan completed successfully. Agent logs and steps are visible below.';
+                        reportContentEl.insertBefore(completionBanner, reportContentEl.firstChild);
+                        
+                        // Add a message to the logs indicating completion
+                        const completionLog = document.createElement('div');
+                        completionLog.className = 'text-success fw-bold mt-2';
+                        completionLog.innerHTML = '✅ ' + new Date().toLocaleTimeString() + ' - Security scan completed successfully. Report generated.';
+                        agentLogsEl.appendChild(completionLog);
+                        agentLogsEl.scrollTop = agentLogsEl.scrollHeight;
+                        
+                        // Apply syntax highlighting
+                        document.querySelectorAll('pre code').forEach((block) => {
+                            hljs.highlightBlock(block);
+                        });
+                    } else {
+                        showError(data.message);
+                    }
+                    
+                    // Re-enable scan button
+                    startScanBtn.disabled = false;
+                    startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                    
+                    // Reset log counters for the next scan
+                    prevLogsLength = 0;
+                    prevActionPlanLength = 0;
+                })
+                .catch(error => {
+                    showError('Failed to load report: ' + error);
+                    
+                    // Re-enable scan button
+                    startScanBtn.disabled = false;
+                    startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                    
+                    // Reset log counters for the next scan
+                    prevLogsLength = 0;
+                    prevActionPlanLength = 0;
+                });
+            }
+            
+            // Function to update agent logs
+            function updateAgentLogs(logs) {
+                if (!logs || logs.length === 0) {
+                    return;
+                }
+                
+                // Check if we have new logs
+                if (logs.length > prevLogsLength) {
+                    // Clear placeholder if it's the first logs
+                    if (prevLogsLength === 0) {
+                        agentLogsEl.innerHTML = '';
+                    }
+                    
+                    // Add only new logs
+                    for (let i = prevLogsLength; i < logs.length; i++) {
+                        const logEntry = logs[i];
+                        const logLineEl = document.createElement('div');
+                        
+                        // Style differently based on log type
+                        if (logEntry.includes('[VULNERABILITY]')) {
+                            logLineEl.classList.add('text-danger', 'fw-bold');
+                            logLineEl.textContent = logEntry;
+                        } else if (logEntry.includes('[PLANNER]')) {
+                            logLineEl.classList.add('text-primary', 'fw-bold');
+                            logLineEl.innerHTML = `<i class="bi bi-diagram-3"></i> ${logEntry}`;
+                        } else if (logEntry.includes('ACTION PLAN') || logEntry.includes('Security plan')) {
+                            logLineEl.classList.add('text-info', 'fw-bold');
+                            logLineEl.textContent = logEntry;
+                        } else if (logEntry.includes('Step ')) {
+                            logLineEl.classList.add('text-warning');
+                            logLineEl.textContent = logEntry;
+                        } else {
+                            logLineEl.textContent = logEntry;
+                        }
+                        
+                        agentLogsEl.appendChild(logLineEl);
+                    }
+                    
+                    // Scroll to bottom
+                    agentLogsEl.scrollTop = agentLogsEl.scrollHeight;
+                    prevLogsLength = logs.length;
+                }
+            }
+            
+            // Function to update action plan
+            function updateActionPlan(plan) {
+                console.log("Action plan update received:", plan);
+                
+                // Always check if we need to generate a default plan based on progress
+                if (!plan || plan.length === 0) {
+                    // Only show waiting message if we haven't created a fallback plan yet
+                    if (actionPlanListEl.children.length <= 1 && 
+                        actionPlanListEl.innerText.includes("Waiting for agent action plan")) {
+                        // Create a default plan based on progress if we're past 20%
+                        if (parseInt(progressBar.textContent) >= 20) {
+                            console.log("Creating default action plan based on progress");
+                            let defaultPlan = [];
+                            
+                            // Main plan
+                            defaultPlan.push("Security Assessment in Progress");
+                            
+                            // Add steps based on progress
+                            const progress = parseInt(progressBar.textContent);
+                            if (progress >= 20) {
+                                defaultPlan.push("Step 1: Initialize scanner and target discovery");
+                            }
+                            if (progress >= 40) {
+                                defaultPlan.push("Step 2: Test for XSS vulnerabilities");
+                            }
+                            if (progress >= 60) {
+                                defaultPlan.push("Step 3: Test for CSRF vulnerabilities");
+                            }
+                            if (progress >= 80) {
+                                defaultPlan.push("Step 4: Test authentication mechanisms");
+                            }
+                            if (progress >= 90) {
+                                defaultPlan.push("Step 5: Generate security report");
+                            }
+                            
+                            // Call ourselves with this plan
+                            if (defaultPlan.length > 1) {
+                                updateActionPlan(defaultPlan);
+                                return;
+                            }
+                        }
+                    }
+                    return;
+                }
+                
+                console.log("Updating action plan with", plan.length, "items, previous count:", prevActionPlanLength);
+                
+                // Check if we have a new plan or new steps
+                if (plan.length > 0) {
+                    // Clear placeholder on first update
+                    if (actionPlanListEl.children.length <= 1 && 
+                        actionPlanListEl.innerText.includes("Waiting for agent action plan")) {
+                        console.log("Clearing placeholder and adding new action plan");
+                        actionPlanListEl.innerHTML = '';
+                    }
+                    
+                    // Add only new plan items
+                    for (let i = prevActionPlanLength; i < plan.length; i++) {
+                        const planItem = plan[i];
+                        if (!planItem || planItem.trim() === '') continue;
+                        
+                        console.log("Adding plan item:", planItem);
+                        
+                        const listItem = document.createElement('li');
+                        listItem.className = 'list-group-item';
+                        
+                        // Format differently based on content
+                        if (i === 0) {
+                            // This is the main plan
+                            listItem.className += ' fw-bold bg-light';
+                            listItem.innerHTML = '<i class="bi bi-diagram-3"></i> ' + planItem;
+                        } else if (planItem.includes('VULNERABILITY')) {
+                            // Don't show vulnerabilities in the action plan as per requirements
+                            continue;
+                        } else if (planItem.includes('(Pending)')) {
+                            // This is a pending task
+                            const pendingMatch = planItem.match(/Step (\d+):\s*(.*?)\s*\(Pending\)/i);
+                            if (pendingMatch) {
+                                const stepNum = pendingMatch[1];
+                                const taskDesc = pendingMatch[2].trim();
+                                
+                                // Create a more informative pending task display
+                                listItem.className += ' text-muted border-start border-warning border-3';
+                                listItem.style.backgroundColor = '#fffbf3'; // Very light yellow
+                                listItem.innerHTML = `
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span class="badge bg-warning text-dark me-2">${stepNum}</span>
+                                            <span class="task-desc">${taskDesc}</span>
+                                        </div>
+                                        <div>
+                                            <span class="badge bg-light text-secondary border">
+                                                <i class="bi bi-hourglass me-1"></i> Pending
+                                            </span>
+                                        </div>
+                                    </div>
+                                `;
+                            } else {
+                                listItem.className += ' text-muted border-start border-warning border-3';
+                                listItem.style.backgroundColor = '#fffbf3';
+                                listItem.innerHTML = `<i class="bi bi-hourglass me-1"></i> ${planItem}`;
+                            }
+                        } else {
+                            // This is a step 
+                            // Check for "Step X" pattern
+                            const stepMatch = planItem.match(/Step (\d+)[:\-]?\s*(.*)/i);
+                            if (stepMatch) {
+                                const stepNum = stepMatch[1];
+                                const stepText = stepMatch[2] || planItem.replace(/Step \d+[:\-]?\s*/i, '');
+                                
+                                // Style completed steps with a green indicator
+                                listItem.className += ' border-start border-success border-3';
+                                listItem.style.backgroundColor = '#f8fff8'; // Very light green
+                                
+                                listItem.innerHTML = `
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span class="badge bg-success me-2">${stepNum}</span>
+                                            <span class="task-desc">${stepText}</span>
+                                        </div>
+                                        <div>
+                                            <span class="badge bg-light text-success border">
+                                                <i class="bi bi-check-circle-fill me-1"></i> Completed
+                                            </span>
+                                        </div>
+                                    </div>
+                                `;
+                            } 
+                            // Check for numbered list pattern (1. 2. etc)
+                            else if (/^\d+[\.\)]/.test(planItem.trim())) {
+                                const parts = planItem.trim().split(/[\.\)]\s+/, 2);
+                                if (parts.length > 1) {
+                                    const stepNum = parts[0];
+                                    const stepText = parts[1];
+                                    listItem.innerHTML = `<span class="badge bg-info me-2">${stepNum}</span> ${stepText}`;
+                                } else {
+                                    listItem.textContent = planItem;
+                                }
+                            }
+                            // Check for bullet point pattern
+                            else if (/^[\-\*\•]/.test(planItem.trim())) {
+                                const stepText = planItem.trim().replace(/^[\-\*\•]\s*/, '');
+                                listItem.innerHTML = `<span class="badge bg-secondary me-2"><i class="bi bi-dot"></i></span> ${stepText}`;
+                            }
+                            // Default formatting
+                            else {
+                                listItem.textContent = planItem;
+                            }
+                        }
+                        
+                        actionPlanListEl.appendChild(listItem);
+                    }
+                    
+                    prevActionPlanLength = plan.length;
+                }
+            }
+            
+            // Function to update current action badge
+            function updateCurrentAction(action) {
+                if (!action) return;
+                
+                console.log("Updating current action:", action);
+                
+                // Set the badge text
+                currentActionBadgeEl.textContent = action;
+                
+                // Add an icon based on the action type
+                let icon = '';
+                
+                // Change badge color and icon based on action type
+                if (action.includes('Found:') || action.includes('vulnerability') || action.includes('VULNERABILITY')) {
+                    currentActionBadgeEl.className = 'badge bg-danger px-3 py-2';
+                    icon = '<i class="bi bi-exclamation-triangle-fill me-1"></i>';
+                } else if (action.includes('XSS')) {
+                    currentActionBadgeEl.className = 'badge bg-warning text-dark px-3 py-2';
+                    icon = '<i class="bi bi-code-square me-1"></i>';
+                } else if (action.includes('CSRF')) {
+                    currentActionBadgeEl.className = 'badge bg-info px-3 py-2';
+                    icon = '<i class="bi bi-shuffle me-1"></i>';
+                } else if (action.includes('Auth')) {
+                    currentActionBadgeEl.className = 'badge bg-primary px-3 py-2';
+                    icon = '<i class="bi bi-shield-lock me-1"></i>';
+                } else if (action.includes('Report')) {
+                    currentActionBadgeEl.className = 'badge bg-success px-3 py-2';
+                    icon = '<i class="bi bi-file-earmark-text me-1"></i>';
+                } else if (action.includes('Plan')) {
+                    currentActionBadgeEl.className = 'badge bg-dark px-3 py-2';
+                    icon = '<i class="bi bi-diagram-3 me-1"></i>';
+                } else {
+                    currentActionBadgeEl.className = 'badge bg-secondary px-3 py-2';
+                    icon = '<i class="bi bi-cpu me-1"></i>';
+                }
+                
+                // Set the badge content with icon
+                currentActionBadgeEl.innerHTML = icon + action;
+                
+                // Add a subtle animation to draw attention to the update
+                currentActionBadgeEl.classList.add('animate__animated', 'animate__pulse');
+                setTimeout(() => {
+                    currentActionBadgeEl.classList.remove('animate__animated', 'animate__pulse');
+                }, 1000);
+            }
+            
+            function showError(message) {
+                errorMessageEl.textContent = message;
+                errorContainer.classList.remove('d-none');
+                scanStatusPanel.classList.add('d-none');
+                
+                // Re-enable scan button
+                startScanBtn.disabled = false;
+                startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                
+                // Reset log counters for the next scan
+                prevLogsLength = 0;
+                prevActionPlanLength = 0;
+            }
+            
+            // Cancel button
+            cancelBtn.addEventListener('click', function() {
+                if (confirm('Are you sure you want to cancel the scan?')) {
+                    isCancelled = true;
+                    clearInterval(statusCheckInterval);
+                    scanStatusPanel.classList.add('d-none');
+                    
+                    // Re-enable scan button
+                    startScanBtn.disabled = false;
+                    startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                    
+                    // Reset log counters for the next scan
+                    prevLogsLength = 0;
+                    prevActionPlanLength = 0;
+                }
+            });
+            
+            // New scan button
+            newScanBtn.addEventListener('click', function() {
+                reportContainer.classList.add('d-none');
+                errorContainer.classList.add('d-none');
+                document.getElementById('url').value = '';
+                
+                // Reset log counters
+                prevLogsLength = 0;
+                prevActionPlanLength = 0;
+                
+                // Reset status panel title
+                document.getElementById('statusPanelTitle').innerHTML = 
+                    '<i class="bi bi-robot"></i> Agent Swarm Status <span class="badge bg-secondary ms-2 fs-6">Multiple agents working in parallel</span>';
+                
+                // Reset log displays
+                agentLogsEl.innerHTML = '<div class="text-muted">Waiting for agent logs...</div>';
+                actionPlanListEl.innerHTML = '<li class="list-group-item text-center text-muted">Waiting for agent action plan...</li>';
+                currentActionBadgeEl.textContent = 'Initializing';
+                currentActionBadgeEl.className = 'badge bg-success';
+                
+                // Scroll back to the top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+            
+            // Download report button
+            downloadReportBtn.addEventListener('click', function() {
+                const reportContent = reportContentEl.innerText;
+                const blob = new Blob([reportContent], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'security_report_' + new Date().toISOString().slice(0, 10) + '.md';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+        });
+    </script>
+</body>
+</html>

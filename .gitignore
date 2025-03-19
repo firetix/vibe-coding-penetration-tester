@@ -1,0 +1,96 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Playwright browser files
+.playwright-browsers/
+.browser-cache/
+
+# Logs and Reports
+*.log
+logs/
+test-results/
+playwright-report/
+report.html
+# Keep report templates, exclude generated reports
+reports/**/
+!reports/.gitkeep
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+*.env
+
+# Pytest
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# API Keys and Secrets
+*api_key*
+*apikey*
+*auth_token*
+secrets.yaml
+secrets.yml
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+*.tmp
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# Flask
+instance/
+flask_session/
+
+# Web UI temporary files
+web_ui.log

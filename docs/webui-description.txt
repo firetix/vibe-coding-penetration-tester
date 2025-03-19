@@ -1,0 +1,27 @@
+# VibePenTester Web UI
+
+The VibePenTester Web UI provides a modern, intuitive interface for running security tests against web applications. The interface allows you to:
+
+1. Enter a target URL to scan
+2. Monitor real-time progress of the security scan
+3. View a formatted security report with highlighted vulnerabilities
+4. Download the report for sharing or documentation
+
+## Screenshots
+
+A screenshot of the UI would show:
+
+- A clean, modern interface with a blue header
+- A form for entering the target URL
+- A real-time progress bar showing the scanning progress
+- A results panel showing the security findings, formatted with syntax highlighting
+- Download and new scan buttons
+
+## Usage Workflow
+
+1. The user enters a URL in the input field and clicks "Start Security Scan"
+2. The UI shows a progress bar and current task information
+3. Upon completion, the security report is displayed with discovered vulnerabilities
+4. The user can download the report or start a new scan
+
+This web UI makes security testing accessible to users who prefer a graphical interface over command-line tools.
