@@ -13,6 +13,8 @@
     }
   ],
   "env": {
-    "PYTHONUNBUFFERED": "1"
+    "PYTHONUNBUFFERED": "1",
+    "DEBUG": "true",
+    "VERBOSE": "true"
   }
 } 
