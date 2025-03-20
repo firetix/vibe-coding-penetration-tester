@@ -320,11 +320,11 @@
                         <div class="status-panel mb-4">
                             <div class="d-flex align-items-center mb-3">
                                 <div class="me-2"><i class="bi bi-globe fs-4"></i></div>
-                                <div style="flex-grow: 1;">
+                                <div style="flex-grow: 1; max-width: 100%;">
                                     <div class="text-muted">Target</div>
                                     <div class="alert alert-primary py-2 mb-0 mt-1">
                                         <i class="bi bi-bullseye"></i>
-                                        <span class="fw-bold" id="status-url">-</span>
+                                        <span class="fw-bold text-truncate d-inline-block" style="max-width: 85%; vertical-align: middle;" id="status-url" title="-">-</span>
                                     </div>
                                 </div>
                             </div>
@@ -375,17 +375,20 @@
                         
                         <!-- Agent Logs -->
                         <div class="card mt-4">
-                            <div class="card-header d-flex justify-content-between align-items-center">
+                            <div class="card-header d-flex justify-content-between align-items-center bg-primary text-white">
                                 <div>
-                                    <i class="bi bi-terminal"></i> Agent Activity Log
+                                    <i class="bi bi-robot"></i> Security Agent Activities
                                 </div>
                                 <div>
-                                    <span class="badge bg-success" id="current-action-badge">Initializing</span>
+                                    <span class="badge bg-light text-primary" id="current-action-badge">Initializing</span>
                                 </div>
                             </div>
                             <div class="card-body p-0">
-                                <div id="agent-logs" class="bg-dark text-light p-3" style="height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px; border-radius: 6px; border: 1px solid #6c757d;">
-                                    <div class="text-muted">Waiting for agent logs...</div>
+                                <div id="agent-logs" class="p-3" style="height: 350px; overflow-y: auto; font-size: 14px; border-radius: 6px; border: 1px solid #e9ecef; background-color: #f8f9fa;">
+                                    <div class="text-muted">
+                                        <i class="bi bi-info-circle"></i> 
+                                        Waiting for agent activities... The penetration testing agents will appear here as they work.
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -449,10 +452,286 @@
             const actionPlanListEl = document.getElementById('action-plan-list');
             const currentActionBadgeEl = document.getElementById('current-action-badge');
             
+            // Generate or retrieve a unique session ID
+            let sessionId = localStorage.getItem('vpt_session_id');
+            
+            // If no session ID exists, generate a new one
+            if (!sessionId) {
+                sessionId = generateSessionId();
+                localStorage.setItem('vpt_session_id', sessionId);
+                console.log("Generated new session ID:", sessionId);
+            } else {
+                console.log("Using existing session ID:", sessionId);
+            }
+            
             let statusCheckInterval;
             let isCancelled = false;
             let prevLogsLength = 0;
             let prevActionPlanLength = 0;
+            let scanInProgress = false;
+            
+            // State persistence
+            const STATE_STORAGE_KEY = 'vpt_scan_state';
+            
+            // Generate a random session ID for this browser tab
+            function generateSessionId() {
+                return 'session_' + Math.random().toString(36).substring(2, 15) + 
+                       Math.random().toString(36).substring(2, 15);
+            }
+            
+            // Save scan state to localStorage
+            function saveScanState(state) {
+                try {
+                    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(state));
+                } catch (e) {
+                    console.error('Failed to save scan state:', e);
+                }
+            }
+            
+            // Load scan state from localStorage
+            function loadScanState() {
+                try {
+                    const stateJson = localStorage.getItem(STATE_STORAGE_KEY);
+                    if (stateJson) {
+                        return JSON.parse(stateJson);
+                    }
+                } catch (e) {
+                    console.error('Failed to load scan state:', e);
+                }
+                return null;
+            }
+            
+            // Clear scan state
+            function clearScanState() {
+                try {
+                    localStorage.removeItem(STATE_STORAGE_KEY);
+                } catch (e) {
+                    console.error('Failed to clear scan state:', e);
+                }
+            }
+            
+            // Check for existing scan on page load and restore state
+            function restoreScanStateIfExists() {
+                const savedState = loadScanState();
+                
+                // Always check the server for the session's current state
+                // This ensures we're in sync with the server, not just local storage
+                fetch(`/status?session_id=${encodeURIComponent(sessionId)}`)
+                .then(response => response.json())
+                .then(serverState => {
+                    console.log('Server scan state retrieved:', serverState);
+                    
+                    // If there's no active scan on the server, reset local state and don't display anything
+                    if (!serverState.is_running && !serverState.url) {
+                        console.log('No active scan on server, clearing local state');
+                        clearScanState();
+                        
+                        // Reset scan button to initial state
+                        startScanBtn.disabled = false;
+                        startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                        
+                        // Hide all panels
+                        scanStatusPanel.classList.add('d-none');
+                        reportContainer.classList.add('d-none');
+                        errorContainer.classList.add('d-none');
+                        return;
+                    }
+                    
+                    // If we have a saved state, try to restore it
+                    if (savedState) {
+                        console.log('Restoring previous scan state:', savedState);
+                        
+                        // Restore UI elements
+                        statusUrlEl.textContent = serverState.url || savedState.url || '-';
+                        currentTaskEl.textContent = serverState.current_task || savedState.currentTask || 'Unknown';
+                        
+                        // Restore progress
+                        const progress = serverState.progress !== undefined ? serverState.progress : 
+                                       (savedState.progress !== undefined ? savedState.progress : 0);
+                        
+                        progressBar.style.width = progress + '%';
+                        progressBar.textContent = progress + '%';
+                        
+                        const isComplete = !serverState.is_running || 
+                                          (savedState.isComplete && progress >= 100);
+                                          
+                        if (isComplete && progress >= 100) {
+                            progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                            progressBar.classList.add('bg-success');
+                        }
+                        
+                        // Restore action plan - prefer server state over local
+                        if (serverState.action_plan && serverState.action_plan.length > 0) {
+                            updateActionPlan(serverState.action_plan);
+                        } else if (savedState.actionPlan && savedState.actionPlan.length > 0) {
+                            updateActionPlan(savedState.actionPlan);
+                        }
+                        
+                        // Restore logs - prefer server state over local
+                        if (serverState.agent_logs && serverState.agent_logs.length > 0) {
+                            agentLogsEl.innerHTML = '';
+                            updateAgentLogs(serverState.agent_logs);
+                            prevLogsLength = serverState.agent_logs.length;
+                        } else if (savedState.logs && savedState.logs.length > 0) {
+                            agentLogsEl.innerHTML = '';
+                            updateAgentLogs(savedState.logs);
+                            prevLogsLength = savedState.logs.length;
+                        }
+                        
+                        // Restore current action
+                        if (serverState.current_action) {
+                            updateCurrentAction(serverState.current_action);
+                        } else if (savedState.currentAction) {
+                            updateCurrentAction(savedState.currentAction);
+                        }
+                        
+                        // Show appropriate panels based on state
+                        if (isComplete && savedState.reportContent) {
+                            // If we have a cached report, show it immediately
+                            scanStatusPanel.classList.remove('d-none');
+                            reportContainer.classList.remove('d-none');
+                            reportContentEl.innerHTML = marked.parse(savedState.reportContent);
+                            document.getElementById('statusPanelTitle').innerHTML = 
+                                '<i class="bi bi-check-circle-fill text-success"></i> Scan Complete - Agent Activity Log';
+                                
+                            // Apply syntax highlighting
+                            document.querySelectorAll('pre code').forEach((block) => {
+                                hljs.highlightBlock(block);
+                            });
+                        } else if (isComplete) {
+                            // If complete but no cached report content, try to fetch it
+                            scanStatusPanel.classList.remove('d-none');
+                            
+                            // Restore the session ID from saved state
+                            if (savedState.sessionId) {
+                                sessionId = savedState.sessionId;
+                            }
+                            
+                            // Try to load the report
+                            fetch(`/report?session_id=${encodeURIComponent(sessionId)}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.status === 'success') {
+                                    // Save report content
+                                    savedState.reportContent = data.content;
+                                    saveScanState(savedState);
+                                    
+                                    // Show the report
+                                    reportContainer.classList.remove('d-none');
+                                    reportContentEl.innerHTML = marked.parse(data.content);
+                                    
+                                    // Apply syntax highlighting
+                                    document.querySelectorAll('pre code').forEach((block) => {
+                                        hljs.highlightBlock(block);
+                                    });
+                                } else {
+                                    // If fetch fails, show the UI anyway but with a notice
+                                    reportContainer.classList.remove('d-none');
+                                    reportContentEl.innerHTML = '<div class="alert alert-warning">Report data could not be reloaded. The scan completed successfully, but the report is not available after page refresh.</div>';
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching report on state restore:', error);
+                                // Show the UI anyway but with a notice
+                                reportContainer.classList.remove('d-none');
+                                reportContentEl.innerHTML = '<div class="alert alert-warning">Report data could not be reloaded. The scan completed successfully, but the report is not available after page refresh.</div>';
+                            });
+                        } else if (serverState.is_running || (progress < 100 && progress > 0)) {
+                            // Resume active scan
+                            scanStatusPanel.classList.remove('d-none');
+                            startScanBtn.disabled = true;
+                            startScanBtn.innerHTML = '<span class="loader"></span> Deploying Agent Swarm...';
+                            scanInProgress = true;
+                            
+                            // Restore session ID
+                            if (savedState.sessionId) {
+                                sessionId = savedState.sessionId;
+                                console.log(`Restored session ID: ${sessionId}`);
+                            }
+                            
+                            // Start polling for updates
+                            checkStatus();
+                            statusCheckInterval = setInterval(checkStatus, 2000);
+                        } else if (serverState.error || savedState.error) {
+                            // Show error state
+                            showError(serverState.error || savedState.error);
+                        }
+                    } else if (serverState.is_running || serverState.url) {
+                        // No local state but server has an active scan
+                        console.log('Using server state, no local state found');
+                        
+                        // Save server state to local
+                        const newState = {
+                            url: serverState.url,
+                            sessionId: sessionId,
+                            isRunning: serverState.is_running,
+                            progress: serverState.progress,
+                            currentTask: serverState.current_task,
+                            currentAction: serverState.current_action,
+                            actionPlan: serverState.action_plan,
+                            logs: serverState.agent_logs,
+                            lastUpdated: new Date().toISOString(),
+                            error: serverState.error,
+                            isComplete: !serverState.is_running && !serverState.error
+                        };
+                        saveScanState(newState);
+                        
+                        // Rebuild UI
+                        if (serverState.is_running) {
+                            statusUrlEl.textContent = serverState.url || '-';
+                            currentTaskEl.textContent = serverState.current_task || 'Initializing';
+                            progressBar.style.width = serverState.progress + '%';
+                            progressBar.textContent = serverState.progress + '%';
+                            
+                            if (serverState.action_plan && serverState.action_plan.length > 0) {
+                                updateActionPlan(serverState.action_plan);
+                            }
+                            
+                            if (serverState.agent_logs && serverState.agent_logs.length > 0) {
+                                agentLogsEl.innerHTML = '';
+                                updateAgentLogs(serverState.agent_logs);
+                                prevLogsLength = serverState.agent_logs.length;
+                            }
+                            
+                            if (serverState.current_action) {
+                                updateCurrentAction(serverState.current_action);
+                            }
+                            
+                            scanStatusPanel.classList.remove('d-none');
+                            startScanBtn.disabled = true;
+                            startScanBtn.innerHTML = '<span class="loader"></span> Deploying Agent Swarm...';
+                            scanInProgress = true;
+                            
+                            // Start polling for updates
+                            checkStatus();
+                            statusCheckInterval = setInterval(checkStatus, 2000);
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking server state:', error);
+                    
+                    // If server check fails, try to use local state
+                    if (savedState) {
+                        console.log('Server check failed, using saved local state:', savedState);
+                        // Show appropriate panels based on saved state
+                        if (savedState.isComplete) {
+                            scanStatusPanel.classList.remove('d-none');
+                            if (savedState.reportContent) {
+                                reportContainer.classList.remove('d-none');
+                                reportContentEl.innerHTML = marked.parse(savedState.reportContent);
+                            }
+                        } else if (savedState.isRunning) {
+                            scanStatusPanel.classList.remove('d-none');
+                            startScanBtn.disabled = true;
+                            startScanBtn.innerHTML = '<span class="loader"></span> Deploying Agent Swarm...';
+                            scanInProgress = true;
+                        } else if (savedState.error) {
+                            showError(savedState.error);
+                        }
+                    }
+                });
+            }
             
             // Initialize marked.js
             marked.setOptions({
@@ -600,6 +879,7 @@
                 
                 // Update status elements
                 statusUrlEl.textContent = url;
+                statusUrlEl.title = url; // Set title for tooltip on hover
                 currentTaskEl.textContent = 'Initializing scan';
                 progressBar.style.width = '0%';
                 progressBar.textContent = '0%';
@@ -626,7 +906,8 @@
                 const formData = {
                     'url': url,
                     'provider': provider,
-                    'model': model
+                    'model': model,
+                    'session_id': sessionId // Add session ID to track this scan
                 };
                 
                 // Add Ollama URL if applicable
@@ -646,6 +927,23 @@
                         formData['anthropic_api_key'] = anthropicKey;
                     }
                 }
+                
+                // Save initial scan state
+                const initialState = {
+                    url: url,
+                    provider: provider,
+                    model: model,
+                    sessionId: sessionId,
+                    isRunning: true,
+                    progress: 0,
+                    currentTask: 'Initializing scan',
+                    actionPlan: [],
+                    logs: [],
+                    startTime: new Date().toISOString(),
+                    isComplete: false
+                };
+                saveScanState(initialState);
+                scanInProgress = true;
                 
                 // Start the scan
                 fetch('/scan', {
@@ -673,10 +971,18 @@
             function checkStatus() {
                 if (isCancelled) {
                     clearInterval(statusCheckInterval);
+                    // Update state to reflect cancellation
+                    const currentState = loadScanState();
+                    if (currentState) {
+                        currentState.isRunning = false;
+                        currentState.isCancelled = true;
+                        saveScanState(currentState);
+                    }
                     return;
                 }
                 
-                fetch('/status')
+                // Include session ID in status request to get this specific scan's status
+                fetch(`/status?session_id=${encodeURIComponent(sessionId)}`)
                 .then(response => response.json())
                 .then(data => {
                     // Update progress bar
@@ -695,13 +1001,36 @@
                     // Update current action badge
                     updateCurrentAction(data.current_action);
                     
+                    // Save current state to localStorage for persistence
+                    const currentState = {
+                        url: data.url,
+                        sessionId: sessionId,
+                        isRunning: data.is_running,
+                        progress: data.progress,
+                        currentTask: data.current_task,
+                        currentAction: data.current_action,
+                        actionPlan: data.action_plan,
+                        logs: data.agent_logs,
+                        lastUpdated: new Date().toISOString(),
+                        error: data.error,
+                        isComplete: !data.is_running && !data.error
+                    };
+                    saveScanState(currentState);
+                    
                     // Check if scan has completed or failed
                     if (!data.is_running) {
                         clearInterval(statusCheckInterval);
+                        scanInProgress = false;
                         
                         if (data.error) {
+                            // Update state with error info
+                            currentState.error = data.error;
+                            saveScanState(currentState);
                             showError(data.error);
                         } else {
+                            // Mark as complete in the state
+                            currentState.isComplete = true;
+                            saveScanState(currentState);
                             // Load the report
                             loadReport();
                         }
@@ -709,15 +1038,31 @@
                 })
                 .catch(error => {
                     clearInterval(statusCheckInterval);
+                    
+                    // Save error state
+                    const errorState = loadScanState() || {};
+                    errorState.error = 'Failed to check status: ' + error;
+                    errorState.isRunning = false;
+                    saveScanState(errorState);
+                    
                     showError('Failed to check status: ' + error);
                 });
             }
             
             function loadReport() {
-                fetch('/report')
+                // Include session ID to get the specific report for this scan
+                fetch(`/report?session_id=${encodeURIComponent(sessionId)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.status === 'success') {
+                        // Save report content to state
+                        const currentState = loadScanState() || {};
+                        currentState.reportContent = data.content;
+                        currentState.isComplete = true;
+                        currentState.isRunning = false;
+                        currentState.progress = 100;
+                        saveScanState(currentState);
+                        
                         // Render markdown to HTML
                         reportContentEl.innerHTML = marked.parse(data.content);
                         
@@ -782,7 +1127,15 @@
                             hljs.highlightBlock(block);
                         });
                     } else {
-                        showError(data.message);
+                        // Don't show error, just display a friendly message in the report area
+                        reportContainer.classList.remove('d-none');
+                        reportContentEl.innerHTML = `
+                            <div class="alert alert-warning">
+                                <h4><i class="bi bi-exclamation-triangle"></i> Report data unavailable</h4>
+                                <p>The scan completed successfully, but the report couldn't be loaded. This can happen after server restart.</p>
+                                <p>You can see the scan results in the logs above, or run a new scan to generate a fresh report.</p>
+                            </div>
+                        `;
                     }
                     
                     // Re-enable scan button
@@ -794,7 +1147,21 @@
                     prevActionPlanLength = 0;
                 })
                 .catch(error => {
-                    showError('Failed to load report: ' + error);
+                    console.error('Error loading report:', error);
+                    
+                    // Show friendly message instead of error
+                    reportContainer.classList.remove('d-none');
+                    reportContentEl.innerHTML = `
+                        <div class="alert alert-warning">
+                            <h4><i class="bi bi-exclamation-triangle"></i> Report data unavailable</h4>
+                            <p>The scan completed successfully, but the report couldn't be loaded. This can happen after server restart.</p>
+                            <p>You can see the scan results in the logs above, or run a new scan to generate a fresh report.</p>
+                            <details class="mt-3">
+                                <summary>Technical details</summary>
+                                <code>${error.toString()}</code>
+                            </details>
+                        </div>
+                    `;
                     
                     // Re-enable scan button
                     startScanBtn.disabled = false;
@@ -814,57 +1181,153 @@
                 
                 // Function to strip ANSI color codes for the UI
                 function stripAnsiCodes(text) {
-                    if (!text) return text;
+                    if (!text || typeof text !== 'string') return text;
                     return text.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
                 }
                 
-                // Check if we have new logs
-                if (logs.length > prevLogsLength) {
-                    // Clear placeholder if it's the first logs
-                    if (prevLogsLength === 0) {
-                        agentLogsEl.innerHTML = '';
-                    }
+                // Set a default for prevLogsLength if it's undefined
+                if (prevLogsLength === undefined) {
+                    prevLogsLength = 0;
+                }
+                
+                // Clear placeholder on first logs
+                if (prevLogsLength === 0 && logs.length > 0) {
+                    agentLogsEl.innerHTML = '';
+                }
+                
+                // New approach to handle structured agent logs
+                for (let i = 0; i < logs.length; i++) {
+                    // Skip already displayed logs
+                    if (i < prevLogsLength) continue;
                     
-                    // Add only new logs
-                    for (let i = prevLogsLength; i < logs.length; i++) {
-                        let logEntry = logs[i];
+                    const logEntry = logs[i];
+                    
+                    // Handle new format of agent activity logs
+                    if (typeof logEntry === 'object' && logEntry !== null) {
                         const logLineEl = document.createElement('div');
+                        logLineEl.className = 'agent-log-entry mb-1 p-1';
                         
-                        // Strip ANSI codes for clean display
-                        logEntry = stripAnsiCodes(logEntry);
+                        // Extract properties
+                        const time = logEntry.time || '';
+                        const type = logEntry.type || 'activity';
+                        const description = stripAnsiCodes(logEntry.description || '');
+                        const agent = logEntry.agent || '';
                         
-                        // Style differently based on log type
-                        if (logEntry.includes('[VULNERABILITY]')) {
+                        // Set item styling based on activity type
+                        let icon = '';
+                        
+                        switch (type) {
+                            case 'vulnerability':
+                                logLineEl.classList.add('border-start', 'border-danger', 'border-3', 'ps-2', 'bg-light');
+                                icon = '<i class="bi bi-bug-fill text-danger me-1"></i>';
+                                break;
+                            case 'xss_test':
+                                logLineEl.classList.add('border-start', 'border-warning', 'border-3', 'ps-2');
+                                icon = '<i class="bi bi-hammer text-warning me-1"></i>';
+                                break;
+                            case 'sqli_test':
+                                logLineEl.classList.add('border-start', 'border-primary', 'border-3', 'ps-2');
+                                icon = '<i class="bi bi-database text-primary me-1"></i>';
+                                break;
+                            case 'discovery':
+                                logLineEl.classList.add('border-start', 'border-success', 'border-3', 'ps-2');
+                                icon = '<i class="bi bi-search text-success me-1"></i>';
+                                break;
+                            case 'auth_test':
+                                logLineEl.classList.add('border-start', 'border-dark', 'border-3', 'ps-2');
+                                icon = '<i class="bi bi-shield-lock me-1"></i>';
+                                break;
+                            case 'planning':
+                                logLineEl.classList.add('border-start', 'border-info', 'border-3', 'ps-2');
+                                icon = '<i class="bi bi-diagram-3 text-info me-1"></i>';
+                                break;
+                            case 'completion':
+                                logLineEl.classList.add('border-start', 'border-success', 'border-3', 'ps-2', 'bg-light');
+                                icon = '<i class="bi bi-check-circle-fill text-success me-1"></i>';
+                                break;
+                            case 'reporting':
+                                logLineEl.classList.add('border-start', 'border-info', 'border-3', 'ps-2');
+                                icon = '<i class="bi bi-file-earmark-text text-info me-1"></i>';
+                                break;
+                            case 'error':
+                                logLineEl.classList.add('border-start', 'border-danger', 'border-3', 'ps-2', 'bg-light');
+                                icon = '<i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>';
+                                break;
+                            default:
+                                icon = '<i class="bi bi-hammer me-1"></i>';
+                        }
+                        
+                        // Create agent badge if applicable
+                        let agentBadge = '';
+                        if (agent) {
+                            let badgeClass = 'bg-secondary';
+                            
+                            // Clean up agent name from artifacts
+                            let cleanAgent = agent.replace(/Activity$/, "")
+                                                 .replace(/\(Agent:\s*/g, "")
+                                                 .replace(/\)/g, "")
+                                                 .trim();
+                            
+                            // Set badge color based on agent type
+                            if (cleanAgent.includes('XSS') || cleanAgent.includes('Injection')) {
+                                badgeClass = 'bg-warning text-dark';
+                            } else if (cleanAgent.includes('SQL')) {
+                                badgeClass = 'bg-primary';
+                            } else if (cleanAgent.includes('Discovery') || cleanAgent.includes('Crawler')) {
+                                badgeClass = 'bg-success';
+                            } else if (cleanAgent.includes('Auth')) {
+                                badgeClass = 'bg-dark';
+                            } else if (cleanAgent.includes('Planner')) {
+                                badgeClass = 'bg-info';
+                            } else if (cleanAgent.includes('Report')) {
+                                badgeClass = 'bg-info';
+                            }
+                            
+                            agentBadge = `<span class="badge ${badgeClass} ms-1">${cleanAgent}</span>`;
+                        }
+                        
+                        // Add timestamp
+                        const timeDisplay = time ? `<span class="text-muted me-2">${time}</span>` : '';
+                        
+                        // Build the log entry HTML
+                        logLineEl.innerHTML = `
+                            <div class="d-flex">
+                                <div class="me-2">${timeDisplay}</div>
+                                <div class="flex-grow-1">
+                                    ${icon}${description.replace(/Activity$/, "").replace(/\'}]\}.*$/, "")}${agentBadge}
+                                </div>
+                            </div>
+                        `;
+                        
+                        agentLogsEl.appendChild(logLineEl);
+                    } else {
+                        // Fallback for old format string logs
+                        const logLineEl = document.createElement('div');
+                        let logText = typeof logEntry === 'string' ? 
+                            stripAnsiCodes(logEntry) : 
+                            JSON.stringify(logEntry);
+                            
+                        // Basic styling for legacy log format
+                        if (logText.includes('[VULNERABILITY]') || logText.includes('vulnerability')) {
                             logLineEl.classList.add('text-danger', 'fw-bold');
-                            logLineEl.textContent = logEntry;
-                        } else if (logEntry.includes('[PLANNER]')) {
+                            logLineEl.innerHTML = `<i class="bi bi-bug-fill"></i> ${logText}`;
+                        } else if (logText.includes('[PLANNER]') || logText.includes('plan')) {
                             logLineEl.classList.add('text-primary', 'fw-bold');
-                            logLineEl.innerHTML = `<i class="bi bi-diagram-3"></i> ${logEntry}`;
-                        } else if (logEntry.includes('ACTION PLAN') || 
-                                  logEntry.includes('Security plan') || 
-                                  logEntry.includes('GENERATING SECURITY') ||
-                                  logEntry.includes('Generating security')) {
-                            logLineEl.classList.add('text-info', 'fw-bold');
-                            logLineEl.textContent = logEntry;
-                        } else if (logEntry.includes('Task to agent mapping') || 
-                                  logEntry.includes('agent mapping') ||
-                                  logEntry.includes('Agent Task Allocation')) {
-                            logLineEl.classList.add('text-success', 'fw-bold');
-                            logLineEl.innerHTML = `<i class="bi bi-people-fill"></i> ${logEntry}`;
-                        } else if (logEntry.includes('Step ')) {
-                            logLineEl.classList.add('text-warning');
-                            logLineEl.textContent = logEntry;
+                            logLineEl.innerHTML = `<i class="bi bi-diagram-3"></i> ${logText}`;
+                        } else if (logText.includes('Agent')) {
+                            logLineEl.classList.add('text-success');
+                            logLineEl.innerHTML = `<i class="bi bi-robot"></i> ${logText}`;
                         } else {
-                            logLineEl.textContent = logEntry;
+                            logLineEl.textContent = logText;
                         }
                         
                         agentLogsEl.appendChild(logLineEl);
                     }
-                    
-                    // Scroll to bottom
-                    agentLogsEl.scrollTop = agentLogsEl.scrollHeight;
-                    prevLogsLength = logs.length;
                 }
+                
+                // Scroll to bottom
+                agentLogsEl.scrollTop = agentLogsEl.scrollHeight;
+                prevLogsLength = logs.length;
             }
             
             // Function to update action plan
@@ -1209,15 +1672,59 @@
                 if (confirm('Are you sure you want to cancel the scan?')) {
                     isCancelled = true;
                     clearInterval(statusCheckInterval);
-                    scanStatusPanel.classList.add('d-none');
                     
-                    // Re-enable scan button
-                    startScanBtn.disabled = false;
-                    startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                    // Call the reset endpoint to fully reset the scan's state on the server
+                    const resetFormData = new FormData();
+                    resetFormData.append('session_id', sessionId);
                     
-                    // Reset log counters for the next scan
-                    prevLogsLength = 0;
-                    prevActionPlanLength = 0;
+                    fetch('/reset', {
+                        method: 'POST',
+                        body: resetFormData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Reset response:', data);
+                        if (data.status === 'success') {
+                            // Clear local state
+                            clearScanState();
+                            
+                            // Hide panels
+                            scanStatusPanel.classList.add('d-none');
+                            reportContainer.classList.add('d-none');
+                            errorContainer.classList.add('d-none');
+                            
+                            // Reset the scan button
+                            startScanBtn.disabled = false;
+                            startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                            
+                            // Reset log counters for the next scan
+                            prevLogsLength = 0;
+                            prevActionPlanLength = 0;
+                            
+                            // Reset UI elements
+                            agentLogsEl.innerHTML = '<div class="text-muted">Waiting for agent activities...</div>';
+                            actionPlanListEl.innerHTML = '<li class="list-group-item text-center text-muted">Waiting for agent action plan...</li>';
+                            
+                            // Reset progress bar
+                            progressBar.style.width = '0%';
+                            progressBar.textContent = '0%';
+                            progressBar.classList.add('progress-bar-striped', 'progress-bar-animated');
+                            progressBar.classList.remove('bg-success');
+                            
+                            // Reset scan in progress flag
+                            scanInProgress = false;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error resetting scan state:', error);
+                        // Even if reset fails, still reset the UI
+                        scanStatusPanel.classList.add('d-none');
+                        startScanBtn.disabled = false;
+                        startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                        prevLogsLength = 0;
+                        prevActionPlanLength = 0;
+                        scanInProgress = false;
+                    });
                 }
             });
             
@@ -1225,6 +1732,7 @@
             newScanBtn.addEventListener('click', function() {
                 reportContainer.classList.add('d-none');
                 errorContainer.classList.add('d-none');
+                scanStatusPanel.classList.add('d-none');
                 document.getElementById('url').value = '';
                 
                 // Reset log counters
@@ -1241,8 +1749,34 @@
                 currentActionBadgeEl.textContent = 'Initializing';
                 currentActionBadgeEl.className = 'badge bg-success';
                 
-                // Scroll back to the top
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                // Clear stored scan state
+                clearScanState();
+                
+                // Reset progress bar
+                progressBar.style.width = '0%';
+                progressBar.textContent = '0%';
+                progressBar.classList.add('progress-bar-striped', 'progress-bar-animated');
+                progressBar.classList.remove('bg-success');
+                
+                // Generate a new session ID for the next scan
+                window.location.hash = '';
+                window.location.reload();
+            });
+            
+            // Initialize state restoration on page load
+            restoreScanStateIfExists();
+            
+            // Handle page visibility changes to resume polling if needed
+            document.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'visible') {
+                    // Check if we need to resume polling for an in-progress scan
+                    const savedState = loadScanState();
+                    if (savedState && savedState.isRunning && !statusCheckInterval) {
+                        console.log('Resuming status polling after page became visible again');
+                        checkStatus();
+                        statusCheckInterval = setInterval(checkStatus, 2000);
+                    }
+                }
             });
             
             // Download report button

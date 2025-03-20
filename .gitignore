@@ -94,4 +94,5 @@ flask_session/
 
 # Web UI temporary files
 web_ui.log
+sessions.json
 .vercel
