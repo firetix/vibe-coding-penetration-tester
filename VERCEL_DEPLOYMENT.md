@@ -83,11 +83,32 @@ Your project already contains the necessary files for Vercel deployment:
 
 ## Troubleshooting
 
-### File System Issues
+### Serverless Architecture Considerations
+
+#### File System Issues
 
 - Vercel uses a read-only file system, so our application is configured to use `/tmp` for storing logs and reports
 - If you see errors related to file permissions or "Read-only file system", verify that the application is properly detecting the Vercel environment
 - The environment variables `VERCEL=1` and `VERCEL_ENV=production` should be set for proper detection
+
+#### Threading and Background Processing
+
+- Vercel's serverless functions don't support background threads or long-running processes
+- VibePenTester uses a progressive scan approach where the security testing advances incrementally through the `/status` endpoint polls rather than running in background threads
+- Each API request must complete in under 10 seconds due to Vercel's timeout limits
+
+#### State Management
+
+- Serverless functions are stateless by design, so we store scan state in the `/tmp` directory
+- The `sessions.json` file in `/tmp` maintains scan progress between function invocations
+- Reports are also stored in `/tmp/vibe_pen_tester_reports` directory
+
+#### XSS Detection Implementation
+
+- XSS vulnerability detection has been specially adapted for serverless environments
+- During scan progression (when `/status` is polled), the scanner performs real XSS testing at specific progress steps
+- The application directly uses `test_xss_payload()` from security_tools.py to test for XSS vulnerabilities
+- Actual XSS findings are stored in the scan state and included in the final report
 
 ### Deployment Script
 

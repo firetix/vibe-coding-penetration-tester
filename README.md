@@ -111,6 +111,16 @@ You can now deploy VibePenTester to Vercel as a web application:
 2. Set up environment variables for API keys (optional)
 3. Connect Google Analytics to track usage
 
+#### Vercel-Specific Implementation Details
+
+This application has been specially adapted to work with Vercel's serverless architecture:
+
+1. **Progressive Scan Architecture**: Rather than using background threads (which don't work in serverless environments), the application uses a progressive scan approach where the `/status` endpoint advances the scan state in increments.
+
+2. **XSS Detection Implementation**: The application directly calls security testing functions during scan progression to detect XSS vulnerabilities in real-time.
+
+3. **Stateful Operation**: The application maintains state between serverless function invocations using file system storage in the `/tmp` directory.
+
 ### 🔬 Sample Reports & Live Demo
 
 Why take our word for it? We've got receipts for days. Check out the `/reports_samples/` directory to see actual vulnerabilities detected in the wild. These aren't made-up examples — they're real bugs that could have tanked someone's weekend if we hadn't vibed with their code first.

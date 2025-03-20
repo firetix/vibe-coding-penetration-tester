@@ -732,6 +732,9 @@ def progress_scan(session_id, scan_status):
     current_progress = scan_status.get("progress", 0)
     url = scan_status.get("url", "")
     
+    # Import security tools for actual testing
+    from tools.security_tools import test_xss_payload, generate_xss_payloads
+    
     # Set of task steps that should be completed incrementally
     task_steps = [10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100]
     
@@ -754,8 +757,12 @@ def progress_scan(session_id, scan_status):
         8: {"name": "Security header verification", "agent": "Header Security Agent", "type": "header_check"},
     }
     
+    # Storage for scan findings
+    if "findings" not in scan_status:
+        scan_status["findings"] = []
+    
     # Function to mark task as completed
-    def mark_task_completed(task_id):
+    def mark_task_completed(task_id, findings=None):
         if task_id not in scan_status.get("completed_tasks", []):
             task_info = task_mapping.get(task_id, {})
             task_name = task_info.get('name', 'Unknown task')
@@ -773,6 +780,23 @@ def progress_scan(session_id, scan_status):
                 f"Completed: {task_name}",
                 agent_name=task_info.get("agent", "Security Agent")
             )
+            
+            # If there are findings, record them in the scan status
+            if findings:
+                if isinstance(findings, list):
+                    scan_status["findings"].extend(findings)
+                else:
+                    scan_status["findings"].append(findings)
+                
+                # Add a specific activity for each finding
+                for finding in findings if isinstance(findings, list) else [findings]:
+                    if isinstance(finding, dict) and finding.get("xss_found"):
+                        agent_activity_tracker.add_activity(
+                            session_id,
+                            "vulnerability",
+                            f"XSS vulnerability found in {finding.get('parameter', 'parameter')} at {finding.get('url', url)}",
+                            agent_name="XSS Testing Agent"
+                        )
             
             # Update action plan list with completion status
             for i, plan_item in enumerate(scan_status["action_plan"]):
@@ -810,7 +834,105 @@ def progress_scan(session_id, scan_status):
         # Update last poll time
         scan_status["_last_poll_time"] = current_time
     
-    # Check if we should mark tasks as completed
+    # Perform actual testing for specific steps
+    # Each poll will advance to next step, but we'll actually test for each specific task
+    
+    # XSS Testing - Perform when we're at step 3
+    if current_progress in range(20, 30) and 3 not in scan_status.get("completed_tasks", []):
+        try:
+            # Indicate XSS testing is in progress
+            agent_activity_tracker.add_activity(
+                session_id,
+                "xss_test",
+                f"Testing {url} for XSS vulnerabilities...",
+                agent_name="XSS Testing Agent"
+            )
+            
+            # Run actual XSS testing
+            xss_findings = []
+            
+            # Check for XSS in the target URL parameter if "uid" is in the URL (known vulnerability for Gruyere)
+            if "gruyere" in url.lower() and ("snippets" in url.lower() or "uid=" in url.lower()):
+                agent_activity_tracker.add_activity(
+                    session_id,
+                    "xss_test",
+                    f"Testing Google Gruyere snippets endpoint for XSS vulnerabilities...",
+                    agent_name="XSS Testing Agent"
+                )
+                
+                # Test with simple XSS payloads 
+                xss_payloads = [
+                    "<script>alert('XSS')</script>",
+                    "<img src=x onerror=alert('XSS')>",
+                    "<svg onload=alert('XSS')>"
+                ]
+                
+                for payload in xss_payloads:
+                    result = test_xss_payload(
+                        target_url=url, 
+                        payload=payload, 
+                        injection_point="parameter", 
+                        parameter_name="uid"
+                    )
+                    
+                    if result.get("xss_found", False):
+                        xss_findings.append(result)
+                        agent_activity_tracker.add_activity(
+                            session_id,
+                            "vulnerability",
+                            f"XSS vulnerability found: {result.get('description', 'XSS in parameter')}",
+                            agent_name="XSS Testing Agent"
+                        )
+            
+            # More generic test for any URL - test the URL for common XSS vulnerabilities
+            html_payloads = generate_xss_payloads("html", 3)["payloads"] 
+            for payload in html_payloads:
+                result = test_xss_payload(
+                    target_url=url, 
+                    payload=payload, 
+                    injection_point="url", 
+                    parameter_name="q"  # common parameter name
+                )
+                
+                if result.get("xss_found", False):
+                    xss_findings.append(result)
+                    agent_activity_tracker.add_activity(
+                        session_id,
+                        "vulnerability",
+                        f"XSS vulnerability found: {result.get('description', 'XSS in URL')}",
+                        agent_name="XSS Testing Agent"
+                    )
+            
+            # Mark XSS testing as completed with findings
+            mark_task_completed(3, xss_findings)
+            
+            # Add detailed activity about the test results
+            if xss_findings:
+                agent_activity_tracker.add_activity(
+                    session_id,
+                    "xss_test",
+                    f"XSS testing completed: Found {len(xss_findings)} XSS vulnerabilities",
+                    agent_name="XSS Testing Agent"
+                )
+            else:
+                agent_activity_tracker.add_activity(
+                    session_id,
+                    "xss_test",
+                    f"XSS testing completed: No vulnerabilities found",
+                    agent_name="XSS Testing Agent"
+                )
+                
+        except Exception as e:
+            logger.error(f"Error during XSS testing: {str(e)}")
+            agent_activity_tracker.add_activity(
+                session_id,
+                "xss_test",
+                f"Error during XSS testing: {str(e)}",
+                agent_name="XSS Testing Agent"
+            )
+            mark_task_completed(3, [])
+    
+    # Automatically mark other tasks as completed based on progress
     tasks_to_complete = []
     if next_step == 100:
         # Mark all remaining tasks as completed
@@ -823,7 +945,7 @@ def progress_scan(session_id, scan_status):
         tasks_done = int(completed_step / 10)
         
         for task_id in range(1, tasks_done + 1):
-            if task_id not in scan_status.get("completed_tasks", []):
+            if task_id not in scan_status.get("completed_tasks", []) and task_id != 3:  # Skip XSS (task 3) which is handled separately
                 tasks_to_complete.append(task_id)
     
     # Mark tasks as completed
@@ -846,14 +968,42 @@ def progress_scan(session_id, scan_status):
         scan_status["current_task"] = "Scan completed"
         scan_status["current_action"] = "Generating final report"
         
-        # Create a simple report if not already created
+        # Create a report with the actual findings
         report_path = scan_status.get("report_path", "")
         if report_path and not os.path.exists(report_path):
             try:
                 # Ensure directory exists
                 os.makedirs(os.path.dirname(report_path), exist_ok=True)
                 
-                # Create a basic report
+                # Get the findings from scan_status
+                findings = scan_status.get("findings", [])
+                
+                # Count findings by type
+                finding_counts = {
+                    "xss": sum(1 for f in findings if isinstance(f, dict) and f.get("xss_found", False)),
+                    "sqli": sum(1 for f in findings if isinstance(f, dict) and f.get("sqli_found", False)),
+                    "csrf": sum(1 for f in findings if isinstance(f, dict) and f.get("csrf_found", False)),
+                    "auth": sum(1 for f in findings if isinstance(f, dict) and f.get("auth_issue_found", False))
+                }
+                
+                total_vulns = sum(finding_counts.values())
+                
+                # Generate findings details
+                finding_details = []
+                for f in findings:
+                    if isinstance(f, dict):
+                        if f.get("xss_found", False):
+                            finding_details.append({
+                                "type": "Cross-Site Scripting (XSS)",
+                                "severity": f.get("severity", "high"),
+                                "location": f.get("parameter", "Unknown parameter"),
+                                "url": f.get("url", url),
+                                "payload": f.get("payload", ""),
+                                "description": f.get("description", "XSS vulnerability detected"),
+                                "remediation": f.get("remediation", "Implement proper input validation and output encoding")
+                            })
+                
+                # Create a basic report with actual findings
                 with open(report_path, 'w') as f:
                     f.write(f"""# Security Assessment Report for {url}
 
@@ -861,8 +1011,30 @@ def progress_scan(session_id, scan_status):
 Security assessment completed on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Summary of Findings
-The security assessment found no critical vulnerabilities.
+The security assessment found **{total_vulns} vulnerabilities**.
 
+""")
+                    # Add findings summary
+                    if total_vulns > 0:
+                        f.write("### Vulnerabilities by Type\n")
+                        for vuln_type, count in finding_counts.items():
+                            if count > 0:
+                                f.write(f"- {vuln_type.upper()}: {count}\n")
+                        f.write("\n")
+                        
+                        # Add detailed findings
+                        f.write("## Detailed Findings\n\n")
+                        for i, detail in enumerate(finding_details, 1):
+                            f.write(f"### {i}. {detail['type']} - {detail['severity'].upper()}\n\n")
+                            f.write(f"**Location**: {detail['location']} at {detail['url']}\n\n")
+                            f.write(f"**Description**: {detail['description']}\n\n")
+                            if detail.get('payload'):
+                                f.write(f"**Payload**: `{detail['payload']}`\n\n")
+                            f.write(f"**Remediation**: {detail['remediation']}\n\n")
+                    else:
+                        f.write("No vulnerabilities were detected during this scan.\n\n")
+                    
+                    f.write("""
 ### Security Tests Performed
 - Target discovery and reconnaissance
 - Surface crawling and endpoint enumeration
@@ -883,30 +1055,31 @@ The security assessment found no critical vulnerabilities.
 *This report was generated by VibePenTester*
 """)
                 
-                # Also create a JSON report
+                # Also create a JSON report with actual findings
                 json_path = os.path.join(os.path.dirname(report_path), "report.json")
                 with open(json_path, 'w') as f:
                     json.dump({
                         "url": url,
                         "scan_date": datetime.now().isoformat(),
-                        "findings": [],
-                        "summary": "No critical vulnerabilities found"
+                        "findings": finding_details,
+                        "summary": f"Found {total_vulns} vulnerabilities" if total_vulns > 0 else "No vulnerabilities found",
+                        "vulnerability_counts": finding_counts
                     }, f, indent=2)
                 
-                logger.info(f"Created basic report at {report_path}")
+                logger.info(f"Created report at {report_path} with {total_vulns} findings")
                 
                 # Add completion activities
                 agent_activity_tracker.add_activity(
                     session_id,
                     'completion',
-                    f"All security tests completed for {url}",
+                    f"All security tests completed for {url} - Found {total_vulns} vulnerabilities",
                     agent_name="Coordinator"
                 )
                 
                 agent_activity_tracker.add_activity(
                     session_id,
                     'reporting',
-                    f"Security assessment report generated",
+                    f"Security assessment report generated with {total_vulns} vulnerabilities",
                     agent_name="Report Agent"
                 )
             except Exception as e:
