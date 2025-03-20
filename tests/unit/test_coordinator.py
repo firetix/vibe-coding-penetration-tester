@@ -57,7 +57,7 @@ class TestSwarmCoordinator:
             assert coordinator.scanner == mock_scanner_instance
             assert coordinator.reporter == mock_reporter_instance
             
-            mock_llm.assert_called_once_with(provider="openai", model="gpt-4o")
+            mock_llm.assert_called_once_with(provider="openai", model="gpt-4o", openai_api_key=None, anthropic_api_key=None)
             mock_scanner.assert_called_once()
             mock_reporter.assert_called_once_with("/tmp/reports")
     

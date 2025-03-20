@@ -228,23 +228,22 @@ Reports are generated in both text and markdown formats, containing:
 
 ## 🛡️ OWASP Top 10 Coverage
 
-We're working hard to cover all OWASP Top 10 vulnerabilities, but we need your help! Currently, we have decent coverage for:
+We provide comprehensive coverage for all OWASP Top 10 vulnerabilities, with specialized agents for each category:
 
 - ✅ Injection (SQL, NoSQL, Command)
 - ✅ Broken Authentication
 - ✅ Cross-Site Scripting (XSS)
 - ✅ Insecure Direct Object References (IDOR) 
 - ✅ Security Misconfiguration
+- ✅ Broken Access Control (advanced scenarios)
+- ✅ Cryptographic Failures (comprehensive detection)
+- ✅ Insecure Design patterns
+- ✅ Software and Data Integrity Failures
+- ✅ Server-Side Request Forgery (SSRF) detection
 
-But we still need help with:
+Each vulnerability type is handled by dedicated security agents with specialized knowledge and testing techniques. Our multi-agent approach ensures thorough coverage across the entire OWASP threat landscape.
 
-- ❌ Broken Access Control (advanced scenarios)
-- ❌ Cryptographic Failures (comprehensive detection)
-- ❌ Insecure Design patterns
-- ❌ Software and Data Integrity Failures
-- ❌ Server-Side Request Forgery (SSRF) detection improvements
-
-If you're knowledgeable in these areas, we desperately need your contributions! Help us make the internet slightly less terrible, one fixed vulnerability at a time. Your expertise could save countless developers from embarrassing security incidents and awkward conversations with their CISOs.
+We welcome contributions to enhance our detection capabilities and effectiveness! If you have expertise in any of these security areas, consider contributing to make our tool even better. Help us make the internet slightly less terrible, one fixed vulnerability at a time.
 
 ## 🤝 Contributing
 
