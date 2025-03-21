@@ -1,227 +1,121 @@
-from typing import Dict, List, Any, Optional, Union
-import json
+from typing import Dict, List, Any
 from playwright.sync_api import Page
 
-from utils.logger import get_logger
 from tools.browser_tools import BrowserTools
 
 # Global browser tools instance
 _browser_tools = None
 
 def get_browser_tools(debug: bool = False) -> BrowserTools:
-    """Get the global browser tools instance, initializing it if necessary."""
     global _browser_tools
-    
     if _browser_tools is None:
         _browser_tools = BrowserTools(debug=debug)
-    
     return _browser_tools
 
 # Function implementations for browser interaction
-
 def goto(page: Page, url: str) -> Dict[str, Any]:
-    """
-    Navigate to a URL.
-    
-    Args:
-        page: Playwright page object
-        url: URL to navigate to
-        
-    Returns:
-        Result dictionary with page content
-    """
+    """Navigate to a URL."""
     tools = get_browser_tools()
     result = tools.goto(page, url)
     
     return {
         "action": "goto",
         "url": url,
-        "success": "Error" not in result,
-        "content_length": len(result) if "Error" not in result else 0
+        "success": result.get("success", False),
+        "status": result.get("status", 0)
     }
 
 def click(page: Page, selector: str) -> Dict[str, Any]:
-    """
-    Click an element on the page.
-    
-    Args:
-        page: Playwright page object
-        selector: CSS or XPath selector for the element to click
-        
-    Returns:
-        Result dictionary with action status
-    """
+    """Click an element on the page."""
     tools = get_browser_tools()
     result = tools.click(page, selector)
     
     return {
         "action": "click",
         "selector": selector,
-        "success": "Error" not in result,
-        "content_length": len(result) if "Error" not in result else 0
+        "success": result.get("success", False)
     }
 
 def fill(page: Page, selector: str, value: str) -> Dict[str, Any]:
-    """
-    Fill a form field with a value.
-    
-    Args:
-        page: Playwright page object
-        selector: CSS or XPath selector for the form field
-        value: Value to fill in the field
-        
-    Returns:
-        Result dictionary with action status
-    """
+    """Fill a form field with a value."""
     tools = get_browser_tools()
     result = tools.fill(page, selector, value)
     
     return {
         "action": "fill",
         "selector": selector,
-        "value": value,
-        "success": "Error" not in result
+        "success": result.get("success", False)
     }
 
-def submit(page: Page, selector: str) -> Dict[str, Any]:
-    """
-    Submit a form.
-    
-    Args:
-        page: Playwright page object
-        selector: CSS or XPath selector for the form or submit button
-        
-    Returns:
-        Result dictionary with action status
-    """
+def submit(page: Page, selector: str = "form") -> Dict[str, Any]:
+    """Submit a form."""
     tools = get_browser_tools()
     result = tools.submit(page, selector)
     
     return {
         "action": "submit",
         "selector": selector,
-        "success": "Error" not in result,
-        "content_length": len(result) if "Error" not in result else 0
+        "success": result.get("success", False),
+        "url_changed": result.get("url_changed", False)
     }
 
 def execute_js(page: Page, js_code: str) -> Dict[str, Any]:
-    """
-    Execute JavaScript on the page.
-    
-    Args:
-        page: Playwright page object
-        js_code: JavaScript code to execute
-        
-    Returns:
-        Result dictionary with JavaScript execution result
-    """
+    """Execute JavaScript code on the page."""
     tools = get_browser_tools()
+    result = tools.execute_js(page, js_code)
     
-    try:
-        result = tools.execute_js(page, js_code)
-        
-        # Convert result to a serializable format
-        if isinstance(result, (dict, list, str, int, float, bool, type(None))):
-            serialized_result = result
-        else:
-            # For non-serializable types, convert to string
-            serialized_result = str(result)
-            
-        return {
-            "action": "execute_js",
-            "js_code": js_code,
-            "success": True,
-            "result": serialized_result
-        }
-    except Exception as e:
-        return {
-            "action": "execute_js",
-            "js_code": js_code,
-            "success": False,
-            "error": str(e)
-        }
+    return {
+        "action": "execute_js",
+        "success": result.get("success", False),
+        "result": result.get("result")
+    }
 
 def refresh(page: Page) -> Dict[str, Any]:
-    """
-    Refresh the current page.
-    
-    Args:
-        page: Playwright page object
-        
-    Returns:
-        Result dictionary with action status
-    """
+    """Refresh the current page."""
     tools = get_browser_tools()
     result = tools.refresh(page)
     
     return {
         "action": "refresh",
-        "success": "Error" not in result,
-        "url": page.url,
-        "content_length": len(result) if "Error" not in result else 0
+        "success": result.get("success", False),
+        "url": result.get("url")
     }
 
 def presskey(page: Page, key: str) -> Dict[str, Any]:
-    """
-    Press a keyboard key.
-    
-    Args:
-        page: Playwright page object
-        key: Key to press (e.g., 'Enter', 'Tab')
-        
-    Returns:
-        Result dictionary with action status
-    """
+    """Press a keyboard key."""
     tools = get_browser_tools()
     result = tools.presskey(page, key)
     
     return {
         "action": "presskey",
         "key": key,
-        "success": "Error" not in result
+        "success": result.get("success", False)
     }
 
-def auth_needed() -> Dict[str, Any]:
-    """
-    Signal that authentication is needed.
-    
-    Returns:
-        Result dictionary with action status
-    """
+def authenticate() -> Dict[str, Any]:
+    """Prompt for user authentication."""
     tools = get_browser_tools()
-    result = tools.auth_needed()
+    result = tools.authenticate()
     
     return {
-        "action": "auth_needed",
-        "success": True,
+        "action": "authenticate",
         "message": result
     }
 
 def complete() -> Dict[str, Any]:
-    """
-    Mark the current testing task as complete.
-    
-    Returns:
-        Result dictionary with completion status
-    """
+    """Mark current task as complete with validation."""
     tools = get_browser_tools()
     result = tools.complete()
     
-    is_complete = "Completed" in result
-    
     return {
         "action": "complete",
-        "success": is_complete,
         "message": result,
-        "actions_performed": tools.security_actions_performed if not is_complete else 0
+        "success": result == "Completed"
     }
 
 def get_browser_interaction_tools() -> List[Dict[str, Any]]:
-    """Get tool definitions for browser interaction."""
-    logger = get_logger()
-    
-    # Define browser tool definitions
-    tools = [
+    """Return the browser interaction tool definitions."""
+    return [
         {
             "type": "function",
             "function": {
@@ -287,10 +181,9 @@ def get_browser_interaction_tools() -> List[Dict[str, Any]]:
                     "properties": {
                         "selector": {
                             "type": "string",
-                            "description": "CSS or XPath selector for the form or submit button"
+                            "description": "CSS or XPath selector for the form to submit (default: 'form')"
                         }
-                    },
-                    "required": ["selector"]
+                    }
                 }
             }
         },
@@ -298,7 +191,7 @@ def get_browser_interaction_tools() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "execute_js",
-                "description": "Execute JavaScript on the page",
+                "description": "Execute JavaScript code on the page",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -332,7 +225,7 @@ def get_browser_interaction_tools() -> List[Dict[str, Any]]:
                     "properties": {
                         "key": {
                             "type": "string",
-                            "description": "Key to press (e.g., 'Enter', 'Tab')"
+                            "description": "Key to press (e.g., 'Enter', 'Tab', 'Escape')"
                         }
                     },
                     "required": ["key"]
@@ -342,8 +235,8 @@ def get_browser_interaction_tools() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "auth_needed",
-                "description": "Signal that authentication is needed",
+                "name": "authenticate",
+                "description": "Prompt for user authentication when needed",
                 "parameters": {
                     "type": "object",
                     "properties": {}
@@ -354,7 +247,7 @@ def get_browser_interaction_tools() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "complete",
-                "description": "Mark the current testing task as complete",
+                "description": "Mark current task as complete",
                 "parameters": {
                     "type": "object",
                     "properties": {}
@@ -362,5 +255,3 @@ def get_browser_interaction_tools() -> List[Dict[str, Any]]:
             }
         }
     ]
-    
-    return tools

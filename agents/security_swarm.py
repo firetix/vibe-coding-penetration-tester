@@ -21,6 +21,12 @@ from agents.security.data_integrity_agent import DataIntegrityAgent
 from agents.security.ssrf_agent import SSRFAgent
 from agents.security.crypto_agent import CryptoFailureAgent
 from agents.security.insecure_design_agent import InsecureDesignAgent
+from agents.security.validator_agent import ValidationAgent
+from agents.security.idor_agent import IDORAgent
+from agents.security.xss_agent import XSSAgent
+from agents.security.sqli_agent import SQLInjectionAgent
+from agents.security.csrf_agent import CSRFAgent
+from agents.security.auth_agent import AuthenticationAgent
 
 
 class SecuritySwarm:
@@ -259,40 +265,101 @@ class PlannerAgent(BaseAgent):
             """
         else:
             system_prompt = """
-            You are a security planning expert. Your job is to analyze web pages and create comprehensive security testing plans.
+            You are a security planning expert. Your job is to analyze web applications and create comprehensive, generalized security testing plans that work across different types of websites.
+            
             Focus on these common web vulnerabilities from the OWASP Top 10:
             1. Cross-Site Scripting (XSS)
-            2. SQL Injection
-            3. Cross-Site Request Forgery (CSRF)
-            4. Authentication/Session issues
-            5. Insecure Direct Object References (IDOR)
-            6. Broken Access Control (including privilege escalation)
-            7. Cryptographic Failures (TLS issues, weak cryptography)
-            8. Insecure Design patterns (including business logic flaws)
-            9. Software and Data Integrity Failures (including insecure deserialization)
-            10. Server-Side Request Forgery (SSRF)
+               - Test all input fields, especially search, comment, and user profile forms
+               - Use various payload techniques (basic, event handlers, encoded, nested)
+               - Look for both reflected and stored XSS opportunities
             
-            For Google Gruyere application, pay special attention to:
-            - The snippets.gtl endpoint with the uid parameter, which is known to be vulnerable to XSS
-            - Any form submission that processes user input
-            - Parameters that might be processed on the server side
+            2. SQL Injection
+               - Test authentication mechanisms, search functionality, and ID parameters
+               - Try various techniques: error-based, boolean-based, time-based, and UNION-based
+               - Look for data extraction opportunities and authentication bypasses
+            
+            3. Cross-Site Request Forgery (CSRF)
+               - Examine forms that change state or modify data
+               - Check for missing CSRF tokens and cookie security attributes
+               - Test redirect functionality for open redirect vulnerabilities
+            
+            4. Authentication/Session Issues
+               - Test for weak credential validation and default passwords
+               - Check for missing account lockout and password policies
+               - Examine session management for fixation and timeout issues
+            
+            5. Insecure Direct Object References (IDOR)
+               - Test URL parameters containing IDs or references to objects
+               - Look for sequential and predictable IDs in user-specific resources
+               - Check if you can access resources belonging to other users
+            
+            6. Broken Access Control
+               - Test access to administrative functions and protected resources
+               - Check for horizontal and vertical privilege escalation
+               - Examine API endpoints for missing authorization
+            
+            7. Cryptographic Failures
+               - Check TLS configuration and certificate validity
+               - Look for sensitive data transmitted in cleartext
+               - Examine password hashing and storage methods
+            
+            8. Insecure Design Patterns
+               - Identify business logic flaws and race conditions
+               - Test for missing rate limiting and validation bypass
+               - Look for mass assignment vulnerabilities
+            
+            9. Software and Data Integrity Failures
+               - Check for insecure deserialization
+               - Test integrity verification mechanisms
+               - Look for untrusted data processing
+            
+            10. Server-Side Request Forgery (SSRF)
+                - Test URL input fields and file import functionality
+                - Look for server-side API calls that process user input
+                - Check for internal service access
+            
+            Look for patterns that are common across different applications:
+            - Any input fields are potential XSS and injection points
+            - Login forms often have SQL injection or weak password validation vulnerabilities
+            - URL parameters with IDs are prime targets for IDOR testing
+            - State-changing operations need CSRF protection
+            - Nested and encoded payloads can bypass security filters
             
             Evaluate the page content, forms, inputs, and overall structure to identify potential security risks.
-            Create a prioritized list of security tests targeting the most critical components first.
+            Create a prioritized and generalized testing plan that would work on many different types of applications.
             """
         
-        # Check if URL might be Google Gruyere
+        # For specific known applications, add contextual information but maintain generalizability
         is_gruyere = "gruyere" in url.lower()
-        content_text = f"Create a security testing plan for: {url}\n\nPage Information:\n{page_info}"
+        is_juice_shop = "juice" in url.lower() or "owasp" in url.lower()
+        content_text = f"Create a comprehensive security testing plan for: {url}\n\nPage Information:\n{page_info}"
         
+        # Always add general vulnerability patterns to check regardless of site
+        content_text += "\n\nKey areas to thoroughly test on any web application:"
+        content_text += "\n1. Input fields, search functionality, and forms for XSS vulnerabilities"
+        content_text += "\n2. Authentication mechanisms for SQL injection and weak credential validation"
+        content_text += "\n3. URL parameters containing IDs for IDOR vulnerabilities"
+        content_text += "\n4. State-changing operations for missing CSRF protections"
+        content_text += "\n5. Redirect functionality for open redirect vulnerabilities"
+        content_text += "\n6. API endpoints and data access patterns for authorization issues"
+        content_text += "\n7. File upload functionality for insecure file handling"
+        content_text += "\n8. Header configurations for security misconfigurations"
+        
+        # Add application-specific context only as additional information
         if is_gruyere:
-            # Add specific information about known vulnerable endpoints in Gruyere
-            content_text += "\n\nImportant: This appears to be a Google Gruyere application, which has known vulnerabilities in the following areas:\n"
-            content_text += "1. XSS in uid parameter of snippets.gtl endpoint\n"
-            content_text += "2. SQL injection in search functionality\n"
-            content_text += "3. CSRF in form submissions\n"
-            content_text += "4. Insecure file uploads\n"
-            content_text += "Prioritize testing these known vulnerability points."
+            content_text += "\n\nAdditional context: This appears to be a Google Gruyere application, which commonly has vulnerabilities in:"
+            content_text += "\n- The snippets.gtl endpoint with uid parameter (XSS)"
+            content_text += "\n- Search functionality (SQL injection)"
+            content_text += "\n- Form submissions (CSRF)"
+            content_text += "\n- File uploads (insecure handling)"
+        
+        elif is_juice_shop:
+            content_text += "\n\nAdditional context: This appears to be an OWASP Juice Shop-like application, which commonly has:"
+            content_text += "\n- Search functionality vulnerable to XSS"
+            content_text += "\n- Login forms vulnerable to SQL injection"
+            content_text += "\n- User-specific endpoints (baskets, profiles) vulnerable to IDOR"
+            content_text += "\n- Form submissions often missing CSRF protection"
+            content_text += "\n- Redirect functionality vulnerable to manipulation"
             
         input_data = {
             "content": content_text
@@ -422,58 +489,164 @@ class PlannerAgent(BaseAgent):
         """Create a default security testing plan covering OWASP top vulnerabilities."""
         self.logger.info("Creating default security testing plan based on OWASP Top 10")
         
-        # Create a default plan covering the main vulnerability types
+        # Create a comprehensive, pattern-based security testing plan covering OWASP top vulnerabilities
         default_plan = {
             "tasks": [
+                # XSS testing - check various contexts and techniques
                 {
                     "type": "xss",
-                    "target": "all input forms",
-                    "priority": "high"
+                    "target": "search functionality",
+                    "priority": "high",
+                    "details": {
+                        "technique": "reflected",
+                        "context": "html",
+                        "payloads": ["basic", "event_handlers", "encoded"]
+                    }
+                },
+                {
+                    "type": "xss",
+                    "target": "comment/feedback forms",
+                    "priority": "high",
+                    "details": {
+                        "technique": "stored",
+                        "context": "html",
+                        "payloads": ["basic", "nested", "sanitization_bypass"]
+                    }
+                },
+                {
+                    "type": "xss",
+                    "target": "user profile fields",
+                    "priority": "medium",
+                    "details": {
+                        "technique": "stored",
+                        "context": "attribute",
+                        "payloads": ["attribute_breakout", "event_handlers"]
+                    }
+                },
+                
+                # SQL Injection testing - various contexts and techniques
+                {
+                    "type": "sqli",
+                    "target": "login form",
+                    "priority": "critical",
+                    "details": {
+                        "technique": "authentication_bypass",
+                        "context": "login"
+                    }
                 },
                 {
                     "type": "sqli",
                     "target": "search functionality",
-                    "priority": "high"
+                    "priority": "high",
+                    "details": {
+                        "technique": "union_based",
+                        "context": "data_extraction"
+                    }
+                },
+                {
+                    "type": "sqli",
+                    "target": "URL parameters with IDs",
+                    "priority": "high",
+                    "details": {
+                        "technique": "error_based",
+                        "context": "parameter_tampering"
+                    }
+                },
+                
+                # CSRF testing
+                {
+                    "type": "csrf",
+                    "target": "profile/account update forms",
+                    "priority": "high",
+                    "details": {
+                        "check_for": ["csrf_tokens", "samesite_cookies", "origin_validation"]
+                    }
                 },
                 {
                     "type": "csrf",
-                    "target": "form submissions",
-                    "priority": "medium"
+                    "target": "payment/checkout forms",
+                    "priority": "critical",
+                    "details": {
+                        "check_for": ["csrf_tokens", "referrer_validation"]
+                    }
                 },
+                
+                # Authentication testing
                 {
                     "type": "auth",
                     "target": "login functionality",
-                    "priority": "high"
+                    "priority": "high",
+                    "details": {
+                        "check_for": ["default_credentials", "weak_passwords", "account_lockout", "password_policy"]
+                    }
                 },
+                {
+                    "type": "auth",
+                    "target": "session management",
+                    "priority": "high",
+                    "details": {
+                        "check_for": ["session_cookies", "timeout", "fixation"]
+                    }
+                },
+                
+                # IDOR testing
                 {
                     "type": "idor",
                     "target": "user-specific resources",
-                    "priority": "medium"
+                    "priority": "high",
+                    "details": {
+                        "check_for": ["sequential_ids", "predictable_references", "horizontal_access"]
+                    }
                 },
+                {
+                    "type": "idor",
+                    "target": "API endpoints with IDs",
+                    "priority": "high",
+                    "details": {
+                        "check_for": ["direct_reference", "missing_authorization"]
+                    }
+                },
+                
+                # Other critical tests
                 {
                     "type": "access_control",
                     "target": "admin pages and restricted resources",
-                    "priority": "high"
+                    "priority": "high",
+                    "details": {
+                        "check_for": ["vertical_escalation", "horizontal_escalation", "role_verification"]
+                    }
                 },
                 {
                     "type": "crypto",
                     "target": "TLS configuration and sensitive data handling",
-                    "priority": "high"
+                    "priority": "high",
+                    "details": {
+                        "check_for": ["weak_ciphers", "certificate_issues", "sensitive_data_exposure"]
+                    }
                 },
                 {
                     "type": "insecure_design",
                     "target": "critical application workflows",
-                    "priority": "medium"
+                    "priority": "medium",
+                    "details": {
+                        "check_for": ["business_logic_flaws", "race_conditions", "missing_validations"]
+                    }
                 },
                 {
                     "type": "data_integrity",
                     "target": "data update mechanisms",
-                    "priority": "medium"
+                    "priority": "medium",
+                    "details": {
+                        "check_for": ["insecure_deserialization", "integrity_verification", "untrusted_data"]
+                    }
                 },
                 {
                     "type": "ssrf",
                     "target": "URL input fields and API endpoints",
-                    "priority": "high"
+                    "priority": "high",
+                    "details": {
+                        "check_for": ["url_validation", "server_requests", "internal_service_access"]
+                    }
                 },
                 {
                     "type": "scan",
@@ -483,7 +656,7 @@ class PlannerAgent(BaseAgent):
             ]
         }
         
-        # Check if Gruyere-specific plan is needed
+        # Check for site-specific test plans
         if "gruyere" in url.lower():
             self.logger.info("Using Gruyere-specific default plan")
             gruyere_plan = {
@@ -511,6 +684,136 @@ class PlannerAgent(BaseAgent):
                 ]
             }
             return gruyere_plan
+        
+        # For OWASP Juice Shop and e-commerce applications, provide a pattern-based plan with some informed patterns
+        elif "juice" in url.lower() or "owasp" in url.lower() or "shop" in url.lower() or "store" in url.lower():
+            self.logger.info("Using e-commerce application optimized security plan")
+            ecommerce_plan = {
+                "tasks": [
+                    # XSS testing for common e-commerce elements
+                    {
+                        "type": "xss",
+                        "target": "product search fields",
+                        "priority": "high",
+                        "details": {
+                            "technique": "reflected",
+                            "context": "html",
+                            "pattern": "Search fields often display user input directly",
+                            "common_payloads": ["<script>alert(1)</script>", "<img src=x onerror=alert(1)>"]
+                        }
+                    },
+                    {
+                        "type": "xss",
+                        "target": "product review/feedback forms",
+                        "priority": "high",
+                        "details": {
+                            "technique": "stored",
+                            "context": "html",
+                            "pattern": "Review forms often store and display user content",
+                            "common_payloads": ["basic script tags", "nested payloads to bypass sanitization"]
+                        }
+                    },
+                    
+                    # SQL Injection patterns common in e-commerce
+                    {
+                        "type": "sqli",
+                        "target": "login functionality",
+                        "priority": "critical",
+                        "details": {
+                            "technique": "authentication_bypass",
+                            "pattern": "Login forms often connect directly to user database",
+                            "common_payloads": ["' OR 1=1;--", "' OR '1'='1", "admin'--"]
+                        }
+                    },
+                    {
+                        "type": "sqli",
+                        "target": "product search/filtering",
+                        "priority": "high",
+                        "details": {
+                            "technique": "union_based",
+                            "pattern": "Product search often uses direct SQL queries",
+                            "common_payloads": ["' UNION SELECT statements", "query for user tables"]
+                        }
+                    },
+                    
+                    # IDOR patterns common in e-commerce
+                    {
+                        "type": "idor",
+                        "target": "customer-specific resources",
+                        "priority": "high",
+                        "details": {
+                            "pattern": "E-commerce sites often use sequential/predictable IDs for user resources",
+                            "check_areas": ["shopping baskets", "orders", "wishlists", "profiles", "payment info"]
+                        }
+                    },
+                    
+                    # CSRF patterns common in e-commerce
+                    {
+                        "type": "csrf",
+                        "target": "profile management",
+                        "priority": "high",
+                        "details": {
+                            "pattern": "Profile forms often lack proper CSRF protection",
+                            "check_areas": ["address updates", "payment methods", "account settings"]
+                        }
+                    },
+                    {
+                        "type": "csrf",
+                        "target": "order processing",
+                        "priority": "critical",
+                        "details": {
+                            "pattern": "Order forms that change state might be vulnerable"
+                        }
+                    },
+                    
+                    # Redirect vulnerabilities common in e-commerce
+                    {
+                        "type": "csrf",
+                        "target": "redirect functionality",
+                        "priority": "medium",
+                        "details": {
+                            "pattern": "E-commerce often uses redirects for payment processing or login",
+                            "check_for": ["open redirects", "unvalidated redirects", "null byte injection"]
+                        }
+                    },
+                    
+                    # Authentication patterns common in e-commerce
+                    {
+                        "type": "auth",
+                        "target": "login functionality",
+                        "priority": "high",
+                        "details": {
+                            "pattern": "E-commerce sites often have weak password policies",
+                            "check_for": ["default credentials", "weak password policies", "missing account lockout"]
+                        }
+                    },
+                    
+                    # Additional common e-commerce tests
+                    {
+                        "type": "insecure_design",
+                        "target": "pricing and discounts",
+                        "priority": "high",
+                        "details": {
+                            "pattern": "Discount handling may have business logic flaws",
+                            "check_for": ["negative values", "price manipulation", "coupon code issues"]
+                        }
+                    },
+                    {
+                        "type": "data_integrity",
+                        "target": "product information",
+                        "priority": "medium",
+                        "details": {
+                            "pattern": "Product data updates might lack integrity checks"
+                        }
+                    },
+                    {
+                        "type": "scan",
+                        "target": url,
+                        "priority": "medium"
+                    }
+                ]
+            }
+            return ecommerce_plan
         
         return default_plan
 

@@ -1014,7 +1014,8 @@
                         logs: data.agent_logs,
                         lastUpdated: new Date().toISOString(),
                         error: data.error,
-                        isComplete: !data.is_running && !data.error
+                        isComplete: !data.is_running && !data.error,
+                        reportAvailable: data.report_available || false
                     };
                     saveScanState(currentState);
                     
@@ -1032,8 +1033,46 @@
                             // Mark as complete in the state
                             currentState.isComplete = true;
                             saveScanState(currentState);
-                            // Load the report
-                            loadReport();
+                            
+                            // Only load the report if the report is explicitly available
+                            if (data.report_available) {
+                                // Load the report if server says it's available
+                                loadReport();
+                            } else {
+                                // Report not ready yet, show a waiting message and continue polling for report
+                                reportContainer.classList.remove('d-none');
+                                reportContentEl.innerHTML = `
+                                    <div class="alert alert-info">
+                                        <h4><i class="bi bi-hourglass-split"></i> Generating Report...</h4>
+                                        <p>The scan has completed and we're generating your report. This should only take a few moments.</p>
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                    </div>
+                                `;
+                                
+                                // Set up a separate polling interval just for the report
+                                let reportCheckInterval = setInterval(() => {
+                                    fetch(`/status?session_id=${encodeURIComponent(sessionId)}`)
+                                    .then(response => response.json())
+                                    .then(statusData => {
+                                        if (statusData.report_available) {
+                                            clearInterval(reportCheckInterval);
+                                            loadReport();
+                                        }
+                                    })
+                                    .catch(error => {
+                                        console.error('Error checking report status:', error);
+                                        clearInterval(reportCheckInterval);
+                                        reportContentEl.innerHTML = `
+                                            <div class="alert alert-warning">
+                                                <h4><i class="bi bi-exclamation-triangle"></i> Error checking report status</h4>
+                                                <p>There was an error checking if your report is ready. Please try manually refreshing the page.</p>
+                                            </div>
+                                        `;
+                                    });
+                                }, 3000); // Check every 3 seconds
+                            }
                         }
                     }
                 })
