@@ -58,15 +58,26 @@ class SecuritySwarm:
     def run(self, url: str, page: Page, page_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Execute the full security testing process with all agents."""
         self.logger.info(f"Starting security swarm for {url}")
+        self.logger.debug(f"Security swarm has {len(self.agents)} agents available")
+        
+        # Log available agents for debugging
+        agent_names = list(self.agents.keys())
+        self.logger.debug(f"Available agents: {agent_names}")
         
         # Generate testing plan
         self.logger.highlight("Generating security testing plan")
+        
+        # Log a specific activity that should show up in the UI
+        self.logger.security("Security Swarm: Planning security testing strategy")
+        
         plan = self.agents["planner"].create_plan(url, page_info)
         
         # Debug output for the plan
         self.logger.highlight(f"Security testing plan generated with {len(plan.get('tasks', []))} tasks:")
         for i, task in enumerate(plan.get("tasks", []), 1):
             self.logger.info(f"  Task #{i}: {task.get('type', 'unknown')} on {task.get('target', 'unknown')} (Priority: {task.get('priority', 'medium')})")
+            # Log each task as a distinct activity
+            self.logger.security(f"Planned Task: {task.get('type', 'unknown')} test on {task.get('target', 'unknown')}")
         
         # Track discovered vulnerabilities
         vulnerabilities = []
@@ -90,7 +101,15 @@ class SecuritySwarm:
             # Execute the task and collect results
             try:
                 self.logger.info(f"Using agent {agent.name} for task type {task_type}")
+                
+                # Log this as an activity that should show up in the UI
+                self.logger.security(f"Running {agent.name} to test {task.get('target', 'application')} for vulnerabilities")
+                
+                # Execute the actual task
                 result = agent.execute_task(task, page, page_info)
+                
+                # Log the completion of the task
+                self.logger.security(f"Completed {agent.name} testing of {task.get('target', 'application')}")
                 
                 # Debug the raw result
                 if result:
@@ -98,6 +117,13 @@ class SecuritySwarm:
                     self.logger.info(f"  Vulnerability found: {result.get('vulnerability_found', False)}")
                     self.logger.info(f"  Type: {result.get('vulnerability_type', 'Unknown')}")
                     self.logger.info(f"  Target: {result.get('target', 'Unknown')}")
+                    
+                    # For agent activity display, log any findings
+                    if result.get('vulnerability_found', False):
+                        self.logger.security(f"{agent.name}: Found {result.get('vulnerability_type', 'Unknown')} vulnerability in {result.get('target', 'Unknown')}")
+                    else:
+                        # Even if no vulnerability, log what was tested
+                        self.logger.security(f"{agent.name}: No vulnerabilities found in {result.get('target', 'Unknown')}")
                     
                     # Keep track of all findings even if not validated
                     raw_findings.append(result)

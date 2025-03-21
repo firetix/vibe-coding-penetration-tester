@@ -1,16 +1,58 @@
+import os
 import time
 import uuid
+import json
 import threading
 import logging
 from typing import Dict, List, Any, Optional
 
 class SessionManager:
-    def __init__(self):
+    def __init__(self, session_file: str = 'sessions.json'):
         self.sessions = {}
         self.active_scans = {}
         self.completed_scans = {}
         self.lock = threading.Lock()
         self.logger = logging.getLogger('web_ui')
+        self.session_file = session_file
+        
+        # Attempt to load sessions from file if it exists
+        self._load_sessions()
+    
+    def _load_sessions(self):
+        """Load sessions from the session file if it exists"""
+        try:
+            if os.path.exists(self.session_file):
+                with open(self.session_file, 'r') as f:
+                    stored_data = json.load(f)
+                    
+                    # Load sessions with basic info
+                    for session_id, session_data in stored_data.items():
+                        if session_id not in self.sessions:
+                            self.sessions[session_id] = {
+                                'created': session_data.get('created', time.time()),
+                                'last_activity': time.time()  # Reset last activity to now
+                            }
+                
+                self.logger.info(f"Loaded {len(self.sessions)} sessions from {self.session_file}")
+        except Exception as e:
+            self.logger.error(f"Error loading sessions from file: {str(e)}")
+    
+    def _save_sessions(self):
+        """Save current sessions to the session file"""
+        try:
+            with open(self.session_file, 'w') as f:
+                # Create a simplified version of the sessions for storage
+                stored_data = {}
+                for session_id, session_data in self.sessions.items():
+                    stored_data[session_id] = {
+                        'created': session_data.get('created', time.time()),
+                        'last_activity': session_data.get('last_activity', time.time())
+                    }
+                
+                json.dump(stored_data, f)
+            self.logger.debug(f"Saved {len(self.sessions)} sessions to {self.session_file}")
+        except Exception as e:
+            self.logger.error(f"Error saving sessions to file: {str(e)}")
     
     def create_session(self) -> str:
         session_id = str(uuid.uuid4())
@@ -19,15 +61,27 @@ class SessionManager:
                 'created': time.time(),
                 'last_activity': time.time()
             }
+            # Save sessions to maintain persistence
+            self._save_sessions()
+            
+        self.logger.debug(f"Created new session: {session_id}, total sessions: {len(self.sessions)}")
         return session_id
     
     def check_session(self, session_id: str) -> bool:
         with self.lock:
             if session_id not in self.sessions:
+                self.logger.debug(f"Session check failed for {session_id}, not found in {list(self.sessions.keys())}")
                 return False
             
             self.sessions[session_id]['last_activity'] = time.time()
+            # No need to save on every check - too many writes
+            self.logger.debug(f"Session check passed for {session_id}, last activity updated")
             return True
+            
+    def get_all_sessions(self) -> List[str]:
+        """Return a list of all active session IDs for debugging"""
+        with self.lock:
+            return list(self.sessions.keys())
     
     def start_scan(self, session_id: str, url: str, config: Dict[str, Any]) -> str:
         scan_id = str(uuid.uuid4())

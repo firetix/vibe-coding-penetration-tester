@@ -111,19 +111,28 @@ def get_base64_screenshot(page: Page) -> str:
         logger.error(f"Error taking screenshot: {str(e)}")
         return ""
 
-def wait_for_network_idle(page: Page, timeout: int = 5000) -> None:
+def wait_for_network_idle(page: Page, timeout: int = 10000) -> None:
     """
-    Wait for network activity to become idle.
+    Wait for network activity to become idle with improved fallback behavior.
     
     Args:
         page: Playwright page object
-        timeout: Maximum time to wait in milliseconds (default: 5000)
+        timeout: Maximum time to wait in milliseconds (default: 10000)
     """
+    logger = get_logger()
     try:
+        # Try using networkidle first
         page.wait_for_load_state('networkidle', timeout=timeout)
     except Exception as e:
-        # If timeout occurs, give a small delay anyway
-        time.sleep(1)  # Fallback delay
+        logger.debug(f"Networkidle timeout ({timeout}ms): {str(e)}")
+        try:
+            # Try domcontentloaded which is more reliable
+            logger.debug("Falling back to domcontentloaded")
+            page.wait_for_load_state('domcontentloaded', timeout=int(timeout/2))
+        except Exception as e2:
+            logger.debug(f"Domcontentloaded also timed out: {str(e2)}")
+            # Ensure a minimum delay
+            time.sleep(2)
 
 def normalize_url(url: str) -> str:
     """

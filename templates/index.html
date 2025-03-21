@@ -453,16 +453,43 @@
             const actionPlanListEl = document.getElementById('action-plan-list');
             const currentActionBadgeEl = document.getElementById('current-action-badge');
             
-            // Generate or retrieve a unique session ID
+            // Get or initialize session ID
             let sessionId = localStorage.getItem('vpt_session_id');
             
-            // If no session ID exists, generate a new one
-            if (!sessionId) {
-                sessionId = generateSessionId();
-                localStorage.setItem('vpt_session_id', sessionId);
-                console.log("Generated new session ID:", sessionId);
-            } else {
-                console.log("Using existing session ID:", sessionId);
+            // Initialize by calling the server session endpoint,
+            // which allows the server to set a cookie and ensure session continuity
+            function initializeSession() {
+                return fetch('/api/session/init', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        client_id: sessionId || 'new_client'
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.session_id) {
+                        // Always use the server-provided session ID
+                        sessionId = data.session_id;
+                        localStorage.setItem('vpt_session_id', sessionId);
+                        console.log(data.restored ? 
+                            "Restored server session ID:" : 
+                            "Received new server session ID:", sessionId);
+                    }
+                    return sessionId;
+                })
+                .catch(error => {
+                    console.error("Session initialization error:", error);
+                    // Fall back to local session ID if server fails
+                    if (!sessionId) {
+                        sessionId = generateSessionId();
+                        localStorage.setItem('vpt_session_id', sessionId);
+                        console.log("Generated fallback session ID:", sessionId);
+                    }
+                    return sessionId;
+                });
             }
             
             let statusCheckInterval;
@@ -510,6 +537,14 @@
                     console.error('Failed to clear scan state:', e);
                 }
             }
+            
+            // On document ready, initialize session first
+            document.addEventListener('DOMContentLoaded', function() {
+                // Initialize session first, then check for existing scan state
+                initializeSession().then(() => {
+                    restoreScanStateIfExists();
+                });
+            });
             
             // Check for existing scan on page load and restore state
             function restoreScanStateIfExists() {

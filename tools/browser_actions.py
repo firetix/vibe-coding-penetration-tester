@@ -21,8 +21,18 @@ class BrowserActions:
             
             self.logger.info(f"Navigating to: {validated_url}", color="blue")
             
-            # Navigate to the URL
-            response = page.goto(validated_url, wait_until="domcontentloaded")
+            # Navigate to the URL with increased timeout and more robust error handling
+            try:
+                response = page.goto(validated_url, wait_until="networkidle", timeout=60000)
+            except Exception as nav_error:
+                self.logger.warning(f"Networkidle navigation failed: {str(nav_error)}, falling back to domcontentloaded")
+                # If networkidle fails, try with domcontentloaded which is more reliable
+                try:
+                    response = page.goto(validated_url, wait_until="domcontentloaded", timeout=60000)
+                except Exception as nav_error2:
+                    self.logger.warning(f"Domcontentloaded navigation also failed: {str(nav_error2)}, trying no wait condition")
+                    # Last resort - try with no wait condition
+                    response = page.goto(validated_url, timeout=90000)
             
             # Store current URL for resolving relative URLs later
             self.current_url = page.url
@@ -204,8 +214,16 @@ class BrowserActions:
         try:
             self.logger.info("Refreshing page", color="blue")
             
-            # Refresh the page
-            page.reload(wait_until="domcontentloaded")
+            # Refresh the page with increased timeout and error handling
+            try:
+                page.reload(wait_until="networkidle", timeout=60000)
+            except Exception as e:
+                self.logger.warning(f"Networkidle reload failed: {str(e)}, trying domcontentloaded")
+                try:
+                    page.reload(wait_until="domcontentloaded", timeout=60000)
+                except Exception as e2:
+                    self.logger.warning(f"Domcontentloaded reload also failed: {str(e2)}, using no wait condition")
+                    page.reload(timeout=90000)
             
             # Wait for network to be idle
             wait_for_network_idle(page)

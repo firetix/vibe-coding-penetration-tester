@@ -4,7 +4,7 @@ import os
 import json
 import time
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, send_from_directory, make_response
+from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, session
 from flask_cors import CORS
 
 from utils.logging_manager import LoggingManager
@@ -19,6 +19,9 @@ logger = logging_manager.get_logger()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Set a secret key for sessions
+app.secret_key = os.environ.get('SECRET_KEY', 'vibe_pen_tester_secret_key')
 
 # Enable CORS for all routes
 CORS(app)
@@ -53,37 +56,130 @@ def auto_create_session(f):
     """Auto-create a session instead of returning 401 errors."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Log the original request details
+        endpoint = request.path
+        logger.debug(f"auto_create_session decorator called for endpoint: {endpoint}")
+        
+        # First, check for a Flask session cookie and use that as our primary session source
+        if 'session_id' in session:
+            logger.debug(f"Found session_id in Flask session cookie: {session['session_id']}")
+            flask_session_id = session['session_id']
+            is_valid = session_manager.check_session(flask_session_id)
+            logger.debug(f"Is Flask session cookie {flask_session_id} valid? {is_valid}")
+            
+            if is_valid:
+                # We have a valid session, ensure its being used for this request
+                request_session_id = None
+                
+                # Check if the request also has a session_id
+                if request.method == 'GET':
+                    request_session_id = request.args.get('session_id')
+                elif request.is_json and isinstance(request.json, dict):
+                    request_session_id = request.json.get('session_id')
+                elif request.form:
+                    request_session_id = request.form.get('session_id')
+                
+                # If we have both, and they don't match, log this discrepancy
+                if request_session_id and request_session_id != flask_session_id:
+                    logger.warning(f"Session ID mismatch: Flask cookie has {flask_session_id} but request has {request_session_id}")
+                    
+                    # Priority: Use the Flask session unless the request session is valid
+                    if session_manager.check_session(request_session_id):
+                        logger.info(f"Both session IDs are valid, using request session: {request_session_id}")
+                    else:
+                        # Override any passed session with our cookie session
+                        logger.info(f"Using Flask cookie session: {flask_session_id} instead of invalid request session")
+                        
+                        # Update request data with correct session
+                        if request.method == 'GET':
+                            request.args = {**request.args, 'session_id': flask_session_id}
+                        elif request.is_json:
+                            request._cached_json = {**request.json, 'session_id': flask_session_id}
+        
         # For GET requests, check query parameters
         if request.method == 'GET':
             session_id = request.args.get('session_id')
-            if session_id and not session_manager.check_session(session_id):
-                new_session_id = session_manager.create_session()
-                logger.info(f"Created new session: {new_session_id} (replacing {session_id})")
-                # Replace the session_id in args
-                request.args = {**request.args, 'session_id': new_session_id}
+            logger.debug(f"GET request with session_id: {session_id} to {endpoint}")
+            
+            if session_id:
+                is_valid = session_manager.check_session(session_id)
+                logger.debug(f"Is session {session_id} valid for GET request? {is_valid}")
+                
+                if not is_valid:
+                    # Create a new session
+                    new_session_id = session_manager.create_session()
+                    logger.info(f"Created new session: {new_session_id} (replacing {session_id})")
+                    # Replace the session_id in args
+                    request.args = {**request.args, 'session_id': new_session_id}
+                    logger.debug(f"Updated GET request args with new session_id: {new_session_id}")
+                    # Store in Flask session cookie
+                    session['session_id'] = new_session_id
+            else:
+                logger.debug(f"No session_id provided in GET request to {endpoint}")
+                # Check if we have a Flask session we can use
+                if 'session_id' in session and session_manager.check_session(session['session_id']):
+                    request.args = {**request.args, 'session_id': session['session_id']}
+                    logger.debug(f"Applied session from cookie: {session['session_id']}")
         
         # For JSON requests, check request body
         elif request.is_json:
             try:
                 data = request.json
+                logger.debug(f"JSON request to {endpoint} with data: {data if isinstance(data, dict) else 'non-dict data'}")
+                
                 if isinstance(data, dict) and 'session_id' in data:
                     session_id = data['session_id']
-                    if not session_manager.check_session(session_id):
-                        new_session_id = session_manager.create_session()
-                        logger.info(f"Created new session: {new_session_id} (replacing {session_id})")
-                        # This is a bit of a hack, but we're modifying the parsed JSON data
+                    is_valid = session_manager.check_session(session_id)
+                    logger.debug(f"Is session {session_id} valid for JSON request? {is_valid}")
+                    
+                    if not is_valid:
+                        # Try to use Flask session if available before creating new one
+                        if 'session_id' in session and session_manager.check_session(session['session_id']):
+                            new_session_id = session['session_id']
+                            logger.info(f"Using cookie session: {new_session_id} (replacing invalid {session_id})")
+                        else:
+                            new_session_id = session_manager.create_session()
+                            logger.info(f"Created new session: {new_session_id} (replacing {session_id})")
+                            # Store in Flask session
+                            session['session_id'] = new_session_id
+                            
+                        # Update the request JSON data
                         request._cached_json = {**data, 'session_id': new_session_id}
+                        logger.debug(f"Updated JSON request with new session_id: {new_session_id}")
+                elif isinstance(data, dict) and 'session_id' not in data:
+                    # No session in the request, try to use the cookie session if available
+                    if 'session_id' in session and session_manager.check_session(session['session_id']):
+                        request._cached_json = {**data, 'session_id': session['session_id']}
+                        logger.debug(f"Added Flask cookie session {session['session_id']} to JSON request")
             except Exception as e:
                 logger.warning(f"Error checking JSON for session: {str(e)}")
         
         # For form data, check form values
         elif request.form:
             session_id = request.form.get('session_id')
-            if session_id and not session_manager.check_session(session_id):
-                # We can't modify the form data directly, but the function can check
-                # session_manager again and create a new session
-                pass
+            logger.debug(f"Form request to {endpoint} with session_id: {session_id}")
+            
+            if session_id:
+                is_valid = session_manager.check_session(session_id)
+                logger.debug(f"Is session {session_id} valid for form request? {is_valid}")
+                
+                if not is_valid:
+                    # Try to use Flask session if available
+                    if 'session_id' in session and session_manager.check_session(session['session_id']):
+                        logger.debug(f"Using Flask cookie session {session['session_id']} for form request")
+                    else:
+                        new_session_id = session_manager.create_session()
+                        logger.info(f"Created new session for form: {new_session_id}")
+                        session['session_id'] = new_session_id
+            elif 'session_id' in session:
+                # Form has no session but we have a cookie - log this
+                logger.debug(f"Form has no session_id but cookie has {session['session_id']}")
         
+        # Log all active sessions before handling the request
+        active_sessions = session_manager.get_all_sessions()
+        logger.debug(f"Active sessions before handling {endpoint}: {active_sessions}")
+        
+        # Call the original function
         return f(*args, **kwargs)
     return decorated_function
 
@@ -94,7 +190,15 @@ def index():
 
 @app.route('/api/session/init', methods=['POST'])
 def init_session():
+    # Check if we already have a valid session in the cookie
+    if 'session_id' in session and session_manager.check_session(session['session_id']):
+        logger.debug(f"Found valid cookie session: {session['session_id']}, reusing it")
+        return jsonify({'session_id': session['session_id'], 'restored': True})
+    
+    # Create and store a new session
     session_id = session_manager.create_session()
+    session['session_id'] = session_id
+    logger.debug(f"Created new cookie session: {session_id}")
     return jsonify({'session_id': session_id})
 
 @app.route('/api/session/check', methods=['POST'])
@@ -331,12 +435,40 @@ def download_report(filename):
 @app.route('/status', methods=['GET'])
 @auto_create_session
 def status_check():
-    session_id = request.args.get('session_id')
+    # Try multiple sources for session ID with priority:
+    # 1. Flask session cookie - most reliable for continuity
+    # 2. URL query parameter - might be stale but clients send it
     
-    if not session_id:
-        # Always create a session if none provided
+    # Priority 1: Flask session cookie 
+    flask_cookie_session_id = session.get('session_id')
+    # Priority 2: URL query parameter
+    query_session_id = request.args.get('session_id')
+    
+    # Log both sources for debugging
+    logger.debug(f"Status request received - cookie session: {flask_cookie_session_id}, query param: {query_session_id}")
+    
+    # Decision logic for which session to use
+    if flask_cookie_session_id and session_manager.check_session(flask_cookie_session_id):
+        # Use the Flask cookie session as it's most reliable
+        session_id = flask_cookie_session_id
+        logger.debug(f"Using valid Flask cookie session: {session_id}")
+        
+        # If we also have a query param and it doesn't match, log the mismatch
+        if query_session_id and query_session_id != session_id:
+            logger.warning(f"Session ID mismatch in status request - cookie: {session_id}, query: {query_session_id}")
+    elif query_session_id and session_manager.check_session(query_session_id):
+        # Fall back to query parameter if valid
+        session_id = query_session_id
+        logger.debug(f"Using valid query param session: {session_id}")
+        
+        # Update the Flask cookie with this session ID for future continuity
+        session['session_id'] = session_id
+        logger.debug(f"Updated Flask cookie with session: {session_id}")
+    else:
+        # Create a new session if no valid session found
         session_id = session_manager.create_session()
-        logger.info(f"Created new session for status endpoint (no session ID): {session_id}")
+        session['session_id'] = session_id
+        logger.info(f"Created new session for status endpoint (no valid session found): {session_id}")
         return jsonify({
             'status': 'ok', 
             'server_status': 'running',
@@ -346,6 +478,11 @@ def status_check():
             'session_id': session_id
         })
     
+    # Log current active sessions for debugging
+    active_sessions = session_manager.get_all_sessions()
+    logger.debug(f"Current active sessions: {active_sessions}")
+    logger.debug(f"Is session {session_id} valid: {session_manager.check_session(session_id)}")
+    
     # Get any active scans for this session
     active_scans = session_manager.get_active_scans(session_id)
     is_scanning = len(active_scans) > 0
@@ -354,11 +491,49 @@ def status_check():
         # Get the most recent active scan
         scan = active_scans[0]
         
-        # Get activities for this session
-        activities = activity_tracker.get_activities(session_id)
+        # Log explicit debug info about this session id
+        logger.info(f"Status request for active session {session_id} - scan in progress")
+        logger.info(f"Active scan URL: {scan.get('url')}, progress: {scan.get('progress')}%")
+        
+        # Get activities for this session with explicit error checking
+        try:
+            activities = activity_tracker.get_activities(session_id)
+            logger.debug(f"Retrieved {len(activities)} activities for session {session_id}")
+            
+            # Log the activities for debugging
+            if activities:
+                for i, activity in enumerate(activities):
+                    logger.debug(f"Activity {i+1}: type={activity.get('type')}, agent={activity.get('agent')}, {activity.get('description')[:50]}...")
+            else:
+                logger.info(f"No activities found for session {session_id} - this might indicate a problem")
+                
+                # Try to check if there are activities for other sessions
+                all_session_ids = list(activity_tracker.activities.keys())
+                logger.info(f"Activity tracker has activities for these sessions: {all_session_ids}")
+                
+                # Add a test activity to see if the activity tracker is working
+                try:
+                    result = activity_tracker.add_activity(
+                        session_id, 
+                        "test", 
+                        f"Test activity from status endpoint at {time.strftime('%H:%M:%S')}", 
+                        {"test": True, "timestamp": time.time()}, 
+                        "StatusEndpoint"
+                    )
+                    logger.info(f"Added test activity to session {session_id}: {result}")
+                    
+                    # Immediately try to retrieve it to verify
+                    updated_activities = activity_tracker.get_activities(session_id)
+                    logger.info(f"After adding test activity, now have {len(updated_activities)} activities")
+                    activities = updated_activities  # Use these activities in the response
+                except Exception as e:
+                    logger.error(f"Failed to add test activity: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error retrieving activities for session {session_id}: {str(e)}")
+            activities = []  # Fallback to empty list
         
         # Format the scan status in the way the UI expects
-        return jsonify({
+        response_data = {
             'status': 'ok',
             'progress': scan.get('progress', 0),
             'current_task': scan.get('status', 'Running'),
@@ -369,7 +544,13 @@ def status_check():
             'action_plan': [],  # UI may expect this
             'current_action': 'scanning',
             'vulnerabilities': scan.get('vulnerabilities', [])
-        })
+        }
+        
+        # Log the response data size for debugging
+        logger.debug(f"Sending response with {len(activities)} agent logs and {len(response_data.get('vulnerabilities', []))} vulnerabilities")
+        
+        logger.debug(f"Returning status response with {len(activities)} agent logs and {len(response_data.get('vulnerabilities', []))} vulns")
+        return jsonify(response_data)
     else:
         # Get completed scans
         completed_scans = session_manager.get_completed_scans(session_id)
@@ -476,11 +657,26 @@ def start_scan_compat():
             url = f"http://{url}"
             logger.info(f"Added http:// scheme to URL: {url}")
             
+        # Get all active sessions before validation
+        active_sessions_before = session_manager.get_all_sessions()
+        logger.debug(f"Active sessions before validation: {active_sessions_before}")
+        
         # Validate session
-        if not session_manager.check_session(session_id):
+        is_valid_session = session_manager.check_session(session_id)
+        logger.debug(f"Is session {session_id} valid? {is_valid_session}")
+        
+        if not is_valid_session:
             # If session doesn't exist, create a new one
+            old_session_id = session_id
             session_id = session_manager.create_session()
-            logger.info(f"Created new session: {session_id}")
+            logger.info(f"Created new session: {session_id} (replacing invalid session: {old_session_id})")
+        
+        # Get all active sessions after validation
+        active_sessions_after = session_manager.get_all_sessions()
+        logger.debug(f"Active sessions after validation: {active_sessions_after}")
+        
+        # Debug the activity tracker state
+        logger.debug(f"Activity tracker sessions: {list(activity_tracker.activities.keys())}")
         
         # Start the scan
         logger.info(f"Starting scan for URL {url} with session {session_id} and config {config}")
