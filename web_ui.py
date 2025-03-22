@@ -532,16 +532,73 @@ def status_check():
             logger.error(f"Error retrieving activities for session {session_id}: {str(e)}")
             activities = []  # Fallback to empty list
         
+        # Extract action plan from activities or use the one stored in scan
+        action_plan = scan.get('action_plan', [])
+        current_agent_task = scan.get('current_task', "Security scanning in progress")
+        
+        # If no action plan is stored in scan, try to extract from activities
+        if not action_plan:
+            # Process activities to extract action plan
+            for activity in activities:
+                # Check for action plan activities
+                if activity.get('type') == 'action_plan' and 'details' in activity:
+                    plan_items = activity.get('details', {}).get('plan', [])
+                    if isinstance(plan_items, list) and plan_items:
+                        # Merge with existing action plan
+                        for item in plan_items:
+                            if item not in action_plan:
+                                action_plan.append(item)
+            
+            # If no current task is set, try to determine from recent activities
+            if not current_agent_task or current_agent_task == "Security scanning in progress":
+                for activity in activities:
+                    # Look at recent activities
+                    if activity.get('timestamp', 0) > time.time() - 30:  # Within the last 30 seconds
+                        agent_name = activity.get('agent', '')
+                        description = activity.get('description', '')
+                        
+                        if agent_name and description:
+                            current_agent_task = f"{agent_name}: {description}"
+                            break
+        
+            # If still no action plan was found, create a basic one from security activities
+            if not action_plan:
+                security_activities = [a for a in activities if a.get('type') in ['security', 'xss_test', 'sqli_test', 'csrf_test', 'vulnerability']]
+                for activity in security_activities:
+                    agent = activity.get('agent', 'Security Agent')
+                    description = activity.get('description', '')
+                    if agent and description:
+                        action_item = f"{agent}: {description}"
+                        if action_item not in action_plan:
+                            action_plan.append(action_item)
+        
+        # Ensure we have at least a title in the action plan
+        if action_plan:
+            # Check if first item is a title - if not, add one
+            if not action_plan[0].startswith("Security Testing Plan"):
+                action_plan.insert(0, f"Security Testing Plan for {scan.get('url', '')}")
+        else:
+            action_plan = [
+                f"Security Testing Plan for {scan.get('url', '')}",
+                "Initializing security testing environment",
+                "Conducting automated security analysis",
+                "Scanning for common web vulnerabilities"
+            ]
+            
+        # Store the enhanced action plan back in scan for future use
+        if 'action_plan' not in scan or scan['action_plan'] != action_plan:
+            scan['action_plan'] = action_plan
+        
         # Format the scan status in the way the UI expects
         response_data = {
             'status': 'ok',
             'progress': scan.get('progress', 0),
-            'current_task': scan.get('status', 'Running'),
+            'current_task': current_agent_task or scan.get('status', 'Running'),
             'is_running': True,
             'url': scan.get('url', ''),
             'scan_id': scan.get('id', ''),
             'agent_logs': activities,
-            'action_plan': [],  # UI may expect this
+            'action_plan': action_plan,
             'current_action': 'scanning',
             'vulnerabilities': scan.get('vulnerabilities', [])
         }
@@ -559,6 +616,49 @@ def status_check():
             # Most recent completed scan
             scan = completed_scans[0]
             
+            # Get activities for completed scan
+            completed_activities = activity_tracker.get_activities(session_id)
+            
+            # Extract action plan from activities
+            action_plan = []
+            
+            # Process activities to extract action plan
+            for activity in completed_activities:
+                # Check for action plan activities
+                if activity.get('type') == 'action_plan' and 'details' in activity:
+                    plan_items = activity.get('details', {}).get('plan', [])
+                    if isinstance(plan_items, list) and plan_items:
+                        # Merge with existing action plan
+                        for item in plan_items:
+                            if item not in action_plan:
+                                action_plan.append(item)
+            
+            # If no action plan was found, create a basic one from security activities
+            if not action_plan:
+                security_activities = [a for a in completed_activities if a.get('type') in ['security', 'xss_test', 'sqli_test', 'csrf_test', 'vulnerability']]
+                for activity in security_activities:
+                    agent = activity.get('agent', 'Security Agent')
+                    description = activity.get('description', '')
+                    if agent and description:
+                        action_item = f"{agent}: {description}"
+                        if action_item not in action_plan:
+                            action_plan.append(action_item)
+            
+            # Ensure we have at least a title in the action plan
+            if action_plan:
+                action_plan.insert(0, f"Security Testing Results for {scan.get('url', '')}")
+            else:
+                action_plan = [
+                    f"Security Testing Results for {scan.get('url', '')}",
+                    "Security scan completed",
+                    "Report generated and available for review"
+                ]
+                
+                # Add vulnerabilities to action plan if available
+                if scan.get('vulnerabilities'):
+                    for vuln in scan.get('vulnerabilities'):
+                        action_plan.append(f"Found vulnerability: {vuln.get('name', 'Unknown')} ({vuln.get('severity', 'medium')})")
+            
             return jsonify({
                 'status': 'ok',
                 'progress': 100,
@@ -566,8 +666,8 @@ def status_check():
                 'is_running': False,
                 'url': scan.get('url', ''),
                 'scan_id': scan.get('id', ''),
-                'agent_logs': activity_tracker.get_activities(session_id),
-                'action_plan': [],
+                'agent_logs': completed_activities,
+                'action_plan': action_plan,
                 'current_action': 'completed',
                 'vulnerabilities': scan.get('vulnerabilities', []),
                 'report_dir': scan.get('report_dir')

@@ -142,15 +142,36 @@ class ScanController:
         def progress_callback(progress: int, status: str = None, 
                               vulnerabilities: List[Dict[str, Any]] = None,
                               activity: Dict[str, Any] = None) -> None:
+            # Extract action plan and current task from activity if present
+            action_plan = None
+            current_task = None
+            
+            if activity:
+                # Check if this is an action plan update
+                if activity.get('type') == 'action_plan' and 'details' in activity:
+                    plan_items = activity.get('details', {}).get('plan', [])
+                    if isinstance(plan_items, list) and plan_items:
+                        action_plan = plan_items
+                
+                # Check if this is a current task update
+                elif activity.get('type') == 'current_task':
+                    description = activity.get('description', '')
+                    if description:
+                        current_task = description
+            
             if status:
                 self.session_manager.update_scan_status(
                     session_id, scan_id, status, progress, 
-                    vulnerabilities=vulnerabilities
+                    vulnerabilities=vulnerabilities,
+                    action_plan=action_plan,
+                    current_task=current_task
                 )
             else:
                 self.session_manager.update_scan_status(
                     session_id, scan_id, None, progress, 
-                    vulnerabilities=vulnerabilities
+                    vulnerabilities=vulnerabilities,
+                    action_plan=action_plan,
+                    current_task=current_task
                 )
             
             if activity and activity_callback:
@@ -246,6 +267,7 @@ class ScanController:
     def _monitor_process(self, process, progress_callback: Callable) -> None:
         """Monitor the scan process and update progress"""
         vulnerabilities = []
+        action_plan = []
         last_error = None
         
         try:
@@ -272,6 +294,18 @@ class ScanController:
                         vuln = json.loads(vuln_json)
                         vulnerabilities.append(vuln)
                         progress_callback(None, vulnerabilities=vulnerabilities)
+                        
+                        # Add vulnerability to action plan as well for UI visibility
+                        action_item = f"Investigating vulnerability: {vuln.get('name', 'Unknown')} ({vuln.get('severity', 'medium')})"
+                        if action_item not in action_plan:
+                            action_plan.append(action_item)
+                            progress_callback(None, activity={
+                                "type": "action_plan", 
+                                "description": "Action Plan", 
+                                "details": {
+                                    "plan": action_plan
+                                }
+                            })
                     except Exception as e:
                         self.logger.warning(f"Error parsing vulnerability data: {str(e)}")
                 
@@ -280,9 +314,78 @@ class ScanController:
                     try:
                         activity_json = line.split('ACTIVITY:')[1].strip()
                         activity = json.loads(activity_json)
+                        
+                        # Check if this is an action plan update
+                        if activity.get('type') == 'action_plan' or 'plan' in activity.get('details', {}):
+                            # Extract plan items and add to our action plan
+                            plan_items = activity.get('details', {}).get('plan', [])
+                            if isinstance(plan_items, list) and plan_items:
+                                for item in plan_items:
+                                    if item not in action_plan:
+                                        action_plan.append(item)
+                                
+                                # Send updated action plan
+                                progress_callback(None, activity={
+                                    "type": "action_plan", 
+                                    "description": "Action Plan", 
+                                    "details": {
+                                        "plan": action_plan
+                                    }
+                                })
+                            
+                        # Always send the original activity regardless
                         progress_callback(None, activity=activity)
+                        
+                        # Add security activities to action plan for visibility
+                        if activity.get('type') in ['security', 'xss_test', 'sqli_test', 'csrf_test', 'vulnerability']:
+                            description = activity.get('description', '')
+                            agent = activity.get('agent', 'Security Agent')
+                            action_item = f"{agent}: {description}"
+                            
+                            if action_item not in action_plan:
+                                action_plan.append(action_item)
+                                # Send updated action plan
+                                progress_callback(None, activity={
+                                    "type": "action_plan", 
+                                    "description": "Action Plan", 
+                                    "details": {
+                                        "plan": action_plan
+                                    }
+                                })
                     except Exception as e:
                         self.logger.warning(f"Error parsing activity data: {str(e)}")
+                        
+                # Parse explicit action plan lines
+                elif 'ACTION_PLAN:' in line:
+                    try:
+                        plan_text = line.split('ACTION_PLAN:')[1].strip()
+                        # Try to parse as JSON first
+                        try:
+                            plan_data = json.loads(plan_text)
+                            if isinstance(plan_data, list):
+                                # Add new items to action plan
+                                for item in plan_data:
+                                    if item not in action_plan:
+                                        action_plan.append(item)
+                            elif isinstance(plan_data, dict) and 'items' in plan_data:
+                                for item in plan_data['items']:
+                                    if item not in action_plan:
+                                        action_plan.append(item)
+                        except json.JSONDecodeError:
+                            # Not JSON, treat as plain text
+                            if plan_text and plan_text not in action_plan:
+                                action_plan.append(plan_text)
+                        
+                        # Send updated action plan
+                        progress_callback(None, activity={
+                            "type": "action_plan", 
+                            "description": "Action Plan", 
+                            "details": {
+                                "plan": action_plan
+                            }
+                        })
+                    except Exception as e:
+                        self.logger.warning(f"Error parsing action plan data: {str(e)}")
                 
                 # Look for error messages
                 elif 'ERROR:' in line:

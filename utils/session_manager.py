@@ -129,7 +129,9 @@ class SessionManager:
     def update_scan_status(self, session_id: str, scan_id: str, 
                           status: str, progress: int = None, 
                           report_dir: str = None,
-                          vulnerabilities: List[Dict[str, Any]] = None) -> None:
+                          vulnerabilities: List[Dict[str, Any]] = None,
+                          action_plan: List[str] = None,
+                          current_task: str = None) -> None:
         with self.lock:
             if session_id not in self.active_scans or scan_id not in self.active_scans[session_id]:
                 return
@@ -147,6 +149,20 @@ class SessionManager:
             
             if vulnerabilities:
                 scan['vulnerabilities'] = vulnerabilities
+                
+            # Store action plan if provided
+            if action_plan:
+                if 'action_plan' not in scan:
+                    scan['action_plan'] = []
+                
+                # Add new items to existing action plan
+                for item in action_plan:
+                    if item not in scan['action_plan']:
+                        scan['action_plan'].append(item)
+                        
+            # Update current task if provided
+            if current_task:
+                scan['current_task'] = current_task
             
             # If scan is completed, move it to completed_scans
             if status in ['completed', 'error', 'cancelled']:

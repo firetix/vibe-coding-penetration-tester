@@ -1,6 +1,7 @@
 from typing import Dict, List, Any, Optional
 import asyncio
 import time
+import json
 from playwright.sync_api import Page
 
 from core.llm import LLMProvider
@@ -74,10 +75,28 @@ class SecuritySwarm:
         
         # Debug output for the plan
         self.logger.highlight(f"Security testing plan generated with {len(plan.get('tasks', []))} tasks:")
+        
+        # Create and publish action plan for UI display
+        action_plan = [f"Security Testing Plan for {url}"]
+        
         for i, task in enumerate(plan.get("tasks", []), 1):
-            self.logger.info(f"  Task #{i}: {task.get('type', 'unknown')} on {task.get('target', 'unknown')} (Priority: {task.get('priority', 'medium')})")
+            task_type = task.get('type', 'unknown')
+            target = task.get('target', 'unknown')
+            priority = task.get('priority', 'medium')
+            
+            self.logger.info(f"  Task #{i}: {task_type} on {target} (Priority: {priority})")
             # Log each task as a distinct activity
-            self.logger.security(f"Planned Task: {task.get('type', 'unknown')} test on {task.get('target', 'unknown')}")
+            self.logger.security(f"Planned Task: {task_type} test on {target}")
+            
+            # Add to action plan for UI
+            action_plan.append(f"Step {i}: {task_type.upper()} test on {target} (Priority: {priority})")
+        
+        # Publish action plan for UI display
+        action_plan_json = json.dumps(action_plan)
+        print(f"ACTION_PLAN: {action_plan_json}")
+        
+        # Also log as activity
+        self.logger.info(f"Published action plan with {len(action_plan)-1} tasks")
         
         # Track discovered vulnerabilities
         vulnerabilities = []
@@ -96,7 +115,14 @@ class SecuritySwarm:
             if not agent:
                 self.logger.warning(f"No suitable agent for task type: {task_type}")
                 self.logger.info(f"Available agent types: {', '.join(self.agents.keys())}")
+                
+                # Log that we're skipping this task to action plan
+                print(f"ACTION_PLAN: [\"Skip task: {task_type} - No suitable agent found\"]")
                 continue
+                
+            # Log current task as the active one for UI
+            current_task = f"{agent.__class__.__name__}: Testing {target} for {task_type} vulnerabilities"
+            print(f"ACTIVITY: {{\"type\": \"current_task\", \"description\": \"{current_task}\", \"agent\": \"{agent.__class__.__name__}\"}}")
             
             # Execute the task and collect results
             try:

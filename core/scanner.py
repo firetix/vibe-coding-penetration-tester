@@ -44,7 +44,8 @@ class Scanner:
                 "headless": self.headless,
                 "slow_mo": self.slow_mo,
                 # Disable web security features for testing purposes
-                "ignoreHTTPSErrors": True,
+                # Note: ignoreHTTPSErrors is not used at launch level in the Python API
+                # Instead, it's passed at the context level as ignore_https_errors
                 "args": [
                     "--disable-web-security",
                     "--disable-features=IsolateOrigins,site-per-process",
