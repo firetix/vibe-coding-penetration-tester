@@ -355,6 +355,41 @@ class ScanController:
                     except Exception as e:
                         self.logger.warning(f"Error parsing activity data: {str(e)}")
                         
+                # Check for report generation status
+                elif 'Generating report' in line or 'Writing report' in line:
+                    # Add report generation step to action plan if not already there
+                    report_item = "Generating security assessment report... (Pending)"
+                    if report_item not in action_plan:
+                        action_plan.append(report_item)
+                        progress_callback(95, "generating_report", 
+                                        activity={
+                                            "type": "reporting", 
+                                            "description": "Generating security assessment report", 
+                                            "agent": "ReportGenerator"
+                                        },
+                                        action_plan=action_plan)
+                
+                # Check for report completion
+                elif 'report successfully written' in line or 'Generated security report' in line:
+                    # Update report generation status to completed
+                    pending_item = "Generating security assessment report... (Pending)"
+                    completed_item = "Security report generated successfully (Completed)"
+                    
+                    # Replace pending with completed
+                    if pending_item in action_plan:
+                        action_plan.remove(pending_item)
+                        
+                    if completed_item not in action_plan:
+                        action_plan.append(completed_item)
+                        
+                    progress_callback(98, "report_generated", 
+                                   activity={
+                                       "type": "success", 
+                                       "description": "Security report generated successfully", 
+                                       "agent": "ReportGenerator"
+                                   },
+                                   action_plan=action_plan)
+                        
                 # Parse explicit action plan lines
                 elif 'ACTION_PLAN:' in line:
                     try:
@@ -421,15 +456,56 @@ class ScanController:
             report_path = os.path.join(self.report_manager.upload_folder, report_dir, 'report.json')
             
             if os.path.exists(report_path):
-                self.session_manager.update_scan_status(session_id, scan_id, 'completed', 100)
+                # Mark scan as completed
                 self.logger.info(f"Scan completed successfully: {scan_id}")
+                
+                # Create a final action plan with completed status for all tasks
+                final_action_plan = []
+                
+                # Get the current action plan from the scan
+                scan = self.session_manager.get_active_scan(session_id, scan_id)
+                if scan and 'action_plan' in scan:
+                    current_plan = scan.get('action_plan', [])
+                    
+                    # Update all tasks to completed status
+                    for item in current_plan:
+                        if "Step" in item and "Priority" in item and not "(Completed)" in item:
+                            # This is a task item, mark it as completed
+                            item = item.replace("(Pending)", "").strip() + " (Completed)"
+                        final_action_plan.append(item)
+                
+                # If we have vulnerabilities, add them to the action plan
+                if scan and 'vulnerabilities' in scan and scan['vulnerabilities']:
+                    vulns = scan['vulnerabilities']
+                    for vuln in vulns:
+                        vuln_item = f"Found vulnerability: {vuln.get('name', 'Unknown')} ({vuln.get('severity', 'medium')}) (Completed)"
+                        if vuln_item not in final_action_plan:
+                            final_action_plan.append(vuln_item)
+                
+                # Add report generation as completed
+                report_item = f"Security report generated successfully (Completed)"
+                final_action_plan.append(report_item)
+                
+                # Set final message for current task
+                self.session_manager.update_scan_status(
+                    session_id, scan_id, 'completed', 100,
+                    report_dir=report_dir,
+                    action_plan=final_action_plan,
+                    current_task="Security testing completed. Report is available."
+                )
             else:
-                self.session_manager.update_scan_status(session_id, scan_id, 'error', 100)
+                self.session_manager.update_scan_status(
+                    session_id, scan_id, 'error', 100,
+                    current_task="Scan failed, no report was generated."
+                )
                 self.logger.error(f"Scan failed, no report generated: {scan_id}")
                 
         except Exception as e:
             self.logger.error(f"Error finalizing scan: {str(e)}")
-            self.session_manager.update_scan_status(session_id, scan_id, 'error', 100)
+            self.session_manager.update_scan_status(
+                session_id, scan_id, 'error', 100,
+                current_task=f"Error: {str(e)}"
+            )
     
     def cancel_scan(self, session_id: str, scan_id: str) -> Dict[str, Any]:
         scan = self.session_manager.get_active_scan(session_id, scan_id)

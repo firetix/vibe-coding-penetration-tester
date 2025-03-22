@@ -659,10 +659,13 @@ def status_check():
                     for vuln in scan.get('vulnerabilities'):
                         action_plan.append(f"Found vulnerability: {vuln.get('name', 'Unknown')} ({vuln.get('severity', 'medium')})")
             
+            # Use the stored current_task if available, otherwise use default
+            current_task = scan.get('current_task', 'Security testing completed. Report is available.')
+            
             return jsonify({
                 'status': 'ok',
                 'progress': 100,
-                'current_task': 'Completed',
+                'current_task': current_task,
                 'is_running': False,
                 'url': scan.get('url', ''),
                 'scan_id': scan.get('id', ''),

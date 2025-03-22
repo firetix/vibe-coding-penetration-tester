@@ -88,8 +88,8 @@ class SecuritySwarm:
             # Log each task as a distinct activity
             self.logger.security(f"Planned Task: {task_type} test on {target}")
             
-            # Add to action plan for UI
-            action_plan.append(f"Step {i}: {task_type.upper()} test on {target} (Priority: {priority})")
+            # Add to action plan for UI with pending status
+            action_plan.append(f"Step {i}: {task_type.upper()} test on {target} (Priority: {priority}) (Pending)")
         
         # Publish action plan for UI display
         action_plan_json = json.dumps(action_plan)
@@ -137,6 +137,10 @@ class SecuritySwarm:
                 # Log the completion of the task
                 self.logger.security(f"Completed {agent.name} testing of {task.get('target', 'application')}")
                 
+                # Update action plan to mark this task as completed
+                completed_task = f"Step {i}: {task_type.upper()} test on {target} (Priority: {priority}) (Completed)"
+                print(f"ACTION_PLAN: [\"{completed_task}\"]")
+                
                 # Debug the raw result
                 if result:
                     self.logger.info(f"Raw result from {agent.name}:")
@@ -170,7 +174,15 @@ class SecuritySwarm:
                             "validation_details": validation.get("details", {})
                         }
                         vulnerabilities.append(validated_vuln)
-                        self.logger.success(f"Validated vulnerability: {validated_vuln.get('vulnerability_type')} ({validated_vuln.get('severity', 'medium')})")
+                        
+                        # Log validated vulnerability as a success
+                        vuln_type = validated_vuln.get('vulnerability_type', 'Unknown')
+                        severity = validated_vuln.get('severity', 'medium')
+                        self.logger.success(f"Validated vulnerability: {vuln_type} ({severity})")
+                        
+                        # Add to action plan
+                        vuln_item = f"Found {vuln_type} vulnerability in {target} (Severity: {severity}) (Completed)"
+                        print(f"ACTION_PLAN: [\"{vuln_item}\"]")
                     else:
                         self.logger.warning(f"Vulnerability reported but failed validation: {result.get('vulnerability_type', 'Unknown')}")
                         # Add to vulnerabilities anyway for debugging purposes, but mark as unvalidated
@@ -181,6 +193,13 @@ class SecuritySwarm:
                             "note": "Added for debugging - failed validation"
                         }
                         vulnerabilities.append(test_vuln)
+                        
+                        # Add potential (unvalidated) vulnerability to action plan
+                        vuln_type = test_vuln.get('vulnerability_type', 'Unknown')
+                        severity = test_vuln.get('severity', 'medium')
+                        vuln_item = f"Potential {vuln_type} vulnerability found but not validated (Severity: {severity}) (Completed)"
+                        print(f"ACTION_PLAN: [\"{vuln_item}\"]")
+                        
                         self.logger.warning(f"TESTING ONLY: Adding unvalidated vulnerability for debugging")
             except Exception as e:
                 self.logger.error(f"Error executing task {task_type}: {str(e)}")
