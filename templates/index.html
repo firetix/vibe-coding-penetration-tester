@@ -1125,24 +1125,56 @@
             }
             
             function loadReport() {
+                console.log("Loading report with session ID:", sessionId);
                 // Include session ID to get the specific report for this scan
                 fetch(`/report?session_id=${encodeURIComponent(sessionId)}`)
-                .then(response => response.json())
+                .then(response => {
+                    console.log("Report response status:", response.status);
+                    return response.json();
+                })
                 .then(data => {
+                    console.log("Report data received:", Object.keys(data));
                     if (data.status === 'success') {
+                        let reportContent = '';
+                        
+                        // Check for markdown content first (preferred format)
+                        if (data.markdown) {
+                            console.log("Using markdown content from report");
+                            reportContent = data.markdown;
+                        }
+                        // Fall back to content field if available
+                        else if (data.content) {
+                            console.log("Using content field from report");
+                            reportContent = data.content;
+                        }
+                        // Otherwise try to generate from findings
+                        else if (data.findings && Array.isArray(data.findings)) {
+                            console.log("Generating content from findings array:", data.findings.length);
+                            
+                            // Generate markdown from findings
+                            reportContent = generateReportFromFindings(data.findings, data.url || 'Unknown URL');
+                        }
+                        
                         // Save report content to state
                         const currentState = loadScanState() || {};
-                        currentState.reportContent = data.content;
+                        currentState.reportContent = reportContent;
                         currentState.isComplete = true;
                         currentState.isRunning = false;
                         currentState.progress = 100;
                         saveScanState(currentState);
                         
+                        // Show debugging message in console
+                        console.log("Report content length:", reportContent ? reportContent.length : 0);
+                        
                         // Render markdown to HTML
-                        reportContentEl.innerHTML = marked.parse(data.content);
+                        if (reportContent && reportContent.length > 0) {
+                            // Use marked.js to parse markdown
+                            reportContentEl.innerHTML = marked.parse(reportContent);
+                        } else {
+                            reportContentEl.innerHTML = '<div class="alert alert-warning">No report content found.</div>';
+                        }
                         
                         // Keep status panel visible and show report
-                        // scanStatusPanel.classList.add('d-none'); // Removed to keep logs visible
                         reportContainer.classList.remove('d-none');
                         
                         // Update progress bar to 100% and turn it green
@@ -1867,6 +1899,163 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             });
+            
+            // Function to generate a markdown report from findings array
+            function generateReportFromFindings(findings, url) {
+                if (!findings || !Array.isArray(findings) || findings.length === 0) {
+                    return '# No vulnerabilities found\n\nNo security issues were detected during this scan.';
+                }
+                
+                const today = new Date();
+                const dateStr = today.toISOString().split('T')[0];
+                
+                // Begin building the markdown report
+                let markdown = `# Security Assessment Report\n\n`;
+                markdown += `**Generated:** ${today.toLocaleString()}\n\n`;
+                markdown += `**Target:** ${url}\n\n`;
+                
+                // Vulnerability count summary
+                markdown += `## Summary\n\n`;
+                markdown += `**Total Vulnerabilities:** ${findings.length}\n\n`;
+                
+                // Count vulnerabilities by severity
+                const severityCounts = {
+                    'critical': 0,
+                    'high': 0,
+                    'medium': 0,
+                    'low': 0,
+                    'info': 0
+                };
+                
+                // Count vulnerabilities by type
+                const vulnerabilityTypes = new Set();
+                
+                findings.forEach(finding => {
+                    const severity = (finding.severity || 'medium').toLowerCase();
+                    if (severity in severityCounts) {
+                        severityCounts[severity]++;
+                    }
+                    
+                    const vulnType = finding.vulnerability_type || finding.type || 'Unknown';
+                    vulnerabilityTypes.add(vulnType);
+                });
+                
+                // Severity breakdown table
+                markdown += `### Vulnerability Severity Breakdown\n\n`;
+                markdown += `| Severity | Count |\n`;
+                markdown += `|----------|-------|\n`;
+                markdown += `| Critical | ${severityCounts.critical} |\n`;
+                markdown += `| High | ${severityCounts.high} |\n`;
+                markdown += `| Medium | ${severityCounts.medium} |\n`;
+                markdown += `| Low | ${severityCounts.low} |\n`;
+                markdown += `| Info | ${severityCounts.info} |\n\n`;
+                
+                // Vulnerability types
+                markdown += `### Vulnerability Types\n\n`;
+                vulnerabilityTypes.forEach(type => {
+                    markdown += `- ${type}\n`;
+                });
+                markdown += `\n`;
+                
+                // Detailed findings
+                markdown += `## Detailed Findings\n\n`;
+                
+                findings.forEach((finding, index) => {
+                    const vulnType = finding.vulnerability_type || finding.type || 'Unknown';
+                    const severity = finding.severity || 'medium';
+                    const target = finding.target || finding.affected_resource || 'Unknown target';
+                    const validated = finding.validated ? 'Yes' : 'No';
+                    
+                    markdown += `### ${index + 1}. ${vulnType} in ${target}\n\n`;
+                    markdown += `**Severity:** ${severity.charAt(0).toUpperCase() + severity.slice(1)}  \n`;
+                    markdown += `**Type:** ${vulnType}  \n`;
+                    markdown += `**Target:** ${target}  \n`;
+                    markdown += `**Validated:** ${validated}  \n\n`;
+                    
+                    // Description
+                    if (finding.details && finding.details.description) {
+                        markdown += `#### Description\n\n${finding.details.description}\n\n`;
+                    } else if (finding.description) {
+                        markdown += `#### Description\n\n${finding.description}\n\n`;
+                    }
+                    
+                    // Impact
+                    markdown += `#### Impact\n\n`;
+                    if (finding.details && finding.details.impact) {
+                        markdown += `${finding.details.impact}\n\n`;
+                    } else {
+                        // Generate standard impact text based on severity
+                        let impactText = '';
+                        switch (severity.toLowerCase()) {
+                            case 'critical':
+                                impactText = 'This vulnerability has a critical impact, potentially allowing complete system compromise, significant data breach, or application-wide exploitation.';
+                                break;
+                            case 'high':
+                                impactText = 'This vulnerability has a high impact, potentially allowing significant data exposure, partial application compromise, or unauthorized access to sensitive functionality.';
+                                break;
+                            case 'medium':
+                                impactText = 'This vulnerability has a moderate impact, potentially allowing limited access to restricted information or functionality.';
+                                break;
+                            case 'low':
+                                impactText = 'This vulnerability has a low impact, with minimal security implications but should still be addressed.';
+                                break;
+                            default:
+                                impactText = 'The impact of this issue has not been fully assessed.';
+                        }
+                        markdown += `${impactText}\n\n`;
+                    }
+                    
+                    // Steps to reproduce
+                    if (finding.reproduction_steps || (finding.details && finding.details.reproduction_steps)) {
+                        const steps = finding.reproduction_steps || finding.details.reproduction_steps;
+                        markdown += `#### Steps to Reproduce\n\n`;
+                        if (Array.isArray(steps)) {
+                            steps.forEach((step, i) => {
+                                markdown += `${i + 1}. ${step}\n`;
+                            });
+                            markdown += `\n`;
+                        } else {
+                            markdown += `${steps}\n\n`;
+                        }
+                    }
+                    
+                    // Evidence
+                    if (finding.evidence || (finding.details && finding.details.evidence)) {
+                        const evidence = finding.evidence || finding.details.evidence;
+                        markdown += `#### Evidence\n\n\`\`\`\n${evidence}\n\`\`\`\n\n`;
+                    }
+                    
+                    // Remediation
+                    if (finding.remediation || (finding.details && finding.details.remediation)) {
+                        const remediation = finding.remediation || finding.details.remediation;
+                        markdown += `#### Remediation\n\n${remediation}\n\n`;
+                    }
+                    
+                    // References
+                    markdown += `#### References\n\n`;
+                    if (vulnType.includes('XSS')) {
+                        markdown += `- https://owasp.org/www-community/attacks/xss/\n`;
+                        markdown += `- https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html\n`;
+                        markdown += `- https://portswigger.net/web-security/cross-site-scripting\n`;
+                    } else if (vulnType.includes('SQL') || vulnType.includes('Injection')) {
+                        markdown += `- https://owasp.org/www-community/attacks/SQL_Injection\n`;
+                        markdown += `- https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html\n`;
+                        markdown += `- https://portswigger.net/web-security/sql-injection\n`;
+                    } else if (vulnType.includes('CSRF')) {
+                        markdown += `- https://owasp.org/www-community/attacks/csrf\n`;
+                        markdown += `- https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html\n`;
+                    } else if (vulnType.includes('Access Control') || vulnType.includes('IDOR')) {
+                        markdown += `- https://owasp.org/Top10/A01_2021-Broken_Access_Control/\n`;
+                        markdown += `- https://cheatsheetseries.owasp.org/cheatsheets/Access_Control_Cheat_Sheet.html\n`;
+                    }
+                    
+                    markdown += `\n---\n\n`;
+                });
+                
+                markdown += `\n*Report generated by VibePenTester - Advanced AI Security Testing Agent*\n`;
+                
+                return markdown;
+            }
         });
     </script>
 </body>

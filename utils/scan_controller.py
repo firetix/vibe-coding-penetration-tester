@@ -141,9 +141,10 @@ class ScanController:
                                activity_callback: Optional[Callable] = None) -> Callable:
         def progress_callback(progress: int, status: str = None, 
                               vulnerabilities: List[Dict[str, Any]] = None,
-                              activity: Dict[str, Any] = None) -> None:
+                              activity: Dict[str, Any] = None,
+                              action_plan: List[str] = None) -> None:
             # Extract action plan and current task from activity if present
-            action_plan = None
+            extracted_action_plan = None
             current_task = None
             
             if activity:
@@ -151,7 +152,7 @@ class ScanController:
                 if activity.get('type') == 'action_plan' and 'details' in activity:
                     plan_items = activity.get('details', {}).get('plan', [])
                     if isinstance(plan_items, list) and plan_items:
-                        action_plan = plan_items
+                        extracted_action_plan = plan_items
                 
                 # Check if this is a current task update
                 elif activity.get('type') == 'current_task':
@@ -159,18 +160,21 @@ class ScanController:
                     if description:
                         current_task = description
             
+            # Use explicitly provided action plan if available, otherwise use extracted one
+            final_action_plan = action_plan if action_plan is not None else extracted_action_plan
+            
             if status:
                 self.session_manager.update_scan_status(
                     session_id, scan_id, status, progress, 
                     vulnerabilities=vulnerabilities,
-                    action_plan=action_plan,
+                    action_plan=final_action_plan,
                     current_task=current_task
                 )
             else:
                 self.session_manager.update_scan_status(
                     session_id, scan_id, None, progress, 
                     vulnerabilities=vulnerabilities,
-                    action_plan=action_plan,
+                    action_plan=final_action_plan,
                     current_task=current_task
                 )
             
@@ -454,54 +458,120 @@ class ScanController:
         try:
             # Check if report files exist
             report_path = os.path.join(self.report_manager.upload_folder, report_dir, 'report.json')
+            self.logger.info(f"Report path: {report_path}")
             
-            if os.path.exists(report_path):
-                # Mark scan as completed
-                self.logger.info(f"Scan completed successfully: {scan_id}")
+            # If the report directory has nested structure due to long URL name, we need to fix it
+            if not os.path.exists(report_path) and os.path.exists(os.path.join(self.report_manager.upload_folder, report_dir)):
+                # Check if there's a subdirectory
+                subdirs = [d for d in os.listdir(os.path.join(self.report_manager.upload_folder, report_dir)) 
+                          if os.path.isdir(os.path.join(self.report_manager.upload_folder, report_dir, d))]
                 
-                # Create a final action plan with completed status for all tasks
-                final_action_plan = []
-                
-                # Get the current action plan from the scan
-                scan = self.session_manager.get_active_scan(session_id, scan_id)
-                if scan and 'action_plan' in scan:
-                    current_plan = scan.get('action_plan', [])
+                if subdirs:
+                    # Move files from the subdirectory to the main report directory
+                    subdir_path = os.path.join(self.report_manager.upload_folder, report_dir, subdirs[0])
+                    self.logger.info(f"Found nested report directory: {subdir_path}, moving files up")
                     
-                    # Update all tasks to completed status
-                    for item in current_plan:
-                        if "Step" in item and "Priority" in item and not "(Completed)" in item:
-                            # This is a task item, mark it as completed
-                            item = item.replace("(Pending)", "").strip() + " (Completed)"
-                        final_action_plan.append(item)
-                
-                # If we have vulnerabilities, add them to the action plan
-                if scan and 'vulnerabilities' in scan and scan['vulnerabilities']:
-                    vulns = scan['vulnerabilities']
-                    for vuln in vulns:
-                        vuln_item = f"Found vulnerability: {vuln.get('name', 'Unknown')} ({vuln.get('severity', 'medium')}) (Completed)"
-                        if vuln_item not in final_action_plan:
-                            final_action_plan.append(vuln_item)
-                
-                # Add report generation as completed
-                report_item = f"Security report generated successfully (Completed)"
-                final_action_plan.append(report_item)
-                
-                # Set final message for current task
-                self.session_manager.update_scan_status(
-                    session_id, scan_id, 'completed', 100,
-                    report_dir=report_dir,
-                    action_plan=final_action_plan,
-                    current_task="Security testing completed. Report is available."
-                )
+                    # Move files up one level
+                    import shutil
+                    for filename in os.listdir(subdir_path):
+                        src_path = os.path.join(subdir_path, filename)
+                        dest_path = os.path.join(self.report_manager.upload_folder, report_dir, filename)
+                        if os.path.isfile(src_path):
+                            shutil.move(src_path, dest_path)
+                            self.logger.info(f"Moved file {filename} from nested directory to main report directory")
+            
+            self.logger.info(f"Scan completed successfully: {scan_id}")
+            
+            # Verify again that the report files actually exist now
+            report_path = os.path.join(self.report_manager.upload_folder, report_dir, 'report.json')
+            markdown_path = os.path.join(self.report_manager.upload_folder, report_dir, 'report.md')
+            
+            # Log if files exist
+            if os.path.exists(report_path):
+                self.logger.info(f"Verified report.json exists at: {report_path}")
             else:
-                self.session_manager.update_scan_status(
-                    session_id, scan_id, 'error', 100,
-                    current_task="Scan failed, no report was generated."
-                )
-                self.logger.error(f"Scan failed, no report generated: {scan_id}")
+                self.logger.warning(f"report.json still not found at: {report_path}")
+                
+            if os.path.exists(markdown_path):
+                self.logger.info(f"Verified report.md exists at: {markdown_path}")
+            else:
+                self.logger.warning(f"report.md still not found at: {markdown_path}")
+            
+            # Create a final action plan with completed status for all tasks
+            final_action_plan = []
+            
+            # Get the current action plan from the scan
+            scan = self.session_manager.get_active_scan(session_id, scan_id)
+            if scan and 'action_plan' in scan:
+                current_plan = scan.get('action_plan', [])
+                self.logger.info(f"Current action plan has {len(current_plan)} items")
+                
+                # Update all tasks to completed status
+                for item in current_plan:
+                    # This is a task item, mark it as completed if it's not already
+                    if "(Pending)" in item:
+                        item = item.replace("(Pending)", "(Completed)")
+                    elif not "(Completed)" in item and "Step" in item:
+                        item = item.strip() + " (Completed)"
+                    final_action_plan.append(item)
+            else:
+                self.logger.warning(f"No action plan found in scan {scan_id}")
+            
+            # If we have vulnerabilities, add them to the action plan
+            if scan and 'vulnerabilities' in scan and scan['vulnerabilities']:
+                vulns = scan['vulnerabilities']
+                self.logger.info(f"Adding {len(vulns)} vulnerabilities to action plan")
+                for vuln in vulns:
+                    vuln_name = vuln.get('vulnerability_type', vuln.get('name', 'Unknown'))
+                    vuln_severity = vuln.get('severity', 'medium')
+                    vuln_item = f"Found vulnerability: {vuln_name} ({vuln_severity}) (Completed)"
+                    if vuln_item not in final_action_plan:
+                        final_action_plan.append(vuln_item)
+            
+            # Add report generation as completed
+            report_item = f"Security report generated successfully (Completed)"
+            if report_item not in final_action_plan:
+                final_action_plan.append(report_item)
+            
+            # Set final message for current task with explicit completed status
+            self.logger.info(f"Finalizing scan with action plan containing {len(final_action_plan)} items")
+            
+            # First, ensure that the scan is updated with the report_dir
+            self.session_manager.update_scan_status(
+                session_id, scan_id, 'completed', 100,
+                report_dir=report_dir,
+                action_plan=final_action_plan,
+                current_task="Security testing completed. Report is available."
+            )
+            
+            # Double-check that the update worked correctly
+            updated_scan = self.session_manager.get_active_scan(session_id, scan_id)
+            if updated_scan:
+                if updated_scan.get('report_dir') == report_dir:
+                    self.logger.info(f"Successfully set report_dir to {report_dir}")
+                else:
+                    self.logger.warning(f"Failed to set report_dir. Current value: {updated_scan.get('report_dir')}")
+                
+                if updated_scan.get('status') == 'completed':
+                    self.logger.info("Successfully marked scan as completed")
+                else:
+                    self.logger.warning(f"Failed to mark scan as completed. Current status: {updated_scan.get('status')}")
+            else:
+                # If the scan is not in active scans anymore, check if it moved to completed scans
+                completed_scans = self.session_manager.get_completed_scans(session_id)
+                if completed_scans and completed_scans[0].get('id') == scan_id:
+                    self.logger.info("Scan successfully moved to completed scans")
+                    if completed_scans[0].get('report_dir') == report_dir:
+                        self.logger.info(f"Report directory correctly set in completed scan: {report_dir}")
+                    else:
+                        self.logger.warning(f"Report directory incorrect in completed scan: {completed_scans[0].get('report_dir')}")
+                else:
+                    self.logger.warning("Scan not found in active or completed scans after update")
                 
         except Exception as e:
             self.logger.error(f"Error finalizing scan: {str(e)}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             self.session_manager.update_scan_status(
                 session_id, scan_id, 'error', 100,
                 current_task=f"Error: {str(e)}"

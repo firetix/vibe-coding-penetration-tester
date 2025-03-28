@@ -38,6 +38,7 @@ class ReportManager:
                 report_info = self._parse_report_dir_name(report_dir)
                 report_path = os.path.join(self.upload_folder, report_dir, 'report.json')
                 
+                # Check if report exists directly in the directory
                 if os.path.exists(report_path):
                     with open(report_path, 'r') as f:
                         report_data = json.load(f)
@@ -50,6 +51,32 @@ class ReportManager:
                             'date': self._format_timestamp(report_info.get('timestamp')),
                             'vulnerabilities': vuln_count
                         })
+                else:
+                    # Check if there's a subdirectory that might contain the report
+                    dir_path = os.path.join(self.upload_folder, report_dir)
+                    if os.path.exists(dir_path) and os.path.isdir(dir_path):
+                        subdirs = [d for d in os.listdir(dir_path) if os.path.isdir(os.path.join(dir_path, d))]
+                        
+                        for subdir in subdirs:
+                            nested_report_path = os.path.join(dir_path, subdir, 'report.json')
+                            if os.path.exists(nested_report_path):
+                                self.logger.info(f"Found report in nested directory: {nested_report_path}")
+                                
+                                try:
+                                    with open(nested_report_path, 'r') as f:
+                                        report_data = json.load(f)
+                                        vuln_count = len(report_data.get('findings', []))
+                                        
+                                        reports.append({
+                                            'id': report_dir,  # Still use the main directory as ID
+                                            'url': report_info.get('url', 'Unknown URL'),
+                                            'timestamp': report_info.get('timestamp', 'Unknown Date'),
+                                            'date': self._format_timestamp(report_info.get('timestamp')),
+                                            'vulnerabilities': vuln_count,
+                                            'nested_dir': subdir  # Track that this is in a nested directory
+                                        })
+                                except Exception as nested_e:
+                                    self.logger.error(f"Error parsing nested report {nested_report_path}: {str(nested_e)}")
             except Exception as e:
                 self.logger.error(f"Error parsing report {report_dir}: {str(e)}")
         
@@ -60,6 +87,27 @@ class ReportManager:
         report_path = os.path.join(self.upload_folder, report_id, 'report.json')
         markdown_path = os.path.join(self.upload_folder, report_id, 'report.md')
         
+        # Handle nested directory structure
+        if not os.path.exists(report_path):
+            # Check if report_id directory exists at all
+            if not os.path.exists(os.path.join(self.upload_folder, report_id)):
+                return {'error': 'Report not found'}
+                
+            # Check if there's a subdirectory that might contain the report
+            subdirs = [d for d in os.listdir(os.path.join(self.upload_folder, report_id)) 
+                      if os.path.isdir(os.path.join(self.upload_folder, report_id, d))]
+            
+            if subdirs:
+                # Check for report in first subdirectory
+                nested_report_path = os.path.join(self.upload_folder, report_id, subdirs[0], 'report.json')
+                nested_markdown_path = os.path.join(self.upload_folder, report_id, subdirs[0], 'report.md')
+                
+                if os.path.exists(nested_report_path):
+                    self.logger.info(f"Found report in nested directory: {nested_report_path}")
+                    report_path = nested_report_path
+                    markdown_path = nested_markdown_path
+        
+        # If we still can't find the report, return an error
         if not os.path.exists(report_path):
             return {'error': 'Report not found'}
         
@@ -123,16 +171,32 @@ class ReportManager:
         # Remove protocol
         url = re.sub(r'^https?://', '', url)
         
-        # Replace invalid filename characters with underscores
-        url = re.sub(r'[\\/*?:"<>|]', '_', url)
+        # Handle fragments (anything after #) which commonly cause deeply nested folders
+        url = url.split('#')[0]
+        
+        # Also remove query parameters (anything after ?)
+        url = url.split('?')[0]
+        
+        # Replace all slashes, back slashes with underscores
+        url = re.sub(r'[/\\]', '_', url)
+        
+        # Replace other invalid filename characters with underscores
+        url = re.sub(r'[*?:"<>|]', '_', url)
         
         # Replace multiple underscores with a single one
         url = re.sub(r'_+', '_', url)
         
-        # Limit length
-        if len(url) > 50:
-            url = url[:50]
+        # Limit length, but ensure we get the domain part
+        domain_part = url.split('_')[0] if '_' in url else url
         
+        if len(url) > 50:
+            # Keep the domain and shorten the rest
+            if len(domain_part) < 30:
+                remaining_length = 50 - len(domain_part)
+                url = domain_part + '_' + url[len(domain_part)+1:][:remaining_length]
+            else:
+                url = domain_part[:30] + '_' + url[len(domain_part)+1:][:20]
+                
         return url
     
     def _parse_report_dir_name(self, dir_name: str) -> Dict[str, str]:

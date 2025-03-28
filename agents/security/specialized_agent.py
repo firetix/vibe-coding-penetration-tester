@@ -14,7 +14,14 @@ class SpecializedSecurityAgent(BaseAgent):
     """Base class for specialized security testing agents."""
     
     def __init__(self, name: str, role: str, security_type: str, llm_provider: LLMProvider, scanner: Scanner):
+        # Get security tools for this agent type
         security_tools = get_security_tools(security_type)
+        
+        # For access_control agent, also include specialized tools
+        if security_type == "access_control":
+            specialized_tools = get_security_tools("specialized")
+            security_tools.extend(specialized_tools)
+        
         browser_tools = get_browser_interaction_tools()
         tools = security_tools + browser_tools
         

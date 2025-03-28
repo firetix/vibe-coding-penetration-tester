@@ -356,6 +356,15 @@ class BaseAgent:
         except ImportError:
             self.logger.error("Failed to import tools.general_tools")
         
+        # Try security_tools module for security-related functions
+        try:
+            security_module = importlib.import_module("tools.security_tools")
+            if hasattr(security_module, function_name):
+                self.logger.debug(f"Found function in security_tools: {function_name}")
+                return getattr(security_module, function_name)
+        except ImportError:
+            self.logger.error("Failed to import tools.security_tools")
+        
         # Try specialized module based on function name prefix
         try:
             module_prefix = function_name.split("_")[0]

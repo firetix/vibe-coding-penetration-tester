@@ -134,17 +134,20 @@ class SessionManager:
                           current_task: str = None) -> None:
         with self.lock:
             if session_id not in self.active_scans or scan_id not in self.active_scans[session_id]:
+                self.logger.warning(f"Tried to update non-existent scan: {session_id}/{scan_id}")
                 return
             
             scan = self.active_scans[session_id][scan_id]
             
             if status:
+                self.logger.info(f"Updating scan {scan_id} status: {scan.get('status', 'none')} -> {status}")
                 scan['status'] = status
             
             if progress is not None:
                 scan['progress'] = progress
             
             if report_dir:
+                self.logger.info(f"Setting report_dir for scan {scan_id}: {report_dir}")
                 scan['report_dir'] = report_dir
             
             if vulnerabilities:
@@ -152,27 +155,61 @@ class SessionManager:
                 
             # Store action plan if provided
             if action_plan:
+                old_count = len(scan.get('action_plan', []))
+                
                 if 'action_plan' not in scan:
                     scan['action_plan'] = []
                 
-                # Add new items to existing action plan
-                for item in action_plan:
-                    if item not in scan['action_plan']:
-                        scan['action_plan'].append(item)
+                # Completely replace the action plan if we're finalizing
+                if status == 'completed':
+                    self.logger.info(f"Replacing action plan with {len(action_plan)} items for completed scan")
+                    scan['action_plan'] = action_plan
+                else:
+                    # Add new items to existing action plan
+                    for item in action_plan:
+                        if item not in scan['action_plan']:
+                            scan['action_plan'].append(item)
+                
+                new_count = len(scan.get('action_plan', []))
+                self.logger.info(f"Action plan updated: {old_count} -> {new_count} items")
                         
             # Update current task if provided
             if current_task:
+                self.logger.info(f"Setting current task: {current_task}")
                 scan['current_task'] = current_task
+            
+            # Make sure scan data is saved
+            self._save_sessions()
             
             # If scan is completed, move it to completed_scans
             if status in ['completed', 'error', 'cancelled']:
+                self.logger.info(f"Moving scan {scan_id} to completed scans with status {status}")
                 scan['completed'] = time.time()
+                
+                # Make a deep copy of the scan to move to completed_scans
+                import copy
+                scan_copy = copy.deepcopy(scan)
+                
+                # Check that required fields are set
+                if status == 'completed' and not scan_copy.get('report_dir'):
+                    self.logger.warning(f"Completed scan {scan_id} has no report_dir set!")
                 
                 if session_id not in self.completed_scans:
                     self.completed_scans[session_id] = {}
                 
-                self.completed_scans[session_id][scan_id] = scan
+                self.logger.info(f"Copying scan with report_dir: {scan_copy.get('report_dir')}")
+                self.completed_scans[session_id][scan_id] = scan_copy
+                
+                # Remove the scan from active_scans
                 del self.active_scans[session_id][scan_id]
+                
+                # Make sure scan data is saved after moving to completed
+                self._save_sessions()
+                
+                # Double-check that the completed scan has the right data
+                if session_id in self.completed_scans and scan_id in self.completed_scans[session_id]:
+                    completed = self.completed_scans[session_id][scan_id]
+                    self.logger.info(f"Verified completed scan: status={completed.get('status')}, report_dir={completed.get('report_dir')}")
     
     def get_completed_scans(self, session_id: str) -> List[Dict[str, Any]]:
         with self.lock:

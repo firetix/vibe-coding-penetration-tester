@@ -64,8 +64,12 @@ def register_routes(app, session_manager, report_manager):
         latest_scan = completed_scans[0]
         report_dir = latest_scan.get('report_dir')
         
+        # Log details for debugging
+        logger.info(f"Found latest completed scan with ID: {latest_scan.get('id', '')}")
+        logger.info(f"Report directory from scan: {report_dir}")
+        
         if not report_dir:
-            logger.info(f"Completed scan has no report_dir: {latest_scan.get('id', '')}")
+            logger.warning(f"Completed scan has no report_dir: {latest_scan.get('id', '')}")
             # Return a specific response to indicate report is being generated
             return success_response(
                 message='Report is being generated',
@@ -79,22 +83,60 @@ def register_routes(app, session_manager, report_manager):
             )
         
         try:
+            # Get report from the report manager
             report = report_manager.get_report(report_dir)
-            if not report or not report.get('content'):
+            logger.info(f"Retrieved report from {report_dir}: Keys: {list(report.keys() if isinstance(report, dict) else [])}")
+            
+            # Check if report has expected content
+            if not report or not (report.get('content') or report.get('markdown') or report.get('findings')):
                 logger.warning(f"Empty report content for report_dir: {report_dir}")
-                return success_response(
-                    message='Report is being generated',
-                    data={
-                        'status': 'generating',
-                        'scan_id': latest_scan.get('id', ''),
-                        'progress': latest_scan.get('progress', 100),
-                        'url': latest_scan.get('url', '')
-                    },
-                    status_code=202  # Report exists but has no content yet
-                )
+                
+                # Check if there's a nested directory
+                import os
+                nested_dir_path = os.path.join(report_manager.upload_folder, report_dir)
+                if os.path.exists(nested_dir_path) and os.path.isdir(nested_dir_path):
+                    subdirs = [d for d in os.listdir(nested_dir_path) 
+                              if os.path.isdir(os.path.join(nested_dir_path, d))]
+                    
+                    if subdirs:
+                        # There is a nested directory, try to fix it
+                        logger.info(f"Found nested directory in report path: {subdirs[0]}")
+                        
+                        # Try one last attempt to move files up if they're in a nested directory
+                        import shutil
+                        nested_path = os.path.join(nested_dir_path, subdirs[0])
+                        for filename in os.listdir(nested_path):
+                            if filename.endswith('.json') or filename.endswith('.md'):
+                                src = os.path.join(nested_path, filename)
+                                dst = os.path.join(nested_dir_path, filename)
+                                if not os.path.exists(dst):
+                                    shutil.copy(src, dst)
+                                    logger.info(f"Copied {filename} from nested directory to main report directory")
+                        
+                        # Try to get the report again
+                        report = report_manager.get_report(report_dir)
+                
+                # If still empty, return generating status
+                if not report or not (report.get('content') or report.get('markdown') or report.get('findings')):
+                    return success_response(
+                        message='Report is being generated',
+                        data={
+                            'status': 'generating',
+                            'scan_id': latest_scan.get('id', ''),
+                            'progress': latest_scan.get('progress', 100),
+                            'url': latest_scan.get('url', '')
+                        },
+                        status_code=202  # Report exists but has no content yet
+                    )
+            
+            # If we get here, we have a valid report
+            logger.info(f"Successfully retrieved report from {report_dir}")
             return success_response(data=report)
+        
         except Exception as e:
+            import traceback
             logger.error(f"Error retrieving report from {report_dir}: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return success_response(
                 message='Report generation error',
                 data={

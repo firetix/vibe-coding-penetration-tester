@@ -13,6 +13,37 @@ def get_security_tools(tool_type: str = "all") -> List[Dict[str, Any]]:
     
     # Define common tool definitions
     all_tools = {
+        "specialized": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "test_access_control",
+                    "description": "Test for broken access control vulnerabilities",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "target_url": {
+                                "type": "string",
+                                "description": "URL of the target application"
+                            },
+                            "resource_path": {
+                                "type": "string",
+                                "description": "Path to the protected resource"
+                            },
+                            "expected_role": {
+                                "type": "string",
+                                "description": "Expected role that should have access (e.g., 'admin', 'user')"
+                            },
+                            "test_type": {
+                                "type": "string",
+                                "description": "Type of access control test (e.g., 'direct', 'parameter', 'method')"
+                            }
+                        },
+                        "required": ["target_url", "resource_path"]
+                    }
+                }
+            }
+        ],
         "xss": [
             {
                 "type": "function",
@@ -574,7 +605,22 @@ def get_security_tools(tool_type: str = "all") -> List[Dict[str, Any]]:
             all_tools_list.extend(tools)
         return all_tools_list
     
-    return all_tools.get(tool_type.lower(), [])
+    # Check if the requested tool type exists
+    if tool_type.lower() in all_tools:
+        return all_tools[tool_type.lower()]
+    else:
+        # For unknown tool types, return specialized tools as fallback
+        logger.warning(f"Unknown tool type: {tool_type}, returning specialized tools as fallback")
+        specialized_tools = all_tools.get("specialized", [])
+        
+        # If this is specifically the access_control tool type, make sure the test_access_control function is included
+        if tool_type.lower() == "access_control":
+            # Include specialized tools for access_control type
+            logger.info(f"Adding specialized tools for access_control agent")
+            access_control_tools = all_tools.get("access_control", [])
+            return specialized_tools + access_control_tools
+            
+        return specialized_tools
 
 # XSS Tools Implementation
 def test_xss_payload(target_url: str, payload: str, injection_point: str, parameter_name: Optional[str] = None) -> Dict[str, Any]:
