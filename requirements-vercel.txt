@@ -10,6 +10,7 @@ flask>=2.2.0
 markdown>=3.4.0
 gunicorn>=21.2.0
 python-dotenv>=1.0.0
-flask_cors>=4.0.0
+# Explicitly specify Flask-CORS rather than using 'flask_cors' format
+Flask-CORS>=4.0.0
 # Use Vercel Analytics (@vercel/analytics)
-vercel-analytics>=0.1.1 
+vercel-analytics>=0.1.1

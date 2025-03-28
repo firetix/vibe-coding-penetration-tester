@@ -51,6 +51,12 @@ case $deploy_option in
         # Set Vercel flag explicitly to make sure the app detects Vercel environment
         vercel env add VERCEL 1
         vercel env add VERCEL_ENV production
+        # Ensure all dependencies are installed
+        echo -e "${YELLOW}Checking requirements-vercel.txt for all necessary packages...${NC}"
+        if ! grep -q -i "flask-cors" requirements-vercel.txt && ! grep -q "Flask-CORS" requirements-vercel.txt; then
+            echo -e "${RED}Warning: Flask-CORS not found in requirements-vercel.txt. Adding it...${NC}"
+            echo "Flask-CORS>=4.0.0" >> requirements-vercel.txt
+        fi
         vercel --prod
         ;;
     2)
@@ -61,6 +67,13 @@ case $deploy_option in
         # Set Vercel flag explicitly to make sure the app detects Vercel environment
         vercel env add VERCEL 1
         vercel env add VERCEL_ENV production
+        
+        # Ensure all dependencies are installed
+        echo -e "${YELLOW}Checking requirements-vercel.txt for all necessary packages...${NC}"
+        if ! grep -q -i "flask-cors" requirements-vercel.txt && ! grep -q "Flask-CORS" requirements-vercel.txt; then
+            echo -e "${RED}Warning: Flask-CORS not found in requirements-vercel.txt. Adding it...${NC}"
+            echo "Flask-CORS>=4.0.0" >> requirements-vercel.txt
+        fi
         
         vercel
         ;;

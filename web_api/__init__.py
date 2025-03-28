@@ -3,8 +3,16 @@
 import os
 import logging
 from flask import Flask
-from flask_cors import CORS
 import time
+
+# Try to import CORS, but don't fail if it's not available
+try:
+    from flask_cors import CORS
+    has_cors = True
+except ImportError:
+    has_cors = False
+    print("WARNING: flask_cors is not installed. CORS support will be disabled.")
+    print("To enable CORS, install flask_cors: pip install flask_cors")
 
 from utils.logging_manager import LoggingManager
 from utils.activity_tracker import ActivityTracker
@@ -28,8 +36,17 @@ def create_app():
                 static_folder='../static',
                 template_folder='../templates')
     
-    # Enable CORS for all routes
-    CORS(app)
+    # Enable CORS for all routes if available
+    if has_cors:
+        CORS(app)
+    else:
+        # Basic CORS implementation if flask_cors is not available
+        @app.after_request
+        def add_cors_headers(response):
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+            response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+            return response
     
     # Determine reports directory based on environment
     is_vercel = os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV') is not None

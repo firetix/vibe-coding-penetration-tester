@@ -5,7 +5,15 @@ import json
 import time
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, session
-from flask_cors import CORS
+
+# Try to import CORS, but don't fail if it's not available
+try:
+    from flask_cors import CORS
+    has_cors = True
+except ImportError:
+    has_cors = False
+    print("WARNING: flask_cors is not installed. CORS support will be disabled.")
+    print("To enable CORS, install flask_cors: pip install flask_cors")
 
 from utils.logging_manager import LoggingManager
 from utils.activity_tracker import ActivityTracker
@@ -23,8 +31,17 @@ app = Flask(__name__)
 # Set a secret key for sessions
 app.secret_key = os.environ.get('SECRET_KEY', 'vibe_pen_tester_secret_key')
 
-# Enable CORS for all routes
-CORS(app)
+# Enable CORS for all routes if available
+if has_cors:
+    CORS(app)
+else:
+    # Basic CORS implementation if flask_cors is not available
+    @app.after_request
+    def add_cors_headers(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
 
 # Add global error handling
 @app.errorhandler(Exception)
