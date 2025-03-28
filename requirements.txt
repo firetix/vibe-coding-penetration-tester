@@ -11,6 +11,7 @@ fastapi>=0.104.0
 uvicorn>=0.24.0
 flask>=2.2.0
 markdown>=3.4.0
+flask_cors>=4.0.0
 
 # Testing requirements
 pytest>=7.4.0
