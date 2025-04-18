@@ -535,9 +535,172 @@ class LLMProvider:
             return response.data[0].embedding
 
     def _gemini_completion(self, messages: List[Dict[str, str]], temperature: float, tools: Optional[List[Dict]], json_mode: bool) -> Dict[str, Any]:
-        """Handles chat completion using the Google Gemini API."""
-        # TODO: Implement Gemini API call logic, including message format conversion, tool handling, etc.
-        self.logger.debug(f"Gemini completion called with {len(messages)} messages, temp={temperature}, tools={bool(tools)}, json_mode={json_mode}")
+        """Generate a completion using Google Gemini, converting messages."""
+        self.logger.debug(f"Starting Gemini completion with {len(messages)} messages.")
 
-        # Placeholder return - This needs to be replaced with the actual API call and response processing
-        return {"content": "Gemini response placeholder", "tool_calls": []}
+        gemini_messages = []
+        system_prompt = None
+        first_system_prompt_processed = False
+
+        for msg in messages:
+            role = msg.get('role')
+            content = msg.get('content')
+            tool_calls = msg.get('tool_calls')
+            name = msg.get('name') # Used for tool role
+
+            if role == 'system':
+                if not first_system_prompt_processed:
+                    system_prompt = content
+                    first_system_prompt_processed = True
+                    self.logger.debug(f"Captured system prompt: {system_prompt[:100]}...") # Log first 100 chars
+                else:
+                    self.logger.warning("Multiple system messages found. Only the first one will be used.")
+                continue # System messages are handled separately
+
+            elif role == 'user':
+                if content: # Ensure content is not None or empty
+                     gemini_messages.append({'role': 'user', 'parts': [{'text': content}]})
+                else:
+                    self.logger.warning("User message with empty content skipped.")
+
+
+            elif role == 'assistant':
+                model_parts = []
+                # Handle text content
+                if content:
+                    model_parts.append({'text': content})
+
+                # Handle tool calls
+                if tool_calls:
+                    for tool_call in tool_calls:
+                        if tool_call.get('type') == 'function':
+                            func = tool_call.get('function', {})
+                            func_name = func.get('name')
+                            func_args_str = func.get('arguments')
+                            if func_name and func_args_str:
+                                try:
+                                    arguments = json.loads(func_args_str)
+                                    # Ensure arguments is a dict for Gemini
+                                    if not isinstance(arguments, dict):
+                                        self.logger.warning(f"Tool call arguments for {func_name} were not a dict, wrapping: {arguments}")
+                                        # Attempt to handle non-dict arguments, e.g., wrap a string
+                                        if isinstance(arguments, str):
+                                           arguments = {"value": arguments} # Example wrapping
+                                        else:
+                                           # Fallback for other types, might need adjustment
+                                           arguments = {"data": arguments}
+
+                                    function_call = genai_types.FunctionCall(name=func_name, args=arguments)
+                                    model_parts.append(genai_types.Part(function_call=function_call))
+                                    self.logger.debug(f"Added FunctionCall part for: {func_name}")
+                                except json.JSONDecodeError:
+                                    self.logger.error(f"Failed to parse JSON arguments for tool call {func_name}: {func_args_str}")
+                                except Exception as e:
+                                     self.logger.error(f"Error processing tool call {func_name}: {e}")
+                            else:
+                                self.logger.warning(f"Skipping tool call due to missing name or arguments: {tool_call}")
+                        else:
+                             self.logger.warning(f"Skipping non-function tool call: {tool_call}")
+
+
+                if model_parts:
+                    gemini_messages.append({'role': 'model', 'parts': model_parts})
+                else:
+                    # Gemini requires model messages to have parts. If an assistant message
+                    # had neither content nor valid tool calls, we might skip it or log.
+                    # Let's log a warning for now.
+                    self.logger.warning(f"Assistant message resulted in empty parts, skipping: {msg}")
+
+
+            elif role == 'tool':
+                if name and content:
+                    try:
+                        # Assumption: content is the result string. Wrap it in a dict.
+                        # Adapt this if VibePenTester provides results differently.
+                        response_data = {'result': content} # Wrap string content
+                        # If content is already a dict, you might use it directly:
+                        # try:
+                        #     response_data = json.loads(content)
+                        #     if not isinstance(response_data, dict):
+                        #         response_data = {'result': content} # Fallback if not dict
+                        # except json.JSONDecodeError:
+                        #      response_data = {'result': content} # Fallback if not JSON
+
+                        function_response = genai_types.FunctionResponse(name=name, response=response_data)
+                        part = genai_types.Part(function_response=function_response)
+                        # Tool responses are added as 'user' role messages in Gemini
+                        gemini_messages.append({'role': 'user', 'parts': [part]})
+                        self.logger.debug(f"Added FunctionResponse part for tool: {name}")
+                    except Exception as e:
+                        self.logger.error(f"Error processing tool result for {name}: {e}")
+                else:
+                    self.logger.warning(f"Skipping tool message due to missing name or content: {msg}")
+
+            else:
+                self.logger.warning(f"Unsupported message role encountered: {role}")
+
+        # Handle System Prompt Prepending
+        if system_prompt:
+            first_user_idx = -1
+            for i, msg in enumerate(gemini_messages):
+                if msg['role'] == 'user':
+                    # Check if the first part is text (it should be for a normal user message)
+                    if msg.get('parts') and isinstance(msg['parts'], list) and len(msg['parts']) > 0 and 'text' in msg['parts'][0]:
+                         first_user_idx = i
+                         break
+                    else:
+                        # Found a user message, but it's not a simple text message (e.g., FunctionResponse)
+                        # We should insert the system prompt *before* this complex user message.
+                        self.logger.debug("Found non-text user message first, inserting system prompt before it.")
+                        gemini_messages.insert(i, {'role': 'user', 'parts': [{'text': system_prompt}]})
+                        system_prompt = None # Mark as handled
+                        break
+
+
+            if first_user_idx != -1 and system_prompt: # Check system_prompt again in case it was handled above
+                original_text = gemini_messages[first_user_idx]['parts'][0].get('text', '')
+                # Ensure parts list and first part exist before modification
+                if gemini_messages[first_user_idx].get('parts') and len(gemini_messages[first_user_idx]['parts']) > 0:
+                    gemini_messages[first_user_idx]['parts'][0]['text'] = f"{system_prompt}\n\n{original_text}"
+                    self.logger.debug(f"Prepended system prompt to first user message at index {first_user_idx}.")
+                else:
+                     self.logger.error(f"Could not prepend system prompt: First user message at index {first_user_idx} has invalid parts structure.")
+
+            elif system_prompt: # No user message found at all, or first user wasn't text
+                 # If system_prompt is still not None here, it means no suitable user message was found to prepend to.
+                 # Insert the system prompt as the very first message.
+                gemini_messages.insert(0, {'role': 'user', 'parts': [{'text': system_prompt}]})
+                self.logger.debug("No suitable user message found, inserting system prompt as the first message.")
+
+
+        # Optional: Check for role alternation (Gemini requires user/model alternation)
+        last_role = None
+        for i, msg in enumerate(gemini_messages):
+            current_role = msg.get('role')
+            if current_role == last_role:
+                self.logger.warning(f"Gemini message role alternation violation at index {i}: {last_role} -> {current_role}")
+            last_role = current_role
+
+        # Log the final structure before making the API call (or returning placeholder)
+        try:
+            # Use default=str for non-serializable objects like genai_types parts
+            self.logger.debug(f"Final Gemini messages structure:\n{json.dumps(gemini_messages, indent=2, default=str)}")
+        except Exception as e:
+            self.logger.error(f"Error serializing final Gemini messages for logging: {e}")
+            self.logger.debug(f"Final Gemini messages (raw): {gemini_messages}")
+
+
+        # --- Placeholder for actual API call ---
+        # TODO: Implement the actual call to self.gemini_model.generate_content
+        # using the prepared `gemini_messages`, `tools`, `temperature`, etc.
+        # Handle potential API errors.
+        # Parse the response, potentially converting back to OpenAI format if needed
+        # by the rest of the system.
+
+        self.logger.info("Gemini message conversion complete. Skipping actual API call for now.")
+        # Return a placeholder structure consistent with other providers for now
+        # Note: Returning a dict that mimics the *input* structure for chat_completion,
+        # rather than the raw provider response like OpenAI/Anthropic wrappers do.
+        # This might need adjustment based on how the Coordinator uses the result.
+        # For now, let's return something simple. The core logic is the conversion above.
+        return {"choices": [{"message": {"content": "Placeholder Gemini response", "tool_calls": []}, "finish_reason": "stop"}], "model": self.model}
