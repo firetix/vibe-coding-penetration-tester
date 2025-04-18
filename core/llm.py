@@ -11,6 +11,7 @@ from openai import OpenAI
 import anthropic
 import google.generativeai as genai
 from google.generativeai import types as genai_types # Use alias
+import google.api_core.exceptions # Added for specific Gemini API error handling
 
 from utils.logger import get_logger
 
@@ -739,23 +740,56 @@ class LLMProvider:
         # --- End Tool Conversion ---
 
 
-        # --- Placeholder for actual API call ---
-        # TODO: Implement the actual call to self.gemini_model.generate_content
-        # using the prepared `gemini_messages`, `gemini_tools`, `temperature`, etc.
-        # generation_config = genai.types.GenerationConfig(temperature=temperature) # Add temperature
-        # response = self.gemini_model.generate_content(
-        #     gemini_messages,
-        #     tools=gemini_tools, # Pass the converted tools
-        #     generation_config=generation_config
-        # )
-        # Handle potential API errors.
-        # Parse the response, potentially converting back to OpenAI format if needed
-        # by the rest of the system.
+        # --- Actual API Call and Response Handling ---
+        generation_config = genai_types.GenerationConfig(temperature=temperature)
+        # Add other config options if needed, e.g., max_output_tokens
 
-        self.logger.info("Gemini message and tool conversion complete. Skipping actual API call for now.")
-        # Return a placeholder structure consistent with other providers for now
-        # Note: Returning a dict that mimics the *input* structure for chat_completion,
-        # rather than the raw provider response like OpenAI/Anthropic wrappers do.
-        # This might need adjustment based on how the Coordinator uses the result.
-        # For now, let's return something simple. The core logic is the conversion above.
-        return {"choices": [{"message": {"content": "Placeholder Gemini response", "tool_calls": []}, "finish_reason": "stop"}], "model": self.model}
+        api_kwargs = {
+            "contents": gemini_messages,
+            "generation_config": generation_config,
+        }
+        if gemini_tools:
+            api_kwargs["tools"] = gemini_tools
+
+        output = {"content": None, "tool_calls": []} # Initialize output structure
+
+        try:
+            self.logger.debug(f"Calling Gemini API with model {self.model}...")
+            response = self.gemini_model.generate_content(**api_kwargs)
+            self.logger.debug(f"Gemini API response received.")
+
+            # Basic Response Parsing (Text Content)
+            # TODO: Add function call parsing in the next step
+            if response and response.candidates:
+                 # Check if the candidate has content and parts
+                 if hasattr(response.candidates[0], 'content') and hasattr(response.candidates[0].content, 'parts'):
+                     parts = response.candidates[0].content.parts
+                     self.logger.debug(f"Response parts found: {len(parts)}")
+                     for part in parts:
+                         # Check if the part has text attribute and it's not empty
+                         if hasattr(part, 'text') and part.text:
+                             output["content"] = part.text
+                             self.logger.debug(f"Extracted text content: {output['content'][:100]}...") # Log first 100 chars
+                             break # Stop after finding the first text part
+                         # Placeholder for function call check (next step)
+                         # elif hasattr(part, 'function_call'):
+                         #    pass # Handle function calls here later
+
+                 else:
+                      self.logger.warning("Gemini response candidate missing 'content' or 'parts' attribute.")
+
+            else:
+                self.logger.warning("Gemini response missing or has no candidates.")
+
+            # Log the final parsed output structure (or parts of it)
+            self.logger.debug(f"Gemini completion successful. Parsed output: { {k: (v[:100] + '...' if isinstance(v, str) and len(v) > 100 else v) for k, v in output.items()} }") # Log truncated content
+            return output
+
+        except google.api_core.exceptions.GoogleAPIError as e:
+            self.logger.error(f"Gemini API call failed: {e}", exc_info=True)
+            # Re-raise the exception for the coordinator to handle
+            raise
+        except Exception as e:
+            # Catch any other unexpected errors during the process
+            self.logger.error(f"Gemini processing failed unexpectedly: {e}", exc_info=True)
+            raise # Re-raise the caught exception
