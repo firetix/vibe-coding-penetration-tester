@@ -690,14 +690,69 @@ class LLMProvider:
             self.logger.debug(f"Final Gemini messages (raw): {gemini_messages}")
 
 
+        # --- Tool Conversion Logic (OpenAI format to Gemini format) ---
+        gemini_tools = None
+        if tools:
+            declarations = []
+            for tool in tools:
+                if tool.get('type') == 'function':
+                    function_data = tool.get('function', {})
+                    name = function_data.get('name')
+                    description = function_data.get('description', '')
+                    # Parameters should follow OpenAPI Schema
+                    parameters = function_data.get('parameters')
+
+                    if name:
+                        try:
+                            # Ensure parameters is a dict or None, as expected by FunctionDeclaration
+                            if parameters is not None and not isinstance(parameters, dict):
+                                 self.logger.warning(f"Tool '{name}' parameters are not a dict, attempting to use as is: {type(parameters)}")
+                                 # Depending on strictness, you might want to raise an error or skip
+                                 # For now, let's pass it along, Gemini might handle it or error out.
+
+                            declaration = genai_types.FunctionDeclaration(
+                                name=name,
+                                description=description,
+                                parameters=parameters # Pass the parameters dict directly
+                            )
+                            declarations.append(declaration)
+                            self.logger.debug(f"Created FunctionDeclaration for tool: {name}")
+                        except Exception as e:
+                            # Catch potential errors during FunctionDeclaration creation
+                            self.logger.error(f"Error creating FunctionDeclaration for tool '{name}': {e}")
+                    else:
+                        self.logger.warning(f"Skipping tool due to missing 'name' in function data: {function_data}")
+                else:
+                    self.logger.warning(f"Skipping tool with unsupported type '{tool.get('type')}': {tool}")
+
+            if declarations:
+                gemini_tools = [genai_types.Tool(function_declarations=declarations)]
+                try:
+                    # Log the structure safely using to_dict if available, otherwise raw
+                    if hasattr(genai_types.Tool, 'to_dict'):
+                         self.logger.debug(f"Generated Gemini tools structure: {json.dumps(genai_types.Tool.to_dict(gemini_tools[0]), indent=2, default=str)}")
+                    else:
+                         self.logger.debug(f"Generated Gemini tools structure (raw): {gemini_tools}")
+                except Exception as e:
+                     self.logger.error(f"Error serializing Gemini tools for logging: {e}")
+                     self.logger.debug(f"Generated Gemini tools (raw): {gemini_tools}")
+        # --- End Tool Conversion ---
+
+
         # --- Placeholder for actual API call ---
         # TODO: Implement the actual call to self.gemini_model.generate_content
-        # using the prepared `gemini_messages`, `tools`, `temperature`, etc.
+        # using the prepared `gemini_messages`, `gemini_tools`, `temperature`, etc.
+        # generation_config = genai.types.GenerationConfig(temperature=temperature) # Add temperature
+        # response = self.gemini_model.generate_content(
+        #     gemini_messages,
+        #     tools=gemini_tools, # Pass the converted tools
+        #     generation_config=generation_config
+        # )
         # Handle potential API errors.
         # Parse the response, potentially converting back to OpenAI format if needed
         # by the rest of the system.
 
-        self.logger.info("Gemini message conversion complete. Skipping actual API call for now.")
+        self.logger.info("Gemini message and tool conversion complete. Skipping actual API call for now.")
         # Return a placeholder structure consistent with other providers for now
         # Note: Returning a dict that mimics the *input* structure for chat_completion,
         # rather than the raw provider response like OpenAI/Anthropic wrappers do.

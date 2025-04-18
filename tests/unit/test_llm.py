@@ -660,3 +660,173 @@ class TestLLMProvider:
 
             mock_genai_types.FunctionResponse.assert_called_once_with(name=tool_name, response=expected_response_data)
             mock_genai_types.Part.assert_called_once_with(function_response=mock_genai_types.FunctionResponse.return_value)
+# --- Gemini Tool Conversion Tests ---
+
+    @patch('core.llm.genai_types')
+    def test_gemini_tool_conversion_basic(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        mock_declaration = MagicMock(name="MockDeclaration")
+        mock_genai_types.FunctionDeclaration.return_value = mock_declaration
+        mock_tool = MagicMock(name="MockTool")
+        mock_genai_types.Tool.return_value = mock_tool
+
+        openai_tool = {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get the current weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"]
+                }
+            }
+        }
+        openai_tools = [openai_tool]
+
+        # Act
+        with patch.object(provider.logger, 'debug') as mock_logger_debug:
+            provider._gemini_completion(messages=[], temperature=0.7, tools=openai_tools, json_mode=False)
+
+        # Assert
+        mock_genai_types.FunctionDeclaration.assert_called_once_with(
+            name="get_weather",
+            description="Get the current weather",
+            parameters=openai_tool["function"]["parameters"]
+        )
+        mock_genai_types.Tool.assert_called_once_with(
+            function_declarations=[mock_declaration]
+        )
+        # Check if the debug log for generated tools was called
+        assert any("Generated Gemini tools structure" in call.args[0] for call in mock_logger_debug.call_args_list), "Tool structure debug log not found"
+
+
+    @patch('core.llm.genai_types')
+    def test_gemini_tool_conversion_multiple(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        mock_declaration1 = MagicMock(name="MockDeclaration1")
+        mock_declaration2 = MagicMock(name="MockDeclaration2")
+        mock_genai_types.FunctionDeclaration.side_effect = [mock_declaration1, mock_declaration2]
+        mock_tool = MagicMock(name="MockTool")
+        mock_genai_types.Tool.return_value = mock_tool
+
+        openai_tools = [
+            {
+                "type": "function",
+                "function": {"name": "tool_one", "description": "First tool", "parameters": {"type": "object"}}
+            },
+            {
+                "type": "function",
+                "function": {"name": "tool_two", "description": "Second tool", "parameters": None} # Test None parameters
+            }
+        ]
+
+        # Act
+        provider._gemini_completion(messages=[], temperature=0.7, tools=openai_tools, json_mode=False)
+
+        # Assert
+        assert mock_genai_types.FunctionDeclaration.call_count == 2
+        mock_genai_types.FunctionDeclaration.assert_has_calls([
+            call(name="tool_one", description="First tool", parameters={"type": "object"}),
+            call(name="tool_two", description="Second tool", parameters=None)
+        ], any_order=False) # Order should be preserved
+
+        mock_genai_types.Tool.assert_called_once_with(
+            function_declarations=[mock_declaration1, mock_declaration2]
+        )
+
+    @patch('core.llm.genai_types')
+    def test_gemini_tool_conversion_none_or_empty(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+
+        # Act & Assert for None
+        provider._gemini_completion(messages=[], temperature=0.7, tools=None, json_mode=False)
+        mock_genai_types.FunctionDeclaration.assert_not_called()
+        mock_genai_types.Tool.assert_not_called()
+
+        # Reset mocks
+        mock_genai_types.FunctionDeclaration.reset_mock()
+        mock_genai_types.Tool.reset_mock()
+
+        # Act & Assert for Empty List
+        provider._gemini_completion(messages=[], temperature=0.7, tools=[], json_mode=False)
+        mock_genai_types.FunctionDeclaration.assert_not_called()
+        mock_genai_types.Tool.assert_not_called()
+
+
+    @patch('core.llm.genai_types')
+    def test_gemini_tool_conversion_non_function(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        mock_declaration = MagicMock(name="MockDeclaration")
+        mock_genai_types.FunctionDeclaration.return_value = mock_declaration
+        mock_tool = MagicMock(name="MockTool")
+        mock_genai_types.Tool.return_value = mock_tool
+
+        openai_tools = [
+            {"type": "code_interpreter"}, # Non-function tool
+            {
+                "type": "function",
+                "function": {"name": "real_function", "description": "A real one", "parameters": {}}
+            }
+        ]
+
+        # Act
+        with patch.object(provider.logger, 'warning') as mock_logger_warning:
+             provider._gemini_completion(messages=[], temperature=0.7, tools=openai_tools, json_mode=False)
+
+        # Assert
+        # Only the 'function' type tool should lead to a declaration
+        mock_genai_types.FunctionDeclaration.assert_called_once_with(
+            name="real_function",
+            description="A real one",
+            parameters={}
+        )
+        mock_genai_types.Tool.assert_called_once_with(
+            function_declarations=[mock_declaration]
+        )
+        # Check warning log
+        mock_logger_warning.assert_any_call("Skipping tool with unsupported type 'code_interpreter': {'type': 'code_interpreter'}")
+
+
+    @patch('core.llm.genai_types')
+    def test_gemini_tool_conversion_missing_name(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+
+        openai_tools = [
+            {
+                "type": "function",
+                "function": {"description": "Tool missing name", "parameters": {}} # Missing 'name'
+            },
+             {
+                "type": "function",
+                "function": {"name": "good_tool", "description": "This one is okay", "parameters": {}}
+            }
+        ]
+        mock_declaration = MagicMock(name="MockDeclarationGood")
+        mock_genai_types.FunctionDeclaration.return_value = mock_declaration # Only called for the good one
+        mock_tool = MagicMock(name="MockTool")
+        mock_genai_types.Tool.return_value = mock_tool
+
+
+        # Act
+        with patch.object(provider.logger, 'warning') as mock_logger_warning:
+            provider._gemini_completion(messages=[], temperature=0.7, tools=openai_tools, json_mode=False)
+
+        # Assert
+        # FunctionDeclaration should only be called for the tool with a name
+        mock_genai_types.FunctionDeclaration.assert_called_once_with(
+             name="good_tool",
+             description="This one is okay",
+             parameters={}
+        )
+        # Tool should be created with only the valid declaration
+        mock_genai_types.Tool.assert_called_once_with(
+            function_declarations=[mock_declaration]
+        )
+        # Check warning log for the skipped tool
+        mock_logger_warning.assert_any_call("Skipping tool due to missing 'name' in function data: {'description': 'Tool missing name', 'parameters': {}}")
