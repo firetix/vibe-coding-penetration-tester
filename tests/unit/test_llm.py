@@ -1,6 +1,8 @@
+# tests/unit/test_llm.py
 import os
 import pytest
-from unittest.mock import patch, MagicMock
+import json # <-- Added import
+from unittest.mock import patch, MagicMock, call # <-- Added import
 
 from core.llm import LLMProvider
 
@@ -249,7 +251,7 @@ class TestLLMProvider:
         mock_genai.configure.assert_not_called()
         mock_genai.GenerativeModel.assert_not_called()
         # Check that getenv was called for GOOGLE_API_KEY among others
-        from unittest.mock import call
+        # from unittest.mock import call # Already imported at top
         assert call("GOOGLE_API_KEY") in mock_getenv.call_args_list
 
     @patch('core.llm.genai')
@@ -263,7 +265,7 @@ class TestLLMProvider:
 
         provider = LLMProvider(provider="gemini")
         # Define return value for the mocked method to match expected structure
-        mock_gemini_completion.return_value = {"content": "mocked gemini response", "tool_calls": []}
+        mock_gemini_completion.return_value = {"choices": [{"message": {"content": "mocked gemini response", "tool_calls": []}, "finish_reason": "stop"}], "model": "gemini-model"} # Match structure
 
         messages = [{"role": "user", "content": "Hello Gemini"}]
         temperature = 0.5
@@ -276,8 +278,385 @@ class TestLLMProvider:
         # Assert
         mock_gemini_completion.assert_called_once_with(messages, temperature, tools, json_mode)
         # Check the structure returned by the mocked method
-        assert result["content"] == "mocked gemini response"
-        assert result["tool_calls"] == []
+        assert result["choices"][0]["message"]["content"] == "mocked gemini response" # Adjusted assertion
+        assert result["choices"][0]["message"]["tool_calls"] == []
         # Ensure genai was configured during init
         mock_genai.configure.assert_called_once_with(api_key="test_key")
         mock_genai.GenerativeModel.assert_called_once()
+
+
+    # --- Gemini Message Conversion Tests ---
+
+    @pytest.fixture
+    def gemini_provider(self):
+        """Fixture to create a Gemini LLMProvider with mocks."""
+        with patch('core.llm.genai') as mock_genai, \
+             patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"}):
+            mock_model_instance = MagicMock()
+            mock_genai.GenerativeModel.return_value = mock_model_instance
+            provider = LLMProvider(provider="gemini")
+            # Reset mocks for genai calls made during init
+            mock_genai.reset_mock()
+            return provider, mock_genai # Return mock_genai too if needed
+
+    @patch('core.llm.genai_types') # Mock the types used within the method
+    def test_gemini_message_conversion_simple_user(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        messages = [{"role": "user", "content": "Hello there"}]
+        expected_gemini_messages = [{'role': 'user', 'parts': [{'text': 'Hello there'}]}]
+
+        # Act
+        # Directly call the protected method for unit testing
+        # We rely on the debug log added in the implementation to verify the structure
+        # Let's refine this: We'll mock the logger to capture the output.
+        with patch.object(provider.logger, 'debug') as mock_logger_debug:
+            provider._gemini_completion(messages, 0.7, None, False)
+
+            # Assert - Check the *last* debug call which logs the final structure
+            # The log uses an f-string, so there's only one argument in logged_args
+            assert mock_logger_debug.call_count > 0, "Logger debug was not called"
+            final_log_call = mock_logger_debug.call_args_list[-1]
+            logged_message_full = final_log_call[0][0] # Get the single argument from the call
+
+            # Extract the JSON part from the logged message
+            json_prefix = "Final Gemini messages structure:\n"
+            assert logged_message_full.startswith(json_prefix), f"Log message mismatch: {logged_message_full}"
+            logged_data_str = logged_message_full[len(json_prefix):]
+
+            # Re-parse the logged JSON to compare structures
+            logged_gemini_messages = json.loads(logged_data_str)
+
+            assert logged_gemini_messages == expected_gemini_messages
+            # Removed duplicate assertion
+            mock_genai_types.FunctionCall.assert_not_called()
+            mock_genai_types.FunctionResponse.assert_not_called()
+
+    @patch('core.llm.genai_types')
+    def test_gemini_message_conversion_system_prompt(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        messages = [
+            {"role": "system", "content": "Be helpful."},
+            {"role": "user", "content": "Hello there"}
+        ]
+        expected_gemini_messages = [
+            {'role': 'user', 'parts': [{'text': "Be helpful.\n\nHello there"}]}
+        ]
+
+        # Act & Assert
+        with patch.object(provider.logger, 'debug') as mock_logger_debug:
+            provider._gemini_completion(messages, 0.7, None, False)
+
+            assert mock_logger_debug.call_count > 0, "Logger debug was not called"
+            final_log_call = mock_logger_debug.call_args_list[-1]
+            logged_message_full = final_log_call[0][0]
+            json_prefix = "Final Gemini messages structure:\n"
+            assert logged_message_full.startswith(json_prefix), f"Log message mismatch: {logged_message_full}"
+            logged_data_str = logged_message_full[len(json_prefix):]
+
+            logged_gemini_messages = json.loads(logged_data_str)
+            assert logged_gemini_messages == expected_gemini_messages
+
+    @patch('core.llm.genai_types')
+    def test_gemini_message_conversion_multiple_system_prompts(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        messages = [
+            {"role": "system", "content": "Be helpful."},
+            {"role": "user", "content": "Hello there"},
+            {"role": "system", "content": "Be concise."} # Second system prompt
+        ]
+        # Only the first system prompt should be used
+        expected_gemini_messages = [
+            {'role': 'user', 'parts': [{'text': "Be helpful.\n\nHello there"}]}
+        ]
+
+        # Act & Assert
+        with patch.object(provider.logger, 'debug') as mock_logger_debug, \
+             patch.object(provider.logger, 'warning') as mock_logger_warning:
+            provider._gemini_completion(messages, 0.7, None, False)
+
+            assert mock_logger_debug.call_count > 0, "Logger debug was not called"
+            final_log_call = mock_logger_debug.call_args_list[-1]
+            logged_message_full = final_log_call[0][0]
+            json_prefix = "Final Gemini messages structure:\n"
+            assert logged_message_full.startswith(json_prefix), f"Log message mismatch: {logged_message_full}"
+            logged_data_str = logged_message_full[len(json_prefix):]
+
+            logged_gemini_messages = json.loads(logged_data_str)
+            assert logged_gemini_messages == expected_gemini_messages
+            # Check if the warning for multiple system messages was logged
+            mock_logger_warning.assert_any_call("Multiple system messages found. Only the first one will be used.")
+
+
+    @patch('core.llm.genai_types')
+    def test_gemini_message_conversion_assistant_text(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi user!"}
+        ]
+        expected_gemini_messages = [
+            {'role': 'user', 'parts': [{'text': 'Hello'}]},
+            {'role': 'model', 'parts': [{'text': 'Hi user!'}]}
+        ]
+
+        # Act & Assert
+        with patch.object(provider.logger, 'debug') as mock_logger_debug:
+            provider._gemini_completion(messages, 0.7, None, False)
+
+            assert mock_logger_debug.call_count > 0, "Logger debug was not called"
+            final_log_call = mock_logger_debug.call_args_list[-1]
+            logged_message_full = final_log_call[0][0]
+            json_prefix = "Final Gemini messages structure:\n"
+            assert logged_message_full.startswith(json_prefix), f"Log message mismatch: {logged_message_full}"
+            logged_data_str = logged_message_full[len(json_prefix):]
+
+            logged_gemini_messages = json.loads(logged_data_str)
+            assert logged_gemini_messages == expected_gemini_messages
+
+    @patch('core.llm.genai_types')
+    def test_gemini_message_conversion_assistant_tool_call(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        mock_function_call_part = MagicMock()
+        mock_genai_types.Part.return_value = mock_function_call_part
+        tool_args = {"query": "weather"}
+        messages = [
+            {"role": "user", "content": "Search?"},
+            {"role": "assistant", "tool_calls": [
+                {"type": "function", "function": {"name": "search_tool", "arguments": json.dumps(tool_args)}}
+            ]}
+        ]
+        expected_gemini_messages = [
+            {'role': 'user', 'parts': [{'text': 'Search?'}]},
+            {'role': 'model', 'parts': [mock_function_call_part]} # Expect the mocked Part object
+        ]
+
+        # Act & Assert
+        with patch.object(provider.logger, 'debug') as mock_logger_debug:
+            provider._gemini_completion(messages, 0.7, None, False) # Tools arg not needed for conversion test
+
+            assert mock_logger_debug.call_count > 0, "Logger debug was not called"
+            final_log_call = mock_logger_debug.call_args_list[-1]
+            logged_message_full = final_log_call[0][0]
+            json_prefix = "Final Gemini messages structure:\n"
+            assert logged_message_full.startswith(json_prefix), f"Log message mismatch: {logged_message_full}"
+            logged_data_str = logged_message_full[len(json_prefix):]
+
+            # Parse the JSON structure
+            logged_gemini_messages = json.loads(logged_data_str)
+
+            # Assert structure
+            assert len(logged_gemini_messages) == 2
+            assert logged_gemini_messages[0]['role'] == 'user'
+            assert logged_gemini_messages[0]['parts'][0]['text'] == 'Search?'
+            assert logged_gemini_messages[1]['role'] == 'model'
+            # We know the parts list contains the mock object, which gets stringified.
+            # Check that there is one part. The specific call is checked below.
+            assert len(logged_gemini_messages[1]['parts']) == 1
+
+            # Check genai_types calls (these remain the most reliable way to check mock interactions)
+            mock_genai_types.FunctionCall.assert_called_once_with(name="search_tool", args=tool_args)
+            mock_genai_types.Part.assert_called_once_with(function_call=mock_genai_types.FunctionCall.return_value)
+            mock_genai_types.FunctionResponse.assert_not_called()
+
+
+    @patch('core.llm.genai_types')
+    def test_gemini_message_conversion_assistant_text_and_tool_call(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        mock_function_call_part = MagicMock(name="FunctionCallPart")
+        # Make Part return different mocks based on input
+        def part_side_effect(*args, **kwargs):
+            if kwargs.get('function_call'):
+                return mock_function_call_part
+            # We don't expect FunctionResponse here, but good practice
+            # elif kwargs.get('function_response'):
+            #     return mock_function_response_part
+            else:
+                # Fallback for unexpected calls
+                return MagicMock()
+        mock_genai_types.Part.side_effect = part_side_effect
+
+        tool_args = {"param": "value"}
+        messages = [
+            {"role": "user", "content": "Do something"},
+            {"role": "assistant", "content": "Okay, using a tool.", "tool_calls": [
+                {"type": "function", "function": {"name": "do_it", "arguments": json.dumps(tool_args)}}
+            ]}
+        ]
+        # Expected parts: one text, one function call part
+        expected_model_parts_structure = [{'text': 'Okay, using a tool.'}, mock_function_call_part]
+
+        # Act & Assert
+        with patch.object(provider.logger, 'debug') as mock_logger_debug:
+            provider._gemini_completion(messages, 0.7, None, False)
+
+            assert mock_logger_debug.call_count > 0, "Logger debug was not called"
+            final_log_call = mock_logger_debug.call_args_list[-1]
+            logged_message_full = final_log_call[0][0]
+            json_prefix = "Final Gemini messages structure:\n"
+            assert logged_message_full.startswith(json_prefix), f"Log message mismatch: {logged_message_full}"
+            logged_data_str = logged_message_full[len(json_prefix):]
+
+            # Parse with default=str if needed, though mocks should be handled by string check below
+            logged_gemini_messages = json.loads(logged_data_str) # Mocks won't be in the parsed dict
+
+            assert len(logged_gemini_messages) == 2
+            assert logged_gemini_messages[0]['role'] == 'user'
+            assert logged_gemini_messages[1]['role'] == 'model'
+            # Check the parts structure within the model message
+            # Direct comparison is hard due to mock, check types and count
+            model_parts = logged_gemini_messages[1]['parts']
+            assert len(model_parts) == 2
+            assert isinstance(model_parts[0], dict) and 'text' in model_parts[0]
+            # The mock part will be stringified by json.dumps(default=str)
+            # We can't reliably assert the mock object string representation here after json.loads
+            # Instead, rely on the genai_types.Part call assertion below
+
+            mock_genai_types.FunctionCall.assert_called_once_with(name="do_it", args=tool_args)
+            # Part should be called once for the function call
+            mock_genai_types.Part.assert_called_once_with(function_call=mock_genai_types.FunctionCall.return_value)
+
+
+    @patch('core.llm.genai_types')
+    def test_gemini_message_conversion_tool_result(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        mock_function_call_part = MagicMock(name="FunctionCallPart")
+        mock_function_response_part = MagicMock(name="FunctionResponsePart")
+
+        # Make Part return different mocks based on input
+        def part_side_effect(*args, **kwargs):
+            if kwargs.get('function_call'):
+                return mock_function_call_part
+            elif kwargs.get('function_response'):
+                 return mock_function_response_part
+            else:
+                return MagicMock()
+        mock_genai_types.Part.side_effect = part_side_effect
+
+
+        tool_name = "search_tool"
+        tool_result_content = "Found results."
+        # Gemini expects response as a dict
+        expected_response_data = {'result': tool_result_content}
+
+        messages = [
+            # Need preceding messages for context, otherwise tool result is invalid
+            {"role": "user", "content": "Search?"},
+            {"role": "assistant", "tool_calls": [
+                {"type": "function", "function": {"name": tool_name, "arguments": "{}"}}
+            ]},
+            {"role": "tool", "name": tool_name, "content": tool_result_content}
+        ]
+
+        # Act & Assert
+        with patch.object(provider.logger, 'debug') as mock_logger_debug:
+            provider._gemini_completion(messages, 0.7, None, False)
+
+            assert mock_logger_debug.call_count > 0, "Logger debug was not called"
+            final_log_call = mock_logger_debug.call_args_list[-1]
+            logged_message_full = final_log_call[0][0]
+            json_prefix = "Final Gemini messages structure:\n"
+            assert logged_message_full.startswith(json_prefix), f"Log message mismatch: {logged_message_full}"
+            logged_data_str = logged_message_full[len(json_prefix):]
+
+            # Parse with default=str if needed, though mocks should be handled by string check below
+            logged_gemini_messages = json.loads(logged_data_str) # Mocks won't be in the parsed dict
+
+            # Expected structure: user, model (func call), user (func response)
+            assert len(logged_gemini_messages) == 3
+            assert logged_gemini_messages[0]['role'] == 'user'
+            assert logged_gemini_messages[1]['role'] == 'model'
+            assert logged_gemini_messages[2]['role'] == 'user' # Tool result becomes user role
+            # Check parts structure - again, direct mock comparison after json.loads is unreliable
+            # Rely on call assertions below
+
+            # Check genai_types calls
+            mock_genai_types.FunctionCall.assert_called_once_with(name=tool_name, args={}) # Arguments was "{}" -> {}
+            mock_genai_types.FunctionResponse.assert_called_once_with(name=tool_name, response=expected_response_data)
+            # Part called once for FunctionCall, once for FunctionResponse
+            assert mock_genai_types.Part.call_count == 2
+            mock_genai_types.Part.assert_any_call(function_call=mock_genai_types.FunctionCall.return_value)
+            mock_genai_types.Part.assert_any_call(function_response=mock_genai_types.FunctionResponse.return_value)
+
+
+    @patch('core.llm.genai_types')
+    def test_gemini_message_conversion_system_prompt_no_user(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        messages = [
+            {"role": "system", "content": "Be helpful."},
+            # No user message
+            {"role": "assistant", "content": "Okay"}
+        ]
+        # System prompt should become the first user message
+        expected_gemini_messages = [
+            {'role': 'user', 'parts': [{'text': "Be helpful."}]},
+            {'role': 'model', 'parts': [{'text': 'Okay'}]}
+        ]
+
+        # Act & Assert
+        with patch.object(provider.logger, 'debug') as mock_logger_debug:
+            provider._gemini_completion(messages, 0.7, None, False)
+
+            assert mock_logger_debug.call_count > 0, "Logger debug was not called"
+            final_log_call = mock_logger_debug.call_args_list[-1]
+            logged_message_full = final_log_call[0][0]
+            json_prefix = "Final Gemini messages structure:\n"
+            assert logged_message_full.startswith(json_prefix), f"Log message mismatch: {logged_message_full}"
+            logged_data_str = logged_message_full[len(json_prefix):]
+
+            logged_gemini_messages = json.loads(logged_data_str)
+            assert logged_gemini_messages == expected_gemini_messages
+
+    @patch('core.llm.genai_types')
+    def test_gemini_message_conversion_system_prompt_before_function_response(self, mock_genai_types, gemini_provider):
+        # Arrange
+        provider, _ = gemini_provider
+        mock_function_response_part = MagicMock(name="FunctionResponsePart")
+        mock_genai_types.Part.return_value = mock_function_response_part
+
+        tool_name = "get_info"
+        tool_result_content = '{"info": "details"}'
+        expected_response_data = {'result': tool_result_content} # Still wrap string
+
+        messages = [
+            {"role": "system", "content": "System instruction."},
+            # No direct user message after system, only tool result which becomes user role
+            {"role": "tool", "name": tool_name, "content": tool_result_content}
+        ]
+
+        # System prompt should be inserted as a new user message *before* the tool result user message
+        expected_gemini_messages_structure = [
+            {'role': 'user', 'parts': [{'text': "System instruction."}]},
+            {'role': 'user', 'parts': [mock_function_response_part]} # Tool result
+        ]
+
+        # Act & Assert
+        with patch.object(provider.logger, 'debug') as mock_logger_debug:
+            provider._gemini_completion(messages, 0.7, None, False)
+
+            assert mock_logger_debug.call_count > 0, "Logger debug was not called"
+            final_log_call = mock_logger_debug.call_args_list[-1]
+            logged_message_full = final_log_call[0][0]
+            json_prefix = "Final Gemini messages structure:\n"
+            assert logged_message_full.startswith(json_prefix), f"Log message mismatch: {logged_message_full}"
+            logged_data_str = logged_message_full[len(json_prefix):]
+
+            # Parse with default=str if needed, though mocks should be handled by string check below
+            logged_gemini_messages = json.loads(logged_data_str) # Mocks won't be in the parsed dict
+
+            assert len(logged_gemini_messages) == 2
+            assert logged_gemini_messages[0]['role'] == 'user'
+            assert logged_gemini_messages[0]['parts'][0]['text'] == "System instruction."
+            assert logged_gemini_messages[1]['role'] == 'user'
+            # Check parts structure - again, direct mock comparison after json.loads is unreliable
+            # Rely on call assertions below
+
+            mock_genai_types.FunctionResponse.assert_called_once_with(name=tool_name, response=expected_response_data)
+            mock_genai_types.Part.assert_called_once_with(function_response=mock_genai_types.FunctionResponse.return_value)
