@@ -37,3 +37,7 @@ llm:
     max_tokens: 4000
     # Default model to use if none specified
     default_model: "llama3"
+  gemini:
+    temperature: 0.7 # Default temperature
+    # max_tokens: ... # Placeholder if needed later
+    default_model: "gemini-2.0-flash-thinking-exp-01-21"
