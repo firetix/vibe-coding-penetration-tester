@@ -550,9 +550,54 @@ class LLMProvider:
                 input=text
             )
             return response.data[0].embedding
+        elif self.provider == "gemini":
+            # Use Gemini for embeddings if configured
+            try:
+                if not self.google_api_key:
+                    self.logger.warning("Google API Key not found for Gemini embeddings. Falling back to OpenAI.")
+                    raise ValueError("Missing Google API Key for Gemini embeddings") # Trigger fallback
+
+                # Read embedding model from config, fallback to default
+                embedding_model_name = self.config.get('llm', {}).get('gemini', {}).get('embedding_model')
+                if not embedding_model_name:
+                    embedding_model_name = "models/text-embedding-004" # Hardcoded fallback model
+                    self.logger.warning(f"Gemini 'embedding_model' not found in config. Using default: {embedding_model_name}")
+
+                task_type = "RETRIEVAL_DOCUMENT" # Default task type, can be configured later if needed
+
+                self.logger.debug(f"Attempting Gemini embedding with model: {embedding_model_name}, task_type: {task_type}")
+                response = genai.embed_content(
+                    model=embedding_model_name,
+                    content=text,
+                    task_type=task_type
+                )
+
+                if "embedding" in response:
+                    self.logger.debug("Gemini embedding successful.")
+                    return response["embedding"]
+                else:
+                    self.logger.warning("Gemini embedding response did not contain 'embedding' key. Falling back to OpenAI.")
+                    raise ValueError("Invalid response structure from Gemini embeddings") # Trigger fallback
+
+            except google.api_core.exceptions.GoogleAPIError as e:
+                self.logger.error(f"Gemini embedding API error: {e}. Falling back to OpenAI.")
+                # Fallback handled below
+            except Exception as e:
+                self.logger.error(f"Unexpected error during Gemini embedding: {e}. Falling back to OpenAI.")
+                # Fallback handled below
+
+            # Fallback to OpenAI if Gemini fails or isn't configured properly
+            self.logger.info("Falling back to OpenAI for embeddings due to Gemini failure or missing config.")
+            fallback_client = OpenAI(api_key=self.openai_api_key) # Use the key stored in self
+            response = fallback_client.embeddings.create(
+                model="text-embedding-3-small",
+                input=text
+            )
+            return response.data[0].embedding
         else:
-            # Anthropic doesn't currently support embeddings, fall back to OpenAI
-            fallback_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            # Fallback for other providers (e.g., Anthropic) or if explicitly needed
+            self.logger.info(f"Provider '{self.provider}' does not support embeddings or fallback triggered. Using OpenAI.")
+            fallback_client = OpenAI(api_key=self.openai_api_key) # Use the key stored in self
             response = fallback_client.embeddings.create(
                 model="text-embedding-3-small",
                 input=text
@@ -826,24 +871,31 @@ class LLMProvider:
                             # Ensure fc.args is treated as a dictionary-like object before dumping to JSON
                             arguments_dict = {}
                             if hasattr(fc, 'args'):
-                                # Handle potential google.protobuf.struct_pb2.Struct or simple dict
-                                if hasattr(fc.args, 'items'): # Check for Struct-like .items() method
-                                    arguments_dict = dict(fc.args.items())
-                                    self.logger.debug(f"Converted function call args from Struct-like object: {arguments_dict}")
-                                elif isinstance(fc.args, dict): # Check if it's already a dict
-                                    arguments_dict = fc.args
-                                    self.logger.debug(f"Using function call args as dict: {arguments_dict}")
-                                else:
-                                    # Attempt direct conversion as a fallback, log if fails
-                                    try:
-                                        arguments_dict = dict(fc.args)
-                                        self.logger.debug(f"Converted function call args via direct dict() call: {arguments_dict}")
-                                    except (TypeError, ValueError) as e:
-                                        self.logger.warning(f"Could not convert Gemini function call args to dict directly: {e}. Args type: {type(fc.args)}, Args: {fc.args}")
-                                        arguments_dict = {} # Fallback to empty dict
+                                # Convert proto MapComposite/RepeatedComposite to Python dict/list
+                                def _convert_proto_to_py(value):
+                                    if hasattr(value, 'items'): # Check for MapComposite (dict-like)
+                                        return {k: _convert_proto_to_py(v) for k, v in value.items()}
+                                    elif hasattr(value, '__iter__') and not isinstance(value, (str, bytes, dict)): # Check for RepeatedComposite (list-like)
+                                        return [_convert_proto_to_py(item) for item in value]
+                                    # Handle primitive types directly (string, number, bool, null)
+                                    # This might need adjustment based on actual primitive types returned by the API
+                                    elif isinstance(value, (str, int, float, bool, type(None))):
+                                         return value
+                                    else:
+                                        # Fallback for unexpected types
+                                        self.logger.warning(f"Unexpected type in Gemini args conversion: {type(value)}, value: {value}")
+                                        return str(value) # Convert to string as a fallback
+
+                                try:
+                                    arguments_dict = _convert_proto_to_py(fc.args)
+                                    self.logger.debug(f"Converted Gemini function call args: {arguments_dict}")
+                                except Exception as conv_e:
+                                     self.logger.error(f"Error converting Gemini function call args: {conv_e}", exc_info=True)
+                                     arguments_dict = {} # Fallback
 
                             # Convert arguments dictionary to JSON string
                             try:
+                                # Now arguments_dict should be a standard Python dict/list structure
                                 arguments_str = json.dumps(arguments_dict)
                                 self.logger.debug(f"Serialized function call arguments to JSON string: {arguments_str}")
                             except (TypeError) as e:

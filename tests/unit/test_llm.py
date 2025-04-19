@@ -1166,3 +1166,173 @@ class TestLLMProvider:
 
         # Ensure uuid4 was called
         mock_uuid.assert_called_once()
+# --- Gemini Embedding Tests ---
+
+    @patch('core.llm.genai')
+    @patch('core.llm.OpenAI') # Mock OpenAI for potential fallback
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key", "OPENAI_API_KEY": "test_openai_key"})
+    def test_gemini_create_embedding_success(self, mock_openai, mock_genai, mock_load_config):
+        """Test successful Gemini embedding generation."""
+        # Arrange
+        mock_config_loader, config_data = mock_load_config
+        config_data['llm']['gemini']['embedding_model'] = "models/text-embedding-004"
+
+        mock_gemini_response = {"embedding": [0.5, 0.6, 0.7]}
+        mock_genai.embed_content.return_value = mock_gemini_response
+
+        # Initialize provider *after* setting config
+        provider = LLMProvider(provider="gemini")
+        test_text = "Embed this text"
+
+        # Act
+        result = provider.create_embedding(test_text)
+
+        # Assert
+        assert result == [0.5, 0.6, 0.7]
+        mock_genai.embed_content.assert_called_once_with(
+            model="models/text-embedding-004",
+            content=test_text,
+            task_type="RETRIEVAL_DOCUMENT"
+        )
+        mock_openai.assert_not_called() # OpenAI should not be initialized or used
+
+    @patch('core.llm.genai')
+    @patch('core.llm.OpenAI')
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key", "OPENAI_API_KEY": "test_openai_key"})
+    def test_gemini_create_embedding_fallback_on_api_error(self, mock_openai, mock_genai, mock_load_config):
+        """Test fallback to OpenAI when Gemini API call fails."""
+        # Arrange
+        mock_config_loader, config_data = mock_load_config
+        config_data['llm']['gemini']['embedding_model'] = "models/text-embedding-004"
+
+        # Mock Gemini API error
+        api_error = google.api_core.exceptions.InternalServerError("Gemini server error")
+        mock_genai.embed_content.side_effect = api_error
+
+        # Mock OpenAI fallback
+        mock_openai_client = MagicMock()
+        mock_openai.return_value = mock_openai_client
+        mock_openai_embedding_response = MagicMock()
+        mock_openai_embedding_response.data = [MagicMock()]
+        mock_openai_embedding_response.data[0].embedding = [0.1, 0.2, 0.3]
+        mock_openai_client.embeddings.create.return_value = mock_openai_embedding_response
+
+        provider = LLMProvider(provider="gemini")
+        test_text = "Embed this text"
+
+        # Act
+        result = provider.create_embedding(test_text)
+
+        # Assert
+        assert result == [0.1, 0.2, 0.3] # Should be OpenAI's result
+        # Check Gemini was called
+        mock_genai.embed_content.assert_called_once_with(
+            model="models/text-embedding-004",
+            content=test_text,
+            task_type="RETRIEVAL_DOCUMENT"
+        )
+        # Check OpenAI fallback was initialized and called
+        mock_openai.assert_called_once_with(api_key="test_openai_key")
+        mock_openai_client.embeddings.create.assert_called_once_with(
+            model="text-embedding-3-small",
+            input=test_text
+        )
+
+    @patch('core.llm.genai')
+    @patch('core.llm.OpenAI')
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key", "OPENAI_API_KEY": "test_openai_key"})
+    def test_gemini_create_embedding_fallback_on_missing_config(self, mock_openai, mock_genai, mock_load_config):
+        """Test fallback to OpenAI when Gemini embedding model is not configured."""
+        # Arrange
+        mock_config_loader, config_data = mock_load_config
+        # Ensure embedding_model is NOT in config
+        if 'gemini' in config_data.get('llm', {}) and 'embedding_model' in config_data['llm']['gemini']:
+            del config_data['llm']['gemini']['embedding_model']
+
+        # Mock OpenAI fallback
+        mock_openai_client = MagicMock()
+        mock_openai.return_value = mock_openai_client
+        mock_openai_embedding_response = MagicMock()
+        mock_openai_embedding_response.data = [MagicMock()]
+        mock_openai_embedding_response.data[0].embedding = [0.11, 0.22, 0.33]
+        mock_openai_client.embeddings.create.return_value = mock_openai_embedding_response
+
+        provider = LLMProvider(provider="gemini")
+        test_text = "Embed this text"
+
+        # Mock the Gemini call to fail after using the default model name
+        mock_genai.embed_content.side_effect = ValueError("Simulating failure after using default model")
+
+        # Act
+        result = provider.create_embedding(test_text)
+
+        # Assert
+        assert result == [0.11, 0.22, 0.33] # OpenAI's result
+        # Gemini should still be called, but with the hardcoded default model
+        mock_genai.embed_content.assert_called_once_with(
+            model="models/text-embedding-004", # The hardcoded fallback model name
+            content=test_text,
+            task_type="RETRIEVAL_DOCUMENT"
+        )
+        # Check OpenAI fallback was initialized and called
+        mock_openai.assert_called_once_with(api_key="test_openai_key")
+        mock_openai_client.embeddings.create.assert_called_once_with(
+            model="text-embedding-3-small",
+            input=test_text
+        )
+
+
+    @patch('core.llm.genai')
+    @patch('core.llm.OpenAI')
+    @patch('core.llm.os.getenv') # Mock os.getenv specifically for this test
+    def test_gemini_create_embedding_fallback_on_missing_key(self, mock_getenv, mock_openai, mock_genai, mock_load_config):
+        """Test fallback to OpenAI when GOOGLE_API_KEY is missing for embeddings."""
+        # Arrange
+        mock_config_loader, config_data = mock_load_config
+        config_data['llm']['gemini']['embedding_model'] = "models/text-embedding-004"
+
+        # Configure os.getenv mock: return None for Google key, value for OpenAI key
+        def getenv_side_effect(key, default=None):
+            if key == "GOOGLE_API_KEY":
+                # Simulate key missing during the check inside create_embedding
+                # Need to ensure the provider *instance* gets None for google_api_key
+                # The check happens *before* the call, so we need the provider instance to reflect this
+                return None
+            elif key == "OPENAI_API_KEY":
+                return "test_openai_key"
+            # Let other getenv calls pass through if needed during init (like for OpenAI key)
+            return os.environ.get(key, default) # Allow other env vars
+
+        mock_getenv.side_effect = getenv_side_effect
+
+        # Mock OpenAI fallback
+        mock_openai_client = MagicMock()
+        mock_openai.return_value = mock_openai_client
+        mock_openai_embedding_response = MagicMock()
+        mock_openai_embedding_response.data = [MagicMock()]
+        mock_openai_embedding_response.data[0].embedding = [0.12, 0.23, 0.34]
+        mock_openai_client.embeddings.create.return_value = mock_openai_embedding_response
+
+        # Initialize provider *after* setting mocks
+        # The provider's self.google_api_key will be None due to the mock
+        provider = LLMProvider(provider="gemini")
+
+        test_text = "Embed this text"
+
+        # Act
+        result = provider.create_embedding(test_text)
+
+        # Assert
+        assert result == [0.12, 0.23, 0.34] # OpenAI's result
+        mock_genai.embed_content.assert_not_called() # Gemini embedding should not be called
+        # Check OpenAI fallback was initialized and called
+        mock_openai.assert_called_once_with(api_key="test_openai_key")
+        mock_openai_client.embeddings.create.assert_called_once_with(
+            model="text-embedding-3-small",
+            input=test_text
+        )
+        # Verify getenv was called for the Google key during init and potentially again inside create_embedding
+        assert call('GOOGLE_API_KEY', None) in mock_getenv.call_args_list
+
+    # --- Ollama Tests (Keep existing ones) ---
+    # ... (assuming Ollama tests exist below) ...

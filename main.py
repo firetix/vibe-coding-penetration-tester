@@ -4,10 +4,14 @@ import argparse
 import os
 import sys
 from datetime import datetime
+from dotenv import load_dotenv # Import dotenv
 
 from core.coordinator import SwarmCoordinator
 from utils.logger import setup_logger
 from utils.config import load_config
+
+# Load environment variables from .env file
+load_dotenv()
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="VibePenTester - Advanced AI Security Testing Agent")

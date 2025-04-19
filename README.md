@@ -21,7 +21,8 @@
 
 ## 🌟 Key Features
 
-- **Intelligent Vulnerability Discovery**: Uses LLMs (OpenAI, Anthropic Claude, Google Gemini, and local Ollama models) to understand application context and identify potential security weaknesses (and your career weaknesses too)
+- **Intelligent Vulnerability Discovery**: Uses LLMs (OpenAI, Anthropic Claude, Google Gemini, and local Ollama models) for chat completions and function calling to understand application context and identify potential security weaknesses (and your career weaknesses too).
+- **Multi-Provider Embeddings**: Generates text embeddings using OpenAI, Ollama, or Google Gemini (`models/text-embedding-004`) for potential future use cases (e.g., semantic search, context retrieval).
 - **Advanced Payload Generation**: Creates sophisticated test payloads tailored to the target application (more creative than your dating app profile)
 - **Context-Aware Testing**: Analyzes application behavior and responses to guide testing strategy (unlike your ex who never listened)
 - **Automated Exploit Verification**: Validates findings to eliminate false positives (we wish dating apps had this feature)
@@ -89,6 +90,7 @@ python main.py --url https://example.com --provider gemini
 
 # Use a specific Google Gemini model (e.g., gemini-2.0-flash)
 python main.py --url https://example.com --provider gemini --model gemini-2.0-flash
+# Note: Gemini embeddings use 'models/text-embedding-004' by default (configurable in config.yaml: llm.gemini.embedding_model)
 
 # Example running via Docker (assuming key is in .env file)
 docker run --rm -v $(pwd):/app --env-file .env your-vibepentester-image --url https://example.com --provider gemini
@@ -161,7 +163,7 @@ VibePenTester is built with a modular architecture consisting of several key com
 
 - **OpenAI Swarm**: The backbone of our multi-agent system, leveraging OpenAI's powerful swarm architecture to coordinate multiple specialized agents (it's like The Avengers, but for hacking)
 - **SwarmCoordinator**: Orchestrates the scanning process and manages other components (the micromanager you actually want)
-- **LLMProvider**: Unified interface to different LLM providers (OpenAI, Anthropic, and Ollama) (the universal translator of AI dialects)
+- **LLMProvider**: Unified interface to different LLM providers (OpenAI, Anthropic, Google Gemini, and Ollama) for both chat completions/function calling and text embeddings (the universal translator of AI dialects).
 - **Scanner**: Handles web page interaction and data collection (digital detective with OCD)
 - **Agents**: Specialized security testing agents focusing on different aspects
   - Discovery agents for URL and attack surface identification (the nosy neighbors of the internet)
