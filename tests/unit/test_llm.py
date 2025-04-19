@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock, call, ANY # <-- Added ANY import
 import google.api_core.exceptions # Added for Gemini error testing
 
 from core.llm import LLMProvider
+from utils.config import DEFAULT_CONFIG # Import default config for fallback values if needed
 
 
 @pytest.fixture
@@ -198,14 +199,92 @@ class TestLLMProvider:
 
     # --- Gemini Tests ---
 
+    # Helper fixture for mocking config
+    @pytest.fixture
+    def mock_load_config(self):
+        with patch('core.llm.load_config') as mock_load:
+            # Start with a deep copy of default config to avoid modifying it globally
+            # config_data = json.loads(json.dumps(DEFAULT_CONFIG)) # Simple deep copy
+            # Provide a minimal default structure if DEFAULT_CONFIG isn't suitable
+            config_data = {"llm": {"gemini": {}}}
+            mock_load.return_value = config_data
+            yield mock_load, config_data # Yield both mock and the dict for modification
+
     @patch('core.llm.genai')
-    @patch('core.llm.os.getenv', return_value=None) # Ensure env var is not used
-    def test_gemini_initialization_with_key(self, mock_getenv, mock_genai):
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"})
+    def test_gemini_initialization_uses_provided_model(self, mock_genai, mock_load_config):
+        """Test that a provided Gemini-specific model name is used directly."""
         # Arrange
+        mock_config_loader, config_data = mock_load_config
+        config_data['llm']['gemini']['default_model'] = "config-default-model" # Set a config default
+
+        mock_model_instance = MagicMock()
+        mock_genai.GenerativeModel.return_value = mock_model_instance
+        provided_model = "gemini-pro-vision" # A specific Gemini model
+
+        # Act
+        provider = LLMProvider(provider="gemini", model=provided_model)
+
+        # Assert
+        assert provider.model == provided_model # Should use the provided model
+        mock_genai.GenerativeModel.assert_called_once_with(provided_model)
+        mock_config_loader.assert_called_once() # Config should still be loaded
+
+    @patch('core.llm.genai')
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"})
+    def test_gemini_initialization_uses_config_default_model(self, mock_genai, mock_load_config):
+        """Test that the config default model is used if the provided one isn't Gemini-specific."""
+        # Arrange
+        mock_config_loader, config_data = mock_load_config
+        config_default = "gemini-1.5-flash-latest"
+        config_data['llm']['gemini']['default_model'] = config_default
+
+        mock_model_instance = MagicMock()
+        mock_genai.GenerativeModel.return_value = mock_model_instance
+        provided_model = "gpt-4o" # Non-Gemini model provided
+
+        # Act
+        provider = LLMProvider(provider="gemini", model=provided_model)
+
+        # Assert
+        assert provider.model == config_default # Should use the config default
+        mock_genai.GenerativeModel.assert_called_once_with(config_default)
+        mock_config_loader.assert_called_once()
+
+    @patch('core.llm.genai')
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"})
+    def test_gemini_initialization_uses_hardcoded_fallback_model(self, mock_genai, mock_load_config):
+        """Test that the hardcoded fallback model is used if provided isn't Gemini and config default is missing."""
+        # Arrange
+        mock_config_loader, config_data = mock_load_config
+        # Ensure no default model in config
+        if 'gemini' in config_data.get('llm', {}) and 'default_model' in config_data['llm']['gemini']:
+            del config_data['llm']['gemini']['default_model']
+
+        mock_model_instance = MagicMock()
+        mock_genai.GenerativeModel.return_value = mock_model_instance
+        provided_model = "gpt-4o" # Non-Gemini model provided
+        hardcoded_fallback = "gemini-2.0-flash-thinking-exp-01-21" # The fallback in the code
+
+        # Act
+        provider = LLMProvider(provider="gemini", model=provided_model)
+
+        # Assert
+        assert provider.model == hardcoded_fallback # Should use the hardcoded fallback
+        mock_genai.GenerativeModel.assert_called_once_with(hardcoded_fallback)
+        mock_config_loader.assert_called_once()
+
+    @patch('core.llm.genai')
+    @patch('core.llm.os.getenv', return_value=None) # Ensure env var is not used for key
+    def test_gemini_initialization_with_explicit_key(self, mock_getenv, mock_genai, mock_load_config):
+        """Test initialization with an explicitly provided API key."""
+        # Arrange
+        mock_config_loader, _ = mock_load_config
         mock_model = MagicMock()
         mock_genai.GenerativeModel.return_value = mock_model
         test_api_key = "explicit_gemini_key"
-        expected_model_name = "gemini-2.0-flash-thinking-exp-01-21" # Hardcoded for now
+        # Model resolution will depend on config/fallback as default 'gpt-4o' is passed implicitly
+        expected_model_name = "gemini-2.0-flash-thinking-exp-01-21" # Fallback model
 
         # Act
         provider = LLMProvider(provider="gemini", google_api_key=test_api_key)
@@ -217,17 +296,17 @@ class TestLLMProvider:
         assert provider.gemini_model == mock_model
         mock_genai.configure.assert_called_once_with(api_key=test_api_key)
         mock_genai.GenerativeModel.assert_called_once_with(expected_model_name)
-        # When an explicit key is provided, os.getenv("GOOGLE_API_KEY") should NOT be called due to short-circuiting.
-        # We only need to ensure the other keys might have been checked via getenv.
-        # No specific assertion needed here for the GOOGLE_API_KEY getenv call in this test case.
+        mock_config_loader.assert_called_once() # Config is always loaded now
 
     @patch('core.llm.genai')
     @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_env_key"})
-    def test_gemini_initialization_with_env_var(self, mock_genai):
+    def test_gemini_initialization_with_env_var_key(self, mock_genai, mock_load_config):
+        """Test initialization using API key from environment variable."""
         # Arrange
+        mock_config_loader, _ = mock_load_config
         mock_model = MagicMock()
         mock_genai.GenerativeModel.return_value = mock_model
-        expected_model_name = "gemini-2.0-flash-thinking-exp-01-21"
+        expected_model_name = "gemini-2.0-flash-thinking-exp-01-21" # Fallback model
 
         # Act
         provider = LLMProvider(provider="gemini") # No explicit key
@@ -239,54 +318,129 @@ class TestLLMProvider:
         assert provider.gemini_model == mock_model
         mock_genai.configure.assert_called_once_with(api_key="test_env_key")
         mock_genai.GenerativeModel.assert_called_once_with(expected_model_name)
+        mock_config_loader.assert_called_once()
 
     @patch('core.llm.genai')
-    @patch('core.llm.os.getenv', return_value=None) # Mock getenv to return None
-    def test_gemini_initialization_no_key(self, mock_getenv, mock_genai):
-        # Arrange (No key provided explicitly or via env)
+    @patch('core.llm.os.getenv', return_value=None) # Mock getenv to return None for key
+    def test_gemini_initialization_no_key(self, mock_getenv, mock_genai, mock_load_config):
+        """Test initialization fails if no API key is found."""
+        # Arrange
+        mock_config_loader, _ = mock_load_config # Config load is attempted before key check
 
         # Act & Assert
         with pytest.raises(ValueError, match="Google API Key not found"):
             LLMProvider(provider="gemini")
 
+        mock_config_loader.assert_called_once() # Config load is attempted
         mock_genai.configure.assert_not_called()
         mock_genai.GenerativeModel.assert_not_called()
-        # Check that getenv was called for GOOGLE_API_KEY among others
-        # from unittest.mock import call # Already imported at top
         assert call("GOOGLE_API_KEY") in mock_getenv.call_args_list
 
+    # --- Gemini Completion Tests (including Temperature) ---
+
+    @patch('core.llm.genai_types')
     @patch('core.llm.genai')
-    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"}) # Need key for init
-    @patch('core.llm.LLMProvider._gemini_completion') # Patch the target method
-    def test_gemini_chat_completion_routes(self, mock_gemini_completion, mock_genai):
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"})
+    def test_gemini_completion_uses_provided_temperature(self, mock_genai, mock_genai_types, mock_load_config):
+        """Test that provided temperature overrides config/default."""
         # Arrange
-        # Mock genai configure and model init to avoid errors during LLMProvider instantiation
+        mock_config_loader, config_data = mock_load_config
+        config_data['llm']['gemini']['temperature'] = 0.2 # Set a config temp
+
         mock_model_instance = MagicMock()
         mock_genai.GenerativeModel.return_value = mock_model_instance
+        # Mock the API response structure minimally
+        mock_api_response = MagicMock()
+        mock_candidate = MagicMock()
+        mock_content = MagicMock()
+        mock_part = MagicMock(text="response")
+        del mock_part.function_call # Ensure no function call
+        mock_content.parts = [mock_part]
+        mock_candidate.content = mock_content
+        mock_api_response.candidates = [mock_candidate]
+        mock_model_instance.generate_content.return_value = mock_api_response
 
         provider = LLMProvider(provider="gemini")
-        # Define return value for the mocked method to match expected structure
-        mock_gemini_completion.return_value = {"choices": [{"message": {"content": "mocked gemini response", "tool_calls": []}, "finish_reason": "stop"}], "model": "gemini-model"} # Match structure
-
-        messages = [{"role": "user", "content": "Hello Gemini"}]
-        temperature = 0.5
-        tools = None
-        json_mode = False
+        messages = [{"role": "user", "content": "Hello"}]
+        provided_temp = 0.9 # Explicitly provided temperature
 
         # Act
-        result = provider.chat_completion(messages, temperature, tools, json_mode)
+        provider.chat_completion(messages, temperature=provided_temp)
 
         # Assert
-        mock_gemini_completion.assert_called_once_with(messages, temperature, tools, json_mode)
-        # Check the structure returned by the mocked method
-        assert result["choices"][0]["message"]["content"] == "mocked gemini response" # Adjusted assertion
-        assert result["choices"][0]["message"]["tool_calls"] == []
-        # Ensure genai was configured during init
-        mock_genai.configure.assert_called_once_with(api_key="test_key")
-        mock_genai.GenerativeModel.assert_called_once()
+        # Check that GenerationConfig was called with the provided temperature
+        mock_genai_types.GenerationConfig.assert_called_once_with(temperature=provided_temp)
+        # Check that generate_content was called with that config
+        mock_model_instance.generate_content.assert_called_once_with(
+            contents=ANY,
+            generation_config=mock_genai_types.GenerationConfig.return_value
+        )
+
+    @patch('core.llm.genai_types')
+    @patch('core.llm.genai')
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"})
+    def test_gemini_completion_uses_config_temperature(self, mock_genai, mock_genai_types, mock_load_config):
+        """Test that config temperature is used when none is provided."""
+        # Arrange
+        mock_config_loader, config_data = mock_load_config
+        config_temp = 0.3
+        config_data['llm']['gemini']['temperature'] = config_temp
+
+        mock_model_instance = MagicMock()
+        mock_genai.GenerativeModel.return_value = mock_model_instance
+        mock_api_response = MagicMock() # Minimal mock response
+        mock_candidate = MagicMock(); mock_content = MagicMock(); mock_part = MagicMock(text="response"); del mock_part.function_call
+        mock_content.parts = [mock_part]; mock_candidate.content = mock_content; mock_api_response.candidates = [mock_candidate]
+        mock_model_instance.generate_content.return_value = mock_api_response
+
+        provider = LLMProvider(provider="gemini")
+        messages = [{"role": "user", "content": "Hello"}]
+
+        # Act
+        # Call chat_completion WITHOUT the temperature argument (or explicitly None)
+        provider.chat_completion(messages, temperature=None) # Explicit None is clearer
+
+        # Assert
+        mock_genai_types.GenerationConfig.assert_called_once_with(temperature=config_temp)
+        mock_model_instance.generate_content.assert_called_once_with(
+            contents=ANY,
+            generation_config=mock_genai_types.GenerationConfig.return_value
+        )
+
+    @patch('core.llm.genai_types')
+    @patch('core.llm.genai')
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"})
+    def test_gemini_completion_uses_fallback_temperature(self, mock_genai, mock_genai_types, mock_load_config):
+        """Test that fallback temperature (0.7) is used when none is provided and config is missing."""
+        # Arrange
+        mock_config_loader, config_data = mock_load_config
+        # Ensure no temperature in config
+        if 'gemini' in config_data.get('llm', {}) and 'temperature' in config_data['llm']['gemini']:
+            del config_data['llm']['gemini']['temperature']
+
+        mock_model_instance = MagicMock()
+        mock_genai.GenerativeModel.return_value = mock_model_instance
+        mock_api_response = MagicMock() # Minimal mock response
+        mock_candidate = MagicMock(); mock_content = MagicMock(); mock_part = MagicMock(text="response"); del mock_part.function_call
+        mock_content.parts = [mock_part]; mock_candidate.content = mock_content; mock_api_response.candidates = [mock_candidate]
+        mock_model_instance.generate_content.return_value = mock_api_response
+
+        provider = LLMProvider(provider="gemini")
+        messages = [{"role": "user", "content": "Hello"}]
+        fallback_temp = 0.7 # The hardcoded fallback
+
+        # Act
+        provider.chat_completion(messages, temperature=None) # No temperature provided
+
+        # Assert
+        mock_genai_types.GenerationConfig.assert_called_once_with(temperature=fallback_temp)
+        mock_model_instance.generate_content.assert_called_once_with(
+            contents=ANY,
+            generation_config=mock_genai_types.GenerationConfig.return_value
+        )
 
 
-    # --- Gemini Message Conversion Tests ---
+    # --- Gemini Message Conversion Tests (Keep existing ones) ---
 
     @pytest.fixture
     def gemini_provider(self):

@@ -14,6 +14,7 @@ from google.generativeai import types as genai_types # Use alias
 import google.api_core.exceptions # Added for specific Gemini API error handling
 
 from utils.logger import get_logger
+from utils.config import load_config # Added for config loading
 
 class LLMProvider:
     """Provides a unified interface to different LLM providers."""
@@ -22,6 +23,7 @@ class LLMProvider:
         self.provider = provider.lower()
         self.model = model
         self.logger = get_logger()
+        self.config = load_config() # Load configuration on initialization
 
         # Use provided API keys if available, otherwise fall back to environment variables
         self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
@@ -81,12 +83,34 @@ class LLMProvider:
                 raise ValueError("Google API Key not found. Set GOOGLE_API_KEY environment variable or provide via API/constructor.")
             try:
                 genai.configure(api_key=self.google_api_key)
-                # TODO: Replace hardcoded model with config loading
-                self.model = "gemini-2.0-flash-thinking-exp-01-21"
+
+                # Determine the Gemini model to use based on priority
+                resolved_model = self.model # Start with the model passed to __init__
+
+                # Check if the provided model is likely not a Gemini model (e.g., default "gpt-4o")
+                # or if it's None/empty (although __init__ has a default, belt-and-suspenders)
+                if not isinstance(resolved_model, str) or not resolved_model.startswith("gemini-"):
+                    self.logger.debug(f"Initial model '{resolved_model}' is not Gemini-specific or invalid. Checking config...")
+                    # Try to get the default from config
+                    # Use self.config loaded earlier
+                    gemini_config = self.config.get('llm', {}).get('gemini', {})
+                    default_model = gemini_config.get('default_model')
+
+                    if default_model and isinstance(default_model, str) and default_model.strip():
+                        resolved_model = default_model.strip()
+                        self.logger.info(f"Using default Gemini model from config: {resolved_model}")
+                    else:
+                        # Fallback to hardcoded default if config is missing or empty
+                        resolved_model = "gemini-2.0-flash-thinking-exp-01-21" # Hardcoded fallback
+                        self.logger.warning(f"Gemini 'default_model' not found or invalid in config. Using hardcoded fallback: {resolved_model}")
+                else:
+                     self.logger.debug(f"Using provided Gemini-specific model: {resolved_model}")
+
+                self.model = resolved_model # Update self.model with the resolved name
                 self.gemini_model = genai.GenerativeModel(self.model)
                 self.logger.info(f"Successfully initialized Gemini client with model: {self.model}")
             except Exception as e:
-                self.logger.error(f"Failed to initialize Google Gemini client: {str(e)}")
+                self.logger.error(f"Failed to initialize Google Gemini client: {str(e)}", exc_info=True) # Add exc_info for better debugging
                 raise ValueError(f"Failed to initialize Google Gemini client: {str(e)}")
         else:
             raise ValueError(f"Unsupported provider: {self.provider}. Use 'openai', 'anthropic', 'ollama', or 'gemini'.") # Added gemini to error message
@@ -741,7 +765,28 @@ class LLMProvider:
 
 
         # --- Actual API Call and Response Handling ---
-        generation_config = genai_types.GenerationConfig(temperature=temperature)
+        # Determine effective temperature based on parameter and config defaults
+        effective_temperature = temperature # Start with the parameter value
+        if effective_temperature is None: # Check if a specific temp was NOT passed via parameter
+             # Use self.config loaded in __init__
+             gemini_config = self.config.get('llm', {}).get('gemini', {})
+             default_temp = gemini_config.get('temperature')
+             if isinstance(default_temp, (float, int)): # Check if config temp is valid number
+                 effective_temperature = float(default_temp)
+                 self.logger.debug(f"Using default Gemini temperature from config: {effective_temperature}")
+             else:
+                 effective_temperature = 0.7 # Hardcoded fallback if config is missing/invalid
+                 self.logger.debug(f"Using hardcoded fallback temperature: {effective_temperature}")
+        else:
+             # Ensure the provided temperature is a float if it's not None
+             try:
+                 effective_temperature = float(temperature)
+                 self.logger.debug(f"Using provided temperature: {effective_temperature}")
+             except (ValueError, TypeError):
+                 self.logger.warning(f"Invalid temperature parameter '{temperature}' provided. Using fallback 0.7.")
+                 effective_temperature = 0.7 # Fallback if provided value is invalid
+
+        generation_config = genai_types.GenerationConfig(temperature=effective_temperature) # Use the determined effective_temperature
         # Add other config options if needed, e.g., max_output_tokens
 
         api_kwargs = {
