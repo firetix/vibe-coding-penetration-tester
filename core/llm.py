@@ -758,28 +758,75 @@ class LLMProvider:
             response = self.gemini_model.generate_content(**api_kwargs)
             self.logger.debug(f"Gemini API response received.")
 
-            # Basic Response Parsing (Text Content)
-            # TODO: Add function call parsing in the next step
+            # Enhanced Response Parsing (Text and Function Calls)
             if response and response.candidates:
-                 # Check if the candidate has content and parts
-                 if hasattr(response.candidates[0], 'content') and hasattr(response.candidates[0].content, 'parts'):
-                     parts = response.candidates[0].content.parts
-                     self.logger.debug(f"Response parts found: {len(parts)}")
-                     for part in parts:
-                         # Check if the part has text attribute and it's not empty
-                         if hasattr(part, 'text') and part.text:
-                             output["content"] = part.text
-                             self.logger.debug(f"Extracted text content: {output['content'][:100]}...") # Log first 100 chars
-                             break # Stop after finding the first text part
-                         # Placeholder for function call check (next step)
-                         # elif hasattr(part, 'function_call'):
-                         #    pass # Handle function calls here later
+                # Process parts from the first candidate
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                    parts = candidate.content.parts
+                    self.logger.debug(f"Response parts found: {len(parts)}")
+                    for part in parts:
+                        # Check for text content
+                        if hasattr(part, 'text') and part.text:
+                            output["content"] = (output["content"] or "") + part.text # Concatenate text parts
+                            self.logger.debug(f"Appended text content (current total length: {len(output['content'])})")
 
-                 else:
-                      self.logger.warning("Gemini response candidate missing 'content' or 'parts' attribute.")
+                        # Check for function call
+                        if hasattr(part, 'function_call') and part.function_call:
+                            fc = part.function_call
+                            call_id = f"gemini_call_{uuid.uuid4()}" # Generate unique ID
+                            name = fc.name
+                            self.logger.debug(f"Found function call: {name} (ID: {call_id})")
+
+                            # Ensure fc.args is treated as a dictionary-like object before dumping to JSON
+                            arguments_dict = {}
+                            if hasattr(fc, 'args'):
+                                # Handle potential google.protobuf.struct_pb2.Struct or simple dict
+                                if hasattr(fc.args, 'items'): # Check for Struct-like .items() method
+                                    arguments_dict = dict(fc.args.items())
+                                    self.logger.debug(f"Converted function call args from Struct-like object: {arguments_dict}")
+                                elif isinstance(fc.args, dict): # Check if it's already a dict
+                                    arguments_dict = fc.args
+                                    self.logger.debug(f"Using function call args as dict: {arguments_dict}")
+                                else:
+                                    # Attempt direct conversion as a fallback, log if fails
+                                    try:
+                                        arguments_dict = dict(fc.args)
+                                        self.logger.debug(f"Converted function call args via direct dict() call: {arguments_dict}")
+                                    except (TypeError, ValueError) as e:
+                                        self.logger.warning(f"Could not convert Gemini function call args to dict directly: {e}. Args type: {type(fc.args)}, Args: {fc.args}")
+                                        arguments_dict = {} # Fallback to empty dict
+
+                            # Convert arguments dictionary to JSON string
+                            try:
+                                arguments_str = json.dumps(arguments_dict)
+                                self.logger.debug(f"Serialized function call arguments to JSON string: {arguments_str}")
+                            except (TypeError) as e:
+                                self.logger.error(f"Failed to serialize function call arguments to JSON: {e}. Args dict: {arguments_dict}", exc_info=True)
+                                arguments_str = "{}" # Fallback to empty JSON object string
+
+                            # Create the standardized tool call structure
+                            tool_call = {
+                                "id": call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "arguments": arguments_str # Store as JSON string
+                                }
+                            }
+                            output["tool_calls"].append(tool_call)
+                            self.logger.debug(f"Appended tool call to output: {tool_call}")
+                else:
+                    self.logger.warning("Gemini response candidate missing 'content' or 'parts' attribute.")
 
             else:
-                self.logger.warning("Gemini response missing or has no candidates.")
+                 # Handle cases where response might not have candidates (e.g., safety filters)
+                 if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                     self.logger.warning(f"Gemini response blocked or missing candidates. Feedback: {response.prompt_feedback}")
+                     # Return a specific structure indicating blockage
+                     output["content"] = f"Error: Response blocked by safety settings. Feedback: {response.prompt_feedback}"
+                 else:
+                     self.logger.warning("Gemini response missing or has no candidates.")
 
             # Log the final parsed output structure (or parts of it)
             self.logger.debug(f"Gemini completion successful. Parsed output: { {k: (v[:100] + '...' if isinstance(v, str) and len(v) > 100 else v) for k, v in output.items()} }") # Log truncated content

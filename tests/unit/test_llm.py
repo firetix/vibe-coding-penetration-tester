@@ -912,3 +912,103 @@ class TestLLMProvider:
 
     # TODO: Add test case for when API returns candidates but no text/function_call in parts
     # TODO: Add test case for when API returns no candidates
+    @patch('core.llm.genai_types') # Mock types used in _gemini_completion
+    @patch('core.llm.uuid.uuid4', return_value='mock-uuid') # Mock uuid for predictable IDs
+    def test_gemini_completion_function_call(self, mock_uuid, mock_genai_types, gemini_provider):
+        """Tests _gemini_completion correctly parses a function call response."""
+        # Arrange
+        provider, mock_genai = gemini_provider # Get provider and mock genai
+
+        # 1. Mock the generate_content response
+        mock_api_response = MagicMock(name="MockApiResponse")
+        mock_candidate = MagicMock(name="MockCandidate")
+        mock_content = MagicMock(name="MockContent")
+        mock_part = MagicMock(name="MockPart")
+        mock_function_call = MagicMock(name="MockFunctionCall")
+
+        # Configure the function call mock
+        mock_function_call.name = "search_web"
+        # Mock fc.args to behave like a dict (simplest case for testing)
+        mock_args_dict = {'query': 'latest AI news', 'limit': 5}
+        # Use configure_mock for attributes that might be checked with hasattr
+        mock_function_call.configure_mock(
+            args=mock_args_dict
+            # If mocking a Struct-like object:
+            # args=MagicMock()
+            # mock_function_call.args.items.return_value = mock_args_dict.items()
+        )
+
+        # Configure the part mock - ONLY function call, no text
+        mock_part.configure_mock(
+            text=None,
+            function_call=mock_function_call
+        )
+        # Ensure hasattr checks pass for 'text' and 'function_call'
+        # MagicMock usually handles this, but being explicit can help debugging
+        # setattr(mock_part, 'text', None) # Explicitly set text attr
+        # setattr(mock_part, 'function_call', mock_function_call) # Explicitly set func call attr
+
+
+        # Assemble the response structure
+        mock_content.parts = [mock_part]
+        mock_candidate.content = mock_content
+        # Set finish_reason if needed by any logic (not currently used in parsing)
+        # mock_candidate.finish_reason = genai_types.Candidate.FinishReason.STOP
+        mock_api_response.candidates = [mock_candidate]
+        mock_api_response.prompt_feedback = None # No blocking
+
+        provider.gemini_model.generate_content.return_value = mock_api_response
+
+        # 2. Define inputs for the method call
+        messages = [{"role": "user", "content": "What's the latest AI news?"}]
+        # Define the tool structure expected by _gemini_completion's conversion logic
+        # Note: This 'tools' input is primarily used for the API call itself,
+        # the test focuses on parsing the *response* based on the mock above.
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": "search_web",
+                "description": "Search the web for information.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query."},
+                        "limit": {"type": "integer", "description": "Max results."}
+                    },
+                    "required": ["query"]
+                }
+            }
+        }]
+        temperature = 0.7
+        json_mode = False
+
+        # 3. Call the method under test
+        output = provider._gemini_completion(messages, temperature, tools, json_mode)
+
+        # 4. Assertions
+        # Assert generate_content was called correctly
+        provider.gemini_model.generate_content.assert_called_once()
+        # Optional: Add more specific checks on call_args/call_kwargs if needed
+
+        # Assert the output structure
+        assert output["content"] is None # No text part in the mock response
+        assert "tool_calls" in output
+        assert isinstance(output["tool_calls"], list)
+        assert len(output["tool_calls"]) == 1, f"Expected 1 tool call, got {len(output['tool_calls'])}"
+
+        # Assert the tool call details
+        tool_call = output["tool_calls"][0]
+        assert "id" in tool_call
+        assert tool_call["id"] == "gemini_call_mock-uuid" # Check predictable ID
+        assert tool_call["type"] == "function"
+        assert "function" in tool_call
+        assert tool_call["function"]["name"] == "search_web"
+        assert "arguments" in tool_call["function"]
+
+        # Crucially, assert the arguments are a JSON *string*
+        expected_args_str = json.dumps(mock_args_dict)
+        assert tool_call["function"]["arguments"] == expected_args_str, \
+               f"Expected arguments JSON string '{expected_args_str}', but got '{tool_call['function']['arguments']}'"
+
+        # Ensure uuid4 was called
+        mock_uuid.assert_called_once()
