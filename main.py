@@ -12,7 +12,7 @@ from utils.config import load_config
 def parse_arguments():
     parser = argparse.ArgumentParser(description="VibePenTester - Advanced AI Security Testing Agent")
     parser.add_argument("--url", type=str, required=True, help="Target URL to scan")
-    parser.add_argument("--model", type=str, default="gpt-4o", help='LLM model to use (e.g., gpt-4o, claude-3-opus-20240229, ollama/llama3, gemini-1.5-pro, gemini-2.0-flash-thinking-exp-01-21)')
+    parser.add_argument("--model", type=str, default="gpt-4o", help='LLM model to use (e.g., gpt-4o, claude-3-5-sonnet, ollama/llama3, gemini-1.5-pro)')
     parser.add_argument("--provider", type=str, default="openai", choices=["openai", "anthropic", "ollama", "gemini"], help="LLM provider")
     parser.add_argument("--scope", type=str, default="url", choices=["url", "domain", "subdomain"], help="Scan scope")
     parser.add_argument("--output", type=str, default="reports", help="Output directory for reports")

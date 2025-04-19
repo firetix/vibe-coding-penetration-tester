@@ -239,11 +239,11 @@
                         <form id="scan-form">
                             <div class="mb-3">
                                 <label for="url" class="form-label">Target URL</label>
-                                <input type="url" class="form-control form-control-lg" id="url" name="url" 
+                                <input type="url" class="form-control form-control-lg" id="url" name="url"
                                        placeholder="https://example.com" required>
                                 <div class="form-text">Enter the full URL you want to scan for vulnerabilities</div>
                             </div>
-                            
+
                             <div class="row mb-3">
                                 <div class="col-md-6">
                                     <label for="provider" class="form-label">LLM Provider</label>
@@ -251,10 +251,11 @@
                                         <option value="openai" selected>OpenAI</option>
                                         <option value="anthropic">Anthropic</option>
                                         <option value="ollama">Ollama (Local)</option>
+                                        <option value="gemini">Gemini</option>
                                     </select>
                                     <div class="form-text">Select the AI provider for the agent swarm</div>
                                 </div>
-                                
+
                                 <div class="col-md-6">
                                     <label for="model" class="form-label">LLM Model</label>
                                     <select class="form-select" id="model" name="model">
@@ -279,30 +280,41 @@
                                             <option value="gemma:7b">Gemma (7B)</option>
                                             <option value="deepseek-coder">DeepSeek Coder</option>
                                         </optgroup>
+                                        <optgroup label="Gemini Models" id="gemini-models" style="display:none">
+                                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                                            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                            <option value="gemini-1.0-pro">Gemini 1.0 Pro</option>
+                                        </optgroup>
                                     </select>
                                     <div class="form-text">Select the AI model for security testing</div>
                                 </div>
                             </div>
-                            
+
                             <!-- API Token fields - conditionally displayed based on provider -->
                             <div class="mb-3" id="openai-token-container">
                                 <label for="openai_api_key" class="form-label">OpenAI API Key <span class="text-muted">(Optional)</span></label>
                                 <input type="password" class="form-control" id="openai_api_key" name="openai_api_key" placeholder="sk-...">
                                 <div class="form-text">Enter your OpenAI API key or leave blank to use environment variable</div>
                             </div>
-                            
+
                             <div class="mb-3" id="anthropic-token-container" style="display:none">
                                 <label for="anthropic_api_key" class="form-label">Anthropic API Key <span class="text-muted">(Optional)</span></label>
                                 <input type="password" class="form-control" id="anthropic_api_key" name="anthropic_api_key" placeholder="sk-ant-...">
                                 <div class="form-text">Enter your Anthropic API key or leave blank to use environment variable</div>
                             </div>
-                            
+
                             <div class="mb-3" id="ollama-url-container" style="display:none">
                                 <label for="ollama_url" class="form-label">Ollama Server URL</label>
                                 <input type="text" class="form-control" id="ollama_url" name="ollama_url" value="http://localhost:11434">
                                 <div class="form-text">URL of your Ollama server (local or remote)</div>
                             </div>
-                            
+
+                            <div class="mb-3" id="google-token-container" style="display:none">
+                                <label for="google_api_key" class="form-label">Google API Key <span class="text-muted">(Optional)</span></label>
+                                <input type="password" class="form-control" id="google_api_key" name="google_api_key" placeholder="Enter your Google AI Studio API Key...">
+                                <div class="form-text">Leave blank to use GOOGLE_API_KEY environment variable.</div>
+                            </div>
+
                             <div class="d-grid gap-2">
                                 <button type="submit" class="btn btn-primary btn-lg" id="start-scan-btn">
                                     <i class="bi bi-robot"></i> Deploy Agent Swarm
@@ -353,10 +365,10 @@
                             </div>
                         </div>
                         <div class="progress mb-2">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                            <div class="progress-bar progress-bar-striped progress-bar-animated"
                                  role="progressbar" id="progress-bar" style="width: 0%">0%</div>
                         </div>
-                        
+
                         <!-- Agent Action Plan -->
                         <div class="card mt-4 border-primary">
                             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
@@ -373,7 +385,7 @@
                                 </ul>
                             </div>
                         </div>
-                        
+
                         <!-- Agent Logs -->
                         <div class="card mt-4">
                             <div class="card-header d-flex justify-content-between align-items-center bg-primary text-white">
@@ -387,13 +399,13 @@
                             <div class="card-body p-0">
                                 <div id="agent-logs" class="p-3" style="height: 350px; overflow-y: auto; font-size: 14px; border-radius: 6px; border: 1px solid #e9ecef; background-color: #f8f9fa;">
                                     <div class="text-muted">
-                                        <i class="bi bi-info-circle"></i> 
+                                        <i class="bi bi-info-circle"></i>
                                         Waiting for agent activities... The penetration testing agents will appear here as they work.
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="d-flex justify-content-end mt-3">
                             <button class="btn btn-secondary" id="cancel-btn">Cancel Scan</button>
                         </div>
@@ -452,10 +464,10 @@
             const agentLogsEl = document.getElementById('agent-logs');
             const actionPlanListEl = document.getElementById('action-plan-list');
             const currentActionBadgeEl = document.getElementById('current-action-badge');
-            
+
             // Get or initialize session ID
             let sessionId = localStorage.getItem('vpt_session_id');
-            
+
             // Initialize by calling the server session endpoint,
             // which allows the server to set a cookie and ensure session continuity
             function initializeSession() {
@@ -474,8 +486,8 @@
                         // Always use the server-provided session ID
                         sessionId = data.session_id;
                         localStorage.setItem('vpt_session_id', sessionId);
-                        console.log(data.restored ? 
-                            "Restored server session ID:" : 
+                        console.log(data.restored ?
+                            "Restored server session ID:" :
                             "Received new server session ID:", sessionId);
                     }
                     return sessionId;
@@ -491,22 +503,22 @@
                     return sessionId;
                 });
             }
-            
+
             let statusCheckInterval;
             let isCancelled = false;
             let prevLogsLength = 0;
             let prevActionPlanLength = 0;
             let scanInProgress = false;
-            
+
             // State persistence
             const STATE_STORAGE_KEY = 'vpt_scan_state';
-            
+
             // Generate a random session ID for this browser tab
             function generateSessionId() {
-                return 'session_' + Math.random().toString(36).substring(2, 15) + 
+                return 'session_' + Math.random().toString(36).substring(2, 15) +
                        Math.random().toString(36).substring(2, 15);
             }
-            
+
             // Save scan state to localStorage
             function saveScanState(state) {
                 try {
@@ -515,7 +527,7 @@
                     console.error('Failed to save scan state:', e);
                 }
             }
-            
+
             // Load scan state from localStorage
             function loadScanState() {
                 try {
@@ -528,7 +540,7 @@
                 }
                 return null;
             }
-            
+
             // Clear scan state
             function clearScanState() {
                 try {
@@ -537,7 +549,7 @@
                     console.error('Failed to clear scan state:', e);
                 }
             }
-            
+
             // On document ready, initialize session first
             document.addEventListener('DOMContentLoaded', function() {
                 // Initialize session first, then check for existing scan state
@@ -545,64 +557,64 @@
                     restoreScanStateIfExists();
                 });
             });
-            
+
             // Check for existing scan on page load and restore state
             function restoreScanStateIfExists() {
                 const savedState = loadScanState();
-                
+
                 // Always check the server for the session's current state
                 // This ensures we're in sync with the server, not just local storage
                 fetch(`/status?session_id=${encodeURIComponent(sessionId)}`)
                 .then(response => response.json())
                 .then(serverState => {
                     console.log('Server scan state retrieved:', serverState);
-                    
+
                     // If there's no active scan on the server, reset local state and don't display anything
                     if (!serverState.is_running && !serverState.url) {
                         console.log('No active scan on server, clearing local state');
                         clearScanState();
-                        
+
                         // Reset scan button to initial state
                         startScanBtn.disabled = false;
                         startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
-                        
+
                         // Hide all panels
                         scanStatusPanel.classList.add('d-none');
                         reportContainer.classList.add('d-none');
                         errorContainer.classList.add('d-none');
                         return;
                     }
-                    
+
                     // If we have a saved state, try to restore it
                     if (savedState) {
                         console.log('Restoring previous scan state:', savedState);
-                        
+
                         // Restore UI elements
                         statusUrlEl.textContent = serverState.url || savedState.url || '-';
                         currentTaskEl.textContent = serverState.current_task || savedState.currentTask || 'Unknown';
-                        
+
                         // Restore progress
-                        const progress = serverState.progress !== undefined ? serverState.progress : 
+                        const progress = serverState.progress !== undefined ? serverState.progress :
                                        (savedState.progress !== undefined ? savedState.progress : 0);
-                        
+
                         progressBar.style.width = progress + '%';
                         progressBar.textContent = progress + '%';
-                        
-                        const isComplete = !serverState.is_running || 
+
+                        const isComplete = !serverState.is_running ||
                                           (savedState.isComplete && progress >= 100);
-                                          
+
                         if (isComplete && progress >= 100) {
                             progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
                             progressBar.classList.add('bg-success');
                         }
-                        
+
                         // Restore action plan - prefer server state over local
                         if (serverState.action_plan && serverState.action_plan.length > 0) {
                             updateActionPlan(serverState.action_plan);
                         } else if (savedState.actionPlan && savedState.actionPlan.length > 0) {
                             updateActionPlan(savedState.actionPlan);
                         }
-                        
+
                         // Restore logs - prefer server state over local
                         if (serverState.agent_logs && serverState.agent_logs.length > 0) {
                             agentLogsEl.innerHTML = '';
@@ -613,23 +625,23 @@
                             updateAgentLogs(savedState.logs);
                             prevLogsLength = savedState.logs.length;
                         }
-                        
+
                         // Restore current action
                         if (serverState.current_action) {
                             updateCurrentAction(serverState.current_action);
                         } else if (savedState.currentAction) {
                             updateCurrentAction(savedState.currentAction);
                         }
-                        
+
                         // Show appropriate panels based on state
                         if (isComplete && savedState.reportContent) {
                             // If we have a cached report, show it immediately
                             scanStatusPanel.classList.remove('d-none');
                             reportContainer.classList.remove('d-none');
                             reportContentEl.innerHTML = marked.parse(savedState.reportContent);
-                            document.getElementById('statusPanelTitle').innerHTML = 
+                            document.getElementById('statusPanelTitle').innerHTML =
                                 '<i class="bi bi-check-circle-fill text-success"></i> Scan Complete - Agent Activity Log';
-                                
+
                             // Apply syntax highlighting
                             document.querySelectorAll('pre code').forEach((block) => {
                                 hljs.highlightBlock(block);
@@ -637,12 +649,12 @@
                         } else if (isComplete) {
                             // If complete but no cached report content, try to fetch it
                             scanStatusPanel.classList.remove('d-none');
-                            
+
                             // Restore the session ID from saved state
                             if (savedState.sessionId) {
                                 sessionId = savedState.sessionId;
                             }
-                            
+
                             // Try to load the report
                             fetch(`/report?session_id=${encodeURIComponent(sessionId)}`)
                             .then(response => response.json())
@@ -651,11 +663,11 @@
                                     // Save report content
                                     savedState.reportContent = data.content;
                                     saveScanState(savedState);
-                                    
+
                                     // Show the report
                                     reportContainer.classList.remove('d-none');
                                     reportContentEl.innerHTML = marked.parse(data.content);
-                                    
+
                                     // Apply syntax highlighting
                                     document.querySelectorAll('pre code').forEach((block) => {
                                         hljs.highlightBlock(block);
@@ -678,13 +690,13 @@
                             startScanBtn.disabled = true;
                             startScanBtn.innerHTML = '<span class="loader"></span> Deploying Agent Swarm...';
                             scanInProgress = true;
-                            
+
                             // Restore session ID
                             if (savedState.sessionId) {
                                 sessionId = savedState.sessionId;
                                 console.log(`Restored session ID: ${sessionId}`);
                             }
-                            
+
                             // Start polling for updates
                             checkStatus();
                             statusCheckInterval = setInterval(checkStatus, 2000);
@@ -695,7 +707,7 @@
                     } else if (serverState.is_running || serverState.url) {
                         // No local state but server has an active scan
                         console.log('Using server state, no local state found');
-                        
+
                         // Save server state to local
                         const newState = {
                             url: serverState.url,
@@ -711,33 +723,33 @@
                             isComplete: !serverState.is_running && !serverState.error
                         };
                         saveScanState(newState);
-                        
+
                         // Rebuild UI
                         if (serverState.is_running) {
                             statusUrlEl.textContent = serverState.url || '-';
                             currentTaskEl.textContent = serverState.current_task || 'Initializing';
                             progressBar.style.width = serverState.progress + '%';
                             progressBar.textContent = serverState.progress + '%';
-                            
+
                             if (serverState.action_plan && serverState.action_plan.length > 0) {
                                 updateActionPlan(serverState.action_plan);
                             }
-                            
+
                             if (serverState.agent_logs && serverState.agent_logs.length > 0) {
                                 agentLogsEl.innerHTML = '';
                                 updateAgentLogs(serverState.agent_logs);
                                 prevLogsLength = serverState.agent_logs.length;
                             }
-                            
+
                             if (serverState.current_action) {
                                 updateCurrentAction(serverState.current_action);
                             }
-                            
+
                             scanStatusPanel.classList.remove('d-none');
                             startScanBtn.disabled = true;
                             startScanBtn.innerHTML = '<span class="loader"></span> Deploying Agent Swarm...';
                             scanInProgress = true;
-                            
+
                             // Start polling for updates
                             checkStatus();
                             statusCheckInterval = setInterval(checkStatus, 2000);
@@ -746,7 +758,7 @@
                 })
                 .catch(error => {
                     console.error('Error checking server state:', error);
-                    
+
                     // If server check fails, try to use local state
                     if (savedState) {
                         console.log('Server check failed, using saved local state:', savedState);
@@ -768,7 +780,7 @@
                     }
                 });
             }
-            
+
             // Initialize marked.js
             marked.setOptions({
                 highlight: function(code, lang) {
@@ -779,25 +791,25 @@
                 },
                 breaks: true
             });
-            
+
             // Add Ollama URL field dynamically when Ollama is selected
             function createOllamaUrlField() {
                 // Check if the field already exists
                 if (document.getElementById('ollama-url-group')) {
                     return;
                 }
-                
+
                 // Create the new form group
                 const ollamaUrlGroup = document.createElement('div');
                 ollamaUrlGroup.className = 'mb-3';
                 ollamaUrlGroup.id = 'ollama-url-group';
-                
+
                 // Create label
                 const label = document.createElement('label');
                 label.htmlFor = 'ollama_url';
                 label.className = 'form-label';
                 label.textContent = 'Ollama Server URL';
-                
+
                 // Create input
                 const input = document.createElement('input');
                 input.type = 'text';
@@ -806,41 +818,43 @@
                 input.name = 'ollama_url';
                 input.value = 'http://localhost:11434';
                 input.required = true;
-                
+
                 // Create help text
                 const helpText = document.createElement('div');
                 helpText.className = 'form-text';
                 helpText.textContent = 'URL of your Ollama server';
-                
+
                 // Append all elements
                 ollamaUrlGroup.appendChild(label);
                 ollamaUrlGroup.appendChild(input);
                 ollamaUrlGroup.appendChild(helpText);
-                
+
                 // Insert before the scan button
                 document.querySelector('.d-grid.gap-2').before(ollamaUrlGroup);
             }
-            
+
             function removeOllamaUrlField() {
                 const ollamaUrlGroup = document.getElementById('ollama-url-group');
                 if (ollamaUrlGroup) {
                     ollamaUrlGroup.remove();
                 }
             }
-            
+
             // Handle provider change to update model dropdown
             document.getElementById('provider').addEventListener('change', function() {
                 const provider = this.value;
                 const openaiModels = document.getElementById('openai-models');
                 const anthropicModels = document.getElementById('anthropic-models');
                 const ollamaModels = document.getElementById('ollama-models');
+                const geminiModels = document.getElementById('gemini-models'); // Added
                 const modelSelect = document.getElementById('model');
-                
+
                 // Hide all model groups first
                 openaiModels.style.display = 'none';
                 anthropicModels.style.display = 'none';
                 ollamaModels.style.display = 'none';
-                
+                geminiModels.style.display = 'none'; // Added
+
                 // Show appropriate model group based on provider
                 if (provider === 'openai') {
                     openaiModels.style.display = '';
@@ -851,18 +865,23 @@
                 } else if (provider === 'ollama') {
                     ollamaModels.style.display = '';
                     modelSelect.value = ollamaModels.querySelector('option').value;
+                } else if (provider === 'gemini') { // Added block
+                    geminiModels.style.display = '';
+                    modelSelect.value = geminiModels.querySelector('option').value;
                 }
-                
+
                 // Toggle API token input fields based on provider
                 const openaiTokenContainer = document.getElementById('openai-token-container');
                 const anthropicTokenContainer = document.getElementById('anthropic-token-container');
                 const ollamaUrlContainer = document.getElementById('ollama-url-container');
-                
+                const googleTokenContainer = document.getElementById('google-token-container'); // Added
+
                 // Hide all token containers first
                 openaiTokenContainer.style.display = 'none';
                 anthropicTokenContainer.style.display = 'none';
                 ollamaUrlContainer.style.display = 'none';
-                
+                googleTokenContainer.style.display = 'none'; // Added
+
                 // Show the appropriate token container
                 if (provider === 'openai') {
                     openaiTokenContainer.style.display = '';
@@ -870,25 +889,33 @@
                     anthropicTokenContainer.style.display = '';
                 } else if (provider === 'ollama') {
                     ollamaUrlContainer.style.display = '';
+                } else if (provider === 'gemini') { // Added block
+                    googleTokenContainer.style.display = '';
                 }
             });
-            
+
             // Initialize token containers on page load
             document.addEventListener('DOMContentLoaded', function() {
                 const provider = document.getElementById('provider').value;
-                // Show the appropriate token container based on initial provider selection
+                // Show the appropriate token/URL container based on initial provider selection
                 document.getElementById('openai-token-container').style.display = provider === 'openai' ? '' : 'none';
                 document.getElementById('anthropic-token-container').style.display = provider === 'anthropic' ? '' : 'none';
                 document.getElementById('ollama-url-container').style.display = provider === 'ollama' ? '' : 'none';
+                document.getElementById('google-token-container').style.display = provider === 'gemini' ? '' : 'none'; // Added
+
+                // Also hide model groups that are not selected initially
+                document.getElementById('anthropic-models').style.display = provider === 'anthropic' ? '' : 'none';
+                document.getElementById('ollama-models').style.display = provider === 'ollama' ? '' : 'none';
+                document.getElementById('gemini-models').style.display = provider === 'gemini' ? '' : 'none'; // Added
             });
-            
+
             scanForm.addEventListener('submit', function(e) {
                 e.preventDefault();
-                
+
                 const url = document.getElementById('url').value;
                 const provider = document.getElementById('provider').value;
                 const model = document.getElementById('model').value;
-                
+
                 // Get Ollama URL if applicable
                 let ollamaUrl = null;
                 if (provider === 'ollama') {
@@ -897,29 +924,29 @@
                         ollamaUrl = ollamaUrlField.value;
                     }
                 }
-                
+
                 if (!url) {
                     alert('Please enter a valid URL');
                     return;
                 }
-                
+
                 if (provider === 'ollama' && (!ollamaUrl || ollamaUrl.trim() === '')) {
                     alert('Please enter the Ollama server URL');
                     return;
                 }
-                
+
                 // Reset UI
                 isCancelled = false;
                 reportContainer.classList.add('d-none');
                 errorContainer.classList.add('d-none');
-                
+
                 // Update status elements
                 statusUrlEl.textContent = url;
                 statusUrlEl.title = url; // Set title for tooltip on hover
                 currentTaskEl.textContent = 'Initializing scan';
                 progressBar.style.width = '0%';
                 progressBar.textContent = '0%';
-                
+
                 // Show model information
                 let providerDisplay = 'OpenAI';
                 if (provider === 'anthropic') {
@@ -927,17 +954,17 @@
                 } else if (provider === 'ollama') {
                     providerDisplay = 'Ollama (Local)';
                 }
-                
-                document.getElementById('statusPanelTitle').innerHTML = 
+
+                document.getElementById('statusPanelTitle').innerHTML =
                     `<i class="bi bi-robot"></i> Agent Swarm Status <span class="badge bg-secondary ms-2 fs-6">Using ${providerDisplay} ${model}</span>`;
-                
+
                 // Show status panel
                 scanStatusPanel.classList.remove('d-none');
-                
+
                 // Disable the start button during scan
                 startScanBtn.disabled = true;
                 startScanBtn.innerHTML = '<span class="loader"></span> Deploying Agent Swarm...';
-                
+
                 // Build the request body
                 const formData = {
                     'url': url,
@@ -945,12 +972,12 @@
                     'model': model,
                     'session_id': sessionId // Add session ID to track this scan
                 };
-                
+
                 // Add Ollama URL if applicable
                 if (provider === 'ollama' && ollamaUrl) {
                     formData['ollama_url'] = ollamaUrl;
                 }
-                
+
                 // Add API keys if provided
                 if (provider === 'openai') {
                     const openaiKey = document.getElementById('openai_api_key').value;
@@ -962,8 +989,13 @@
                     if (anthropicKey) {
                         formData['anthropic_api_key'] = anthropicKey;
                     }
+                } else if (provider === 'gemini') { // Added block
+                    const googleKey = document.getElementById('google_api_key').value;
+                    if (googleKey) {
+                        formData['google_api_key'] = googleKey;
+                    }
                 }
-                
+
                 // Save initial scan state
                 const initialState = {
                     url: url,
@@ -980,7 +1012,7 @@
                 };
                 saveScanState(initialState);
                 scanInProgress = true;
-                
+
                 // Start the scan
                 fetch('/scan', {
                     method: 'POST',
@@ -1003,7 +1035,7 @@
                     showError('Failed to start scan: ' + error);
                 });
             });
-            
+
             function checkStatus() {
                 if (isCancelled) {
                     clearInterval(statusCheckInterval);
@@ -1016,7 +1048,7 @@
                     }
                     return;
                 }
-                
+
                 // Include session ID in status request to get this specific scan's status
                 fetch(`/status?session_id=${encodeURIComponent(sessionId)}`)
                 .then(response => response.json())
@@ -1024,19 +1056,19 @@
                     // Update progress bar
                     progressBar.style.width = data.progress + '%';
                     progressBar.textContent = data.progress + '%';
-                    
+
                     // Update current task
                     currentTaskEl.textContent = data.current_task;
-                    
+
                     // Update agent logs
                     updateAgentLogs(data.agent_logs);
-                    
+
                     // Update action plan
                     updateActionPlan(data.action_plan);
-                    
+
                     // Update current action badge
                     updateCurrentAction(data.current_action);
-                    
+
                     // Save current state to localStorage for persistence
                     const currentState = {
                         url: data.url,
@@ -1053,12 +1085,12 @@
                         reportAvailable: data.report_available || false
                     };
                     saveScanState(currentState);
-                    
+
                     // Check if scan has completed or failed
                     if (!data.is_running) {
                         clearInterval(statusCheckInterval);
                         scanInProgress = false;
-                        
+
                         if (data.error) {
                             // Update state with error info
                             currentState.error = data.error;
@@ -1068,7 +1100,7 @@
                             // Mark as complete in the state
                             currentState.isComplete = true;
                             saveScanState(currentState);
-                            
+
                             // Only load the report if the report is explicitly available
                             if (data.report_available) {
                                 // Load the report if server says it's available
@@ -1085,7 +1117,7 @@
                                         </div>
                                     </div>
                                 `;
-                                
+
                                 // Set up a separate polling interval just for the report
                                 let reportCheckInterval = setInterval(() => {
                                     fetch(`/status?session_id=${encodeURIComponent(sessionId)}`)
@@ -1113,17 +1145,17 @@
                 })
                 .catch(error => {
                     clearInterval(statusCheckInterval);
-                    
+
                     // Save error state
                     const errorState = loadScanState() || {};
                     errorState.error = 'Failed to check status: ' + error;
                     errorState.isRunning = false;
                     saveScanState(errorState);
-                    
+
                     showError('Failed to check status: ' + error);
                 });
             }
-            
+
             function loadReport() {
                 console.log("Loading report with session ID:", sessionId);
                 // Include session ID to get the specific report for this scan
@@ -1136,7 +1168,7 @@
                     console.log("Report data received:", Object.keys(data));
                     if (data.status === 'success') {
                         let reportContent = '';
-                        
+
                         // Check for markdown content first (preferred format)
                         if (data.markdown) {
                             console.log("Using markdown content from report");
@@ -1150,11 +1182,11 @@
                         // Otherwise try to generate from findings
                         else if (data.findings && Array.isArray(data.findings)) {
                             console.log("Generating content from findings array:", data.findings.length);
-                            
+
                             // Generate markdown from findings
                             reportContent = generateReportFromFindings(data.findings, data.url || 'Unknown URL');
                         }
-                        
+
                         // Save report content to state
                         const currentState = loadScanState() || {};
                         currentState.reportContent = reportContent;
@@ -1162,10 +1194,10 @@
                         currentState.isRunning = false;
                         currentState.progress = 100;
                         saveScanState(currentState);
-                        
+
                         // Show debugging message in console
                         console.log("Report content length:", reportContent ? reportContent.length : 0);
-                        
+
                         // Render markdown to HTML
                         if (reportContent && reportContent.length > 0) {
                             // Use marked.js to parse markdown
@@ -1173,19 +1205,19 @@
                         } else {
                             reportContentEl.innerHTML = '<div class="alert alert-warning">No report content found.</div>';
                         }
-                        
+
                         // Keep status panel visible and show report
                         reportContainer.classList.remove('d-none');
-                        
+
                         // Update progress bar to 100% and turn it green
                         progressBar.style.width = '100%';
                         progressBar.textContent = '100%';
                         progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
                         progressBar.classList.add('bg-success');
-                        
+
                         // Update the current task
                         currentTaskEl.textContent = "Scan completed successfully";
-                        
+
                         // When scan is complete, mark ALL tasks as complete
                         const taskItems = actionPlanListEl.querySelectorAll('.task-item');
                         taskItems.forEach(item => {
@@ -1193,17 +1225,17 @@
                             const taskNumber = item.querySelector('.task-number');
                             const taskStatus = item.querySelector('.task-status');
                             const taskDescription = item.querySelector('.task-description');
-                            
+
                             if (taskNumber && taskStatus) {
                                 // Update the number badge to completed style
                                 taskNumber.classList.remove('pending');
                                 taskNumber.classList.add('completed');
-                                
+
                                 // Update the status badge to completed
                                 taskStatus.classList.remove('pending');
                                 taskStatus.classList.add('completed');
                                 taskStatus.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Completed';
-                                
+
                                 // Update the description text style
                                 if (taskDescription) {
                                     taskDescription.classList.remove('fw-bold');
@@ -1211,24 +1243,24 @@
                                 }
                             }
                         });
-                        
+
                         // Update status panel title to indicate completion
-                        document.getElementById('statusPanelTitle').innerHTML = 
+                        document.getElementById('statusPanelTitle').innerHTML =
                             '<i class="bi bi-check-circle-fill text-success"></i> Scan Complete - Agent Activity Log';
-                        
+
                         // Add a heading to the report to show it's complete
                         const completionBanner = document.createElement('div');
                         completionBanner.className = 'alert alert-success mb-4';
                         completionBanner.innerHTML = '<i class="bi bi-check-circle-fill"></i> Security scan completed successfully. Agent logs and steps are visible below.';
                         reportContentEl.insertBefore(completionBanner, reportContentEl.firstChild);
-                        
+
                         // Add a message to the logs indicating completion
                         const completionLog = document.createElement('div');
                         completionLog.className = 'text-success fw-bold mt-2';
                         completionLog.innerHTML = '✅ ' + new Date().toLocaleTimeString() + ' - Security scan completed successfully. Report generated.';
                         agentLogsEl.appendChild(completionLog);
                         agentLogsEl.scrollTop = agentLogsEl.scrollHeight;
-                        
+
                         // Apply syntax highlighting
                         document.querySelectorAll('pre code').forEach((block) => {
                             hljs.highlightBlock(block);
@@ -1244,18 +1276,18 @@
                             </div>
                         `;
                     }
-                    
+
                     // Re-enable scan button
                     startScanBtn.disabled = false;
                     startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
-                    
+
                     // Reset log counters for the next scan
                     prevLogsLength = 0;
                     prevActionPlanLength = 0;
                 })
                 .catch(error => {
                     console.error('Error loading report:', error);
-                    
+
                     // Show friendly message instead of error
                     reportContainer.classList.remove('d-none');
                     reportContentEl.innerHTML = `
@@ -1269,60 +1301,60 @@
                             </details>
                         </div>
                     `;
-                    
+
                     // Re-enable scan button
                     startScanBtn.disabled = false;
                     startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
-                    
+
                     // Reset log counters for the next scan
                     prevLogsLength = 0;
                     prevActionPlanLength = 0;
                 });
             }
-            
+
             // Function to update agent logs with improved ANSI code handling
             function updateAgentLogs(logs) {
                 if (!logs || logs.length === 0) {
                     return;
                 }
-                
+
                 // Function to strip ANSI color codes for the UI
                 function stripAnsiCodes(text) {
                     if (!text || typeof text !== 'string') return text;
                     return text.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
                 }
-                
+
                 // Set a default for prevLogsLength if it's undefined
                 if (prevLogsLength === undefined) {
                     prevLogsLength = 0;
                 }
-                
+
                 // Clear placeholder on first logs
                 if (prevLogsLength === 0 && logs.length > 0) {
                     agentLogsEl.innerHTML = '';
                 }
-                
+
                 // New approach to handle structured agent logs
                 for (let i = 0; i < logs.length; i++) {
                     // Skip already displayed logs
                     if (i < prevLogsLength) continue;
-                    
+
                     const logEntry = logs[i];
-                    
+
                     // Handle new format of agent activity logs
                     if (typeof logEntry === 'object' && logEntry !== null) {
                         const logLineEl = document.createElement('div');
                         logLineEl.className = 'agent-log-entry mb-1 p-1';
-                        
+
                         // Extract properties
                         const time = logEntry.time || '';
                         const type = logEntry.type || 'activity';
                         const description = stripAnsiCodes(logEntry.description || '');
                         const agent = logEntry.agent || '';
-                        
+
                         // Set item styling based on activity type
                         let icon = '';
-                        
+
                         switch (type) {
                             case 'vulnerability':
                                 logLineEl.classList.add('border-start', 'border-danger', 'border-3', 'ps-2', 'bg-light');
@@ -1363,18 +1395,18 @@
                             default:
                                 icon = '<i class="bi bi-hammer me-1"></i>';
                         }
-                        
+
                         // Create agent badge if applicable
                         let agentBadge = '';
                         if (agent) {
                             let badgeClass = 'bg-secondary';
-                            
+
                             // Clean up agent name from artifacts
                             let cleanAgent = agent.replace(/Activity$/, "")
                                                  .replace(/\(Agent:\s*/g, "")
                                                  .replace(/\)/g, "")
                                                  .trim();
-                            
+
                             // Set badge color based on agent type
                             if (cleanAgent.includes('XSS') || cleanAgent.includes('Injection')) {
                                 badgeClass = 'bg-warning text-dark';
@@ -1389,13 +1421,13 @@
                             } else if (cleanAgent.includes('Report')) {
                                 badgeClass = 'bg-info';
                             }
-                            
+
                             agentBadge = `<span class="badge ${badgeClass} ms-1">${cleanAgent}</span>`;
                         }
-                        
+
                         // Add timestamp
                         const timeDisplay = time ? `<span class="text-muted me-2">${time}</span>` : '';
-                        
+
                         // Build the log entry HTML
                         logLineEl.innerHTML = `
                             <div class="d-flex">
@@ -1405,15 +1437,15 @@
                                 </div>
                             </div>
                         `;
-                        
+
                         agentLogsEl.appendChild(logLineEl);
                     } else {
                         // Fallback for old format string logs
                         const logLineEl = document.createElement('div');
-                        let logText = typeof logEntry === 'string' ? 
-                            stripAnsiCodes(logEntry) : 
+                        let logText = typeof logEntry === 'string' ?
+                            stripAnsiCodes(logEntry) :
                             JSON.stringify(logEntry);
-                            
+
                         // Basic styling for legacy log format
                         if (logText.includes('[VULNERABILITY]') || logText.includes('vulnerability')) {
                             logLineEl.classList.add('text-danger', 'fw-bold');
@@ -1427,33 +1459,33 @@
                         } else {
                             logLineEl.textContent = logText;
                         }
-                        
+
                         agentLogsEl.appendChild(logLineEl);
                     }
                 }
-                
+
                 // Scroll to bottom
                 agentLogsEl.scrollTop = agentLogsEl.scrollHeight;
                 prevLogsLength = logs.length;
             }
-            
+
             // Function to update action plan
             function updateActionPlan(plan) {
                 console.log("Action plan update received:", plan);
-                
+
                 // Always check if we need to generate a default plan based on progress
                 if (!plan || plan.length === 0) {
                     // Only show waiting message if we haven't created a fallback plan yet
-                    if (actionPlanListEl.children.length <= 1 && 
+                    if (actionPlanListEl.children.length <= 1 &&
                         actionPlanListEl.innerText.includes("Waiting for agent action plan")) {
                         // Create a default plan based on progress if we're past 20%
                         if (parseInt(progressBar.textContent) >= 20) {
                             console.log("Creating default action plan based on progress");
                             let defaultPlan = [];
-                            
+
                             // Main plan
                             defaultPlan.push("Security Assessment in Progress");
-                            
+
                             // Add steps based on progress
                             const progress = parseInt(progressBar.textContent);
                             if (progress >= 20) {
@@ -1471,7 +1503,7 @@
                             if (progress >= 90) {
                                 defaultPlan.push("Step 5: Generate security report");
                             }
-                            
+
                             // Call ourselves with this plan
                             if (defaultPlan.length > 1) {
                                 updateActionPlan(defaultPlan);
@@ -1481,28 +1513,28 @@
                     }
                     return;
                 }
-                
+
                 console.log("Updating action plan with", plan.length, "items, previous count:", prevActionPlanLength);
-                
+
                 // Check if we have a new plan or new steps
                 if (plan.length > 0) {
                     // Keep track of task keys we've already displayed to avoid duplicates
                     const displayedTasks = new Set();
-                    
+
                     // Clear placeholder on first update
-                    if (actionPlanListEl.children.length <= 1 && 
+                    if (actionPlanListEl.children.length <= 1 &&
                         actionPlanListEl.innerText.includes("Waiting for agent action plan")) {
                         console.log("Clearing placeholder and adding new action plan");
                         actionPlanListEl.innerHTML = '';
                     }
-                    
+
                     // Collect information about existing tasks in the UI
                     const existingItems = [];
                     const existingUITasks = new Set();
-                    
+
                     Array.from(actionPlanListEl.children).forEach((item, index) => {
                         existingItems.push(item);
-                        
+
                         // Skip the title/first item
                         if (index > 0) {
                             // Extract task description without status
@@ -1511,15 +1543,15 @@
                             existingUITasks.add(taskText);
                         }
                     });
-                    
+
                     // Update title if needed (first item)
                     if (plan.length > 0 && plan[0] && existingItems.length > 0) {
                         // Only update the title if it's significantly different
                         // but preserve the existing title if it already looks good
                         if (existingItems[0].textContent.trim() === "Waiting for agent action plan..." ||
-                            (plan[0].toLowerCase().includes("security") && 
+                            (plan[0].toLowerCase().includes("security") &&
                             !existingItems[0].textContent.toLowerCase().includes("security"))) {
-                                
+
                             console.log("Updating action plan title");
                             existingItems[0].className = 'list-group-item fw-bold bg-light';
                             existingItems[0].innerHTML = '<i class="bi bi-diagram-3"></i> ' + plan[0];
@@ -1532,95 +1564,95 @@
                         actionPlanListEl.appendChild(titleItem);
                         existingItems.push(titleItem);
                     }
-                    
+
                     // For new server-side items, check if they already exist in UI
                     for (let i = 1; i < plan.length; i++) {
                         const planItem = plan[i];
                         if (!planItem || planItem.trim() === '') continue;
-                        
+
                         // For duplicate detection, create a normalized key from the item
                         let taskKey = planItem.trim().toLowerCase();
                         // Remove step numbers and status markers for comparison
                         taskKey = taskKey.replace(/step \d+:/i, '').replace(/\((pending|completed)\)/i, '').trim();
-                        
+
                         // Skip if this task is already displayed or is a vulnerability entry
                         if (displayedTasks.has(taskKey) || planItem.includes('VULNERABILITY')) {
                             console.log("Skipping duplicate or vulnerability task:", planItem);
                             continue;
                         }
-                        
+
                         // Check if this task already exists in the UI
                         const taskExists = existingUITasks.has(taskKey);
-                        
+
                         // If task already exists in UI, update its status if needed
                         if (taskExists) {
                             console.log("Task already exists in UI, checking if status needs update:", taskKey);
-                            
+
                             // Find the existing item in the UI
                             let existingItem = null;
                             for (let j = 1; j < existingItems.length; j++) {
-                                const itemText = existingItems[j].querySelector('.task-description')?.textContent || 
+                                const itemText = existingItems[j].querySelector('.task-description')?.textContent ||
                                                 existingItems[j].textContent;
                                 const normalizedText = itemText.replace(/\s*\((Pending|Completed)\)$/i, '').trim().toLowerCase();
-                                
+
                                 if (normalizedText === taskKey) {
                                     existingItem = existingItems[j];
                                     break;
                                 }
                             }
-                            
+
                             // If found, check if status needs to be updated
                             if (existingItem && planItem.includes('(Completed)')) {
                                 console.log("Updating task status to completed:", taskKey);
-                                
+
                                 // Get the task number and status elements
                                 const taskNumber = existingItem.querySelector('.task-number');
                                 const taskStatus = existingItem.querySelector('.task-status');
                                 const taskDescription = existingItem.querySelector('.task-description');
-                                
+
                                 if (taskNumber && taskStatus) {
                                     // Update to completed style
                                     taskNumber.classList.remove('pending');
                                     taskNumber.classList.add('completed');
-                                    
+
                                     taskStatus.classList.remove('pending');
                                     taskStatus.classList.add('completed');
                                     taskStatus.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Completed';
-                                    
+
                                     if (taskDescription) {
                                         taskDescription.classList.remove('fw-bold');
                                         taskDescription.classList.add('fw-normal');
                                     }
                                 }
                             }
-                            
+
                             // Mark as displayed
                             displayedTasks.add(taskKey);
                             continue;
                         }
-                        
+
                         // This is a new task from the server, add it to UI
                         displayedTasks.add(taskKey);
-                        
+
                         const listItem = document.createElement('li');
                         listItem.className = 'list-group-item';
-                        
+
                         // Format task based on its type
-                        if (planItem.toLowerCase().includes('agent task allocation') || 
+                        if (planItem.toLowerCase().includes('agent task allocation') ||
                             planItem.toLowerCase().includes('task to agent mapping')) {
                             // Agent mapping entry
                             listItem.className = 'list-group-item task-item fade-in';
-                            
-                            const mappingText = planItem.includes(':') ? 
-                                planItem.split(':')[1].trim() : 
+
+                            const mappingText = planItem.includes(':') ?
+                                planItem.split(':')[1].trim() :
                                 planItem.replace(/agent task allocation/i, '').trim();
-                            
+
                             // Split the agents by comma for better display
                             const agents = mappingText.split(/,\s*/);
                             const agentBadges = agents.map(agent => {
                                 return `<span class="badge bg-info me-1">${agent.trim()}</span>`;
                             }).join(' ');
-                            
+
                             listItem.innerHTML = `
                                 <div class="d-flex align-items-center w-100">
                                     <div class="task-number completed">
@@ -1640,7 +1672,7 @@
                         } else if (planItem.toLowerCase().includes('generating security test plan')) {
                             // Plan generation entry
                             listItem.className = 'list-group-item task-item fade-in';
-                            
+
                             listItem.innerHTML = `
                                 <div class="d-flex align-items-center w-100">
                                     <div class="task-number completed">
@@ -1658,11 +1690,11 @@
                             // Regular task entry
                             const isCompleted = planItem.includes('(Completed)');
                             const isPending = planItem.includes('(Pending)') || !isCompleted;
-                            
+
                             // Extract step number and description
                             let stepNum = '';
                             let stepDesc = '';
-                            
+
                             // Try to extract step number and text using various patterns
                             const stepMatch = planItem.match(/Step (\d+)[:\-]?\s*(.*)/i);
                             if (stepMatch) {
@@ -1681,10 +1713,10 @@
                                 // Default case
                                 stepDesc = planItem.replace(/\s*\((Completed|Pending)\)$/, '').trim();
                             }
-                            
+
                             // Set the appropriate class for the task item
                             listItem.className = 'list-group-item task-item fade-in';
-                            
+
                             // Create the inner HTML for the task item
                             listItem.innerHTML = `
                                 <div class="task-number ${isCompleted ? 'completed' : 'pending'}">
@@ -1694,18 +1726,18 @@
                                     <span class="task-description ${isCompleted ? 'fw-normal' : 'fw-bold'}">${stepDesc}</span>
                                 </div>
                                 <div class="task-status ${isCompleted ? 'completed' : 'pending'}">
-                                    ${isCompleted ? 
-                                        '<i class="bi bi-check-circle-fill me-1"></i> Completed' : 
+                                    ${isCompleted ?
+                                        '<i class="bi bi-check-circle-fill me-1"></i> Completed' :
                                         '<i class="bi bi-hourglass-split me-1"></i> Pending'
                                     }
                                 </div>
                             `;
                         }
-                        
+
                         actionPlanListEl.appendChild(listItem);
                         console.log("Added new task to UI:", taskKey);
                     }
-                    
+
                     // Update previous count for next time - we always count ALL tasks from server
                     prevActionPlanLength = plan.length;
                 } else {
@@ -1713,19 +1745,19 @@
                     actionPlanListEl.innerHTML = '<li class="list-group-item text-center text-muted">Waiting for agent action plan...</li>';
                 }
             }
-            
+
             // Function to update current action badge
             function updateCurrentAction(action) {
                 if (!action) return;
-                
+
                 console.log("Updating current action:", action);
-                
+
                 // Set the badge text
                 currentActionBadgeEl.textContent = action;
-                
+
                 // Add an icon based on the action type
                 let icon = '';
-                
+
                 // Change badge color and icon based on action type
                 if (action.includes('Found:') || action.includes('vulnerability') || action.includes('VULNERABILITY')) {
                     currentActionBadgeEl.className = 'badge bg-danger px-3 py-2';
@@ -1749,41 +1781,41 @@
                     currentActionBadgeEl.className = 'badge bg-secondary px-3 py-2';
                     icon = '<i class="bi bi-cpu me-1"></i>';
                 }
-                
+
                 // Set the badge content with icon
                 currentActionBadgeEl.innerHTML = icon + action;
-                
+
                 // Add a subtle animation to draw attention to the update
                 currentActionBadgeEl.classList.add('animate__animated', 'animate__pulse');
                 setTimeout(() => {
                     currentActionBadgeEl.classList.remove('animate__animated', 'animate__pulse');
                 }, 1000);
             }
-            
+
             function showError(message) {
                 errorMessageEl.textContent = message;
                 errorContainer.classList.remove('d-none');
                 scanStatusPanel.classList.add('d-none');
-                
+
                 // Re-enable scan button
                 startScanBtn.disabled = false;
                 startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
-                
+
                 // Reset log counters for the next scan
                 prevLogsLength = 0;
                 prevActionPlanLength = 0;
             }
-            
+
             // Cancel button
             cancelBtn.addEventListener('click', function() {
                 if (confirm('Are you sure you want to cancel the scan?')) {
                     isCancelled = true;
                     clearInterval(statusCheckInterval);
-                    
+
                     // Call the reset endpoint to fully reset the scan's state on the server
                     const resetFormData = new FormData();
                     resetFormData.append('session_id', sessionId);
-                    
+
                     fetch('/reset', {
                         method: 'POST',
                         body: resetFormData
@@ -1794,30 +1826,30 @@
                         if (data.status === 'success') {
                             // Clear local state
                             clearScanState();
-                            
+
                             // Hide panels
                             scanStatusPanel.classList.add('d-none');
                             reportContainer.classList.add('d-none');
                             errorContainer.classList.add('d-none');
-                            
+
                             // Reset the scan button
                             startScanBtn.disabled = false;
                             startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
-                            
+
                             // Reset log counters for the next scan
                             prevLogsLength = 0;
                             prevActionPlanLength = 0;
-                            
+
                             // Reset UI elements
                             agentLogsEl.innerHTML = '<div class="text-muted">Waiting for agent activities...</div>';
                             actionPlanListEl.innerHTML = '<li class="list-group-item text-center text-muted">Waiting for agent action plan...</li>';
-                            
+
                             // Reset progress bar
                             progressBar.style.width = '0%';
                             progressBar.textContent = '0%';
                             progressBar.classList.add('progress-bar-striped', 'progress-bar-animated');
                             progressBar.classList.remove('bg-success');
-                            
+
                             // Reset scan in progress flag
                             scanInProgress = false;
                         }
@@ -1834,45 +1866,45 @@
                     });
                 }
             });
-            
+
             // New scan button
             newScanBtn.addEventListener('click', function() {
                 reportContainer.classList.add('d-none');
                 errorContainer.classList.add('d-none');
                 scanStatusPanel.classList.add('d-none');
                 document.getElementById('url').value = '';
-                
+
                 // Reset log counters
                 prevLogsLength = 0;
                 prevActionPlanLength = 0;
-                
+
                 // Reset status panel title
-                document.getElementById('statusPanelTitle').innerHTML = 
+                document.getElementById('statusPanelTitle').innerHTML =
                     '<i class="bi bi-robot"></i> Agent Swarm Status <span class="badge bg-secondary ms-2 fs-6">Multiple agents working in parallel</span>';
-                
+
                 // Reset log displays
                 agentLogsEl.innerHTML = '<div class="text-muted">Waiting for agent logs...</div>';
                 actionPlanListEl.innerHTML = '<li class="list-group-item text-center text-muted">Waiting for agent action plan...</li>';
                 currentActionBadgeEl.textContent = 'Initializing';
                 currentActionBadgeEl.className = 'badge bg-success';
-                
+
                 // Clear stored scan state
                 clearScanState();
-                
+
                 // Reset progress bar
                 progressBar.style.width = '0%';
                 progressBar.textContent = '0%';
                 progressBar.classList.add('progress-bar-striped', 'progress-bar-animated');
                 progressBar.classList.remove('bg-success');
-                
+
                 // Generate a new session ID for the next scan
                 window.location.hash = '';
                 window.location.reload();
             });
-            
+
             // Initialize state restoration on page load
             restoreScanStateIfExists();
-            
+
             // Handle page visibility changes to resume polling if needed
             document.addEventListener('visibilitychange', function() {
                 if (document.visibilityState === 'visible') {
@@ -1885,7 +1917,7 @@
                     }
                 }
             });
-            
+
             // Download report button
             downloadReportBtn.addEventListener('click', function() {
                 const reportContent = reportContentEl.innerText;
@@ -1899,25 +1931,25 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             });
-            
+
             // Function to generate a markdown report from findings array
             function generateReportFromFindings(findings, url) {
                 if (!findings || !Array.isArray(findings) || findings.length === 0) {
                     return '# No vulnerabilities found\n\nNo security issues were detected during this scan.';
                 }
-                
+
                 const today = new Date();
                 const dateStr = today.toISOString().split('T')[0];
-                
+
                 // Begin building the markdown report
                 let markdown = `# Security Assessment Report\n\n`;
                 markdown += `**Generated:** ${today.toLocaleString()}\n\n`;
                 markdown += `**Target:** ${url}\n\n`;
-                
+
                 // Vulnerability count summary
                 markdown += `## Summary\n\n`;
                 markdown += `**Total Vulnerabilities:** ${findings.length}\n\n`;
-                
+
                 // Count vulnerabilities by severity
                 const severityCounts = {
                     'critical': 0,
@@ -1926,20 +1958,20 @@
                     'low': 0,
                     'info': 0
                 };
-                
+
                 // Count vulnerabilities by type
                 const vulnerabilityTypes = new Set();
-                
+
                 findings.forEach(finding => {
                     const severity = (finding.severity || 'medium').toLowerCase();
                     if (severity in severityCounts) {
                         severityCounts[severity]++;
                     }
-                    
+
                     const vulnType = finding.vulnerability_type || finding.type || 'Unknown';
                     vulnerabilityTypes.add(vulnType);
                 });
-                
+
                 // Severity breakdown table
                 markdown += `### Vulnerability Severity Breakdown\n\n`;
                 markdown += `| Severity | Count |\n`;
@@ -1949,36 +1981,36 @@
                 markdown += `| Medium | ${severityCounts.medium} |\n`;
                 markdown += `| Low | ${severityCounts.low} |\n`;
                 markdown += `| Info | ${severityCounts.info} |\n\n`;
-                
+
                 // Vulnerability types
                 markdown += `### Vulnerability Types\n\n`;
                 vulnerabilityTypes.forEach(type => {
                     markdown += `- ${type}\n`;
                 });
                 markdown += `\n`;
-                
+
                 // Detailed findings
                 markdown += `## Detailed Findings\n\n`;
-                
+
                 findings.forEach((finding, index) => {
                     const vulnType = finding.vulnerability_type || finding.type || 'Unknown';
                     const severity = finding.severity || 'medium';
                     const target = finding.target || finding.affected_resource || 'Unknown target';
                     const validated = finding.validated ? 'Yes' : 'No';
-                    
+
                     markdown += `### ${index + 1}. ${vulnType} in ${target}\n\n`;
                     markdown += `**Severity:** ${severity.charAt(0).toUpperCase() + severity.slice(1)}  \n`;
                     markdown += `**Type:** ${vulnType}  \n`;
                     markdown += `**Target:** ${target}  \n`;
                     markdown += `**Validated:** ${validated}  \n\n`;
-                    
+
                     // Description
                     if (finding.details && finding.details.description) {
                         markdown += `#### Description\n\n${finding.details.description}\n\n`;
                     } else if (finding.description) {
                         markdown += `#### Description\n\n${finding.description}\n\n`;
                     }
-                    
+
                     // Impact
                     markdown += `#### Impact\n\n`;
                     if (finding.details && finding.details.impact) {
@@ -2004,7 +2036,7 @@
                         }
                         markdown += `${impactText}\n\n`;
                     }
-                    
+
                     // Steps to reproduce
                     if (finding.reproduction_steps || (finding.details && finding.details.reproduction_steps)) {
                         const steps = finding.reproduction_steps || finding.details.reproduction_steps;
@@ -2018,19 +2050,19 @@
                             markdown += `${steps}\n\n`;
                         }
                     }
-                    
+
                     // Evidence
                     if (finding.evidence || (finding.details && finding.details.evidence)) {
                         const evidence = finding.evidence || finding.details.evidence;
                         markdown += `#### Evidence\n\n\`\`\`\n${evidence}\n\`\`\`\n\n`;
                     }
-                    
+
                     // Remediation
                     if (finding.remediation || (finding.details && finding.details.remediation)) {
                         const remediation = finding.remediation || finding.details.remediation;
                         markdown += `#### Remediation\n\n${remediation}\n\n`;
                     }
-                    
+
                     // References
                     markdown += `#### References\n\n`;
                     if (vulnType.includes('XSS')) {
@@ -2048,12 +2080,12 @@
                         markdown += `- https://owasp.org/Top10/A01_2021-Broken_Access_Control/\n`;
                         markdown += `- https://cheatsheetseries.owasp.org/cheatsheets/Access_Control_Cheat_Sheet.html\n`;
                     }
-                    
+
                     markdown += `\n---\n\n`;
                 });
-                
+
                 markdown += `\n*Report generated by VibePenTester - Advanced AI Security Testing Agent*\n`;
-                
+
                 return markdown;
             }
         });
