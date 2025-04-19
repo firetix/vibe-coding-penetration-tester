@@ -18,3 +18,4 @@ flask_cors>=4.0.0
 pytest>=7.4.0
 pytest-cov>=4.1.0
 pytest-mock>=3.11.1
+python-dotenv>=1.0.0
