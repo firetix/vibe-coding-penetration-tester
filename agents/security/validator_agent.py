@@ -11,7 +11,7 @@ from tools.browser_tools_impl import get_browser_interaction_tools
 
 class ValidationAgent(BaseAgent):
     """Agent responsible for validating security findings and confirming vulnerabilities."""
-    
+
     def __init__(self, llm_provider: LLMProvider, scanner: Scanner):
         # Use specialized validation tools and browser interaction tools
         validation_tools = [
@@ -52,31 +52,34 @@ class ValidationAgent(BaseAgent):
                 }
             }
         ]
-        
+
         # Add browser tools for validation actions
         browser_tools = get_browser_interaction_tools()
         tools = validation_tools + browser_tools
-        
+
         super().__init__("ValidationAgent", "security_validator", llm_provider, tools)
         self.scanner = scanner
         self.browser_tools = BrowserTools(debug=True)
-    
+
     def validate_finding(self, finding: Dict[str, Any], page: Page, page_info: Dict[str, Any]) -> Dict[str, Any]:
         """Validate a security finding to confirm if it's a real vulnerability."""
         logger = get_logger()
         logger.info(f"Validating {finding.get('vulnerability_type', 'unknown')} vulnerability")
-        
+        logger.debug(f"Finding details: {finding}")
+        logger.debug(f"Page info: {page_info}")
+
         # Create system prompt based on the type of vulnerability
         system_prompt = self._get_validation_prompt(finding)
-        
+
         # Create input data with the finding details
         input_data = {
             "content": f"Validate the following security finding:\n\n{self._format_finding(finding)}\n\nPage information: {page_info}"
         }
-        
+
         # Use the LLM to analyze the finding
         response = self.think(input_data, system_prompt)
-        
+        logger.debug(f"LLM response: {response}")
+
         # Initialize validation result
         validation_result = {
             "validated": False,
@@ -85,22 +88,24 @@ class ValidationAgent(BaseAgent):
                 "notes": "Validation pending"
             }
         }
-        
+
         # Check if any tool was called
         if response.get("tool_calls"):
             # Process validation from tool calls
             for tool_call in response["tool_calls"]:
                 tool_name = self._get_tool_name(tool_call)
                 logger.info(f"ValidationAgent using tool: {tool_name}", color="cyan")
-                
+                logger.debug(f"Tool call details: {tool_call}") # Add logging for tool call details
+
                 # Execute the tool
                 tool_result = self.execute_tool(tool_call)
-                
+                logger.debug(f"Tool execution result: {tool_result}") # Add logging for tool result
+
                 # If it's the validate_finding tool, use its result
                 if tool_name == "validate_finding" and isinstance(tool_result, dict):
                     validation_result["validated"] = tool_result.get("validated", False)
                     validation_result["details"] = tool_result.get("details", {})
-                    
+
                     # Log the validation outcome
                     if validation_result["validated"]:
                         logger.success(f"Validated {finding.get('vulnerability_type', 'unknown')} vulnerability")
@@ -109,66 +114,72 @@ class ValidationAgent(BaseAgent):
         else:
             # Use the followup response to determine validation
             content = response.get("content", "").lower()
-            if "validated" in content and ("confirmed" in content or "verified" in content):
+            # Improved text parsing to identify validation from LLM's natural language response
+            if any(keyword in content for keyword in ["validated", "confirmed", "verified", "appears to be a real", "is a real"]):
                 validation_result["validated"] = True
-                validation_result["details"]["notes"] = "Validated through expert analysis"
-                logger.success(f"Validated {finding.get('vulnerability_type', 'unknown')} through expert analysis")
-            elif "cannot validate" in content or "not validated" in content or "false positive" in content:
-                validation_result["details"]["notes"] = "Could not validate through expert analysis"
-                logger.warning(f"Could not validate {finding.get('vulnerability_type', 'unknown')} - likely a false positive")
-        
+                validation_result["details"]["validation_method"] = "expert_analysis_text_fallback"
+                validation_result["details"]["notes"] = f"Validated through expert analysis of LLM text response: {content}"
+                validation_result["details"]["confidence_level"] = "high" # Add confidence level for fallback
+                logger.success(f"Validated {finding.get('vulnerability_type', 'unknown')} through expert analysis text fallback")
+            elif any(keyword in content for keyword in ["cannot validate", "not validated", "false positive", "not a vulnerability"]):
+                validation_result["validated"] = False
+                validation_result["details"]["validation_method"] = "expert_analysis_text_fallback"
+                validation_result["details"]["notes"] = f"Could not validate through expert analysis of LLM text response: {content}"
+                validation_result["details"]["confidence_level"] = "low" # Add confidence level for fallback
+                logger.warning(f"Could not validate {finding.get('vulnerability_type', 'unknown')} - likely a false positive based on LLM text fallback")
+
         return validation_result
-    
+
     def _get_tool_name(self, tool_call: Any) -> str:
         """Extract the tool name from a tool call."""
         if hasattr(tool_call, 'function') and hasattr(tool_call.function, 'name'):
             return tool_call.function.name
         return tool_call.get('function', {}).get('name', 'unknown_tool')
-    
+
     def _format_finding(self, finding: Dict[str, Any]) -> str:
         """Format a finding for the validation prompt."""
         formatted = f"Vulnerability Type: {finding.get('vulnerability_type', 'Unknown')}\n"
         formatted += f"Severity: {finding.get('severity', 'medium')}\n"
         formatted += f"Target: {finding.get('target', 'Unknown')}\n"
-        
+
         # Add details if available
         if finding.get("details"):
             formatted += "Details:\n"
             for key, value in finding.get("details", {}).items():
                 formatted += f"- {key}: {value}\n"
-        
+
         # Add any evidence
         if finding.get("evidence") or (finding.get("details") and finding.get("details").get("evidence")):
             evidence = finding.get("evidence", finding.get("details", {}).get("evidence", ""))
             formatted += f"Evidence: {evidence}\n"
-            
+
         # Add actions performed
         if finding.get("actions_performed"):
             formatted += "Actions Performed:\n"
             for action in finding.get("actions_performed", []):
                 formatted += f"- {action.get('tool', 'unknown')}: {action.get('success', False)}\n"
-                
+
         return formatted
-    
+
     def _get_validation_prompt(self, finding: Dict[str, Any]) -> str:
         """Get a specific validation prompt based on the vulnerability type."""
         vuln_type = finding.get("vulnerability_type", "").lower()
-        
+
         # Base prompt for all validations
         base_prompt = """
         You are a Security Validation Expert. Your role is to confirm or reject security findings.
         Analyze the evidence provided and determine if the reported vulnerability is legitimate.
-        
+
         For a vulnerability to be validated, it should have:
         1. Clear evidence of the vulnerability's existence
         2. Confirmation that the vulnerability can be exploited
         3. Proper context and details to understand the issue
-        
+
         You have access to validation tools and browser interaction tools:
-        
+
         VALIDATION TOOLS:
-        - validate_finding: Confirm or reject a security finding
-        
+        - validate_finding: Confirm or reject a security finding. Use this tool to report your final validation decision (validated: true/false) along with any relevant details.
+
         BROWSER INTERACTION TOOLS:
         - goto: Navigate to a URL
         - click: Click an element on the page
@@ -176,7 +187,7 @@ class ValidationAgent(BaseAgent):
         - submit: Submit a form
         - execute_js: Execute JavaScript on the page
         """
-        
+
         # Add specialized validation guidance based on vulnerability type
         if "xss" in vuln_type:
             base_prompt += """
@@ -256,5 +267,5 @@ class ValidationAgent(BaseAgent):
             - Test for information leakage from internal services
             - Check if the server could be used as a proxy for further attacks
             """
-        
+
         return base_prompt

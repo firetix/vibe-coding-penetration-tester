@@ -170,12 +170,12 @@ class TestSSRFDetection:
     
     def test_ssrf_detection(self, enhanced_mock_scanner, enhanced_mock_llm):
         """Test that the SSRF agent can detect vulnerabilities in a typical scenario."""
-        # Initialize the SSRF agent with our mocks
-        ssrf_agent = SSRFAgent(enhanced_mock_llm, enhanced_mock_scanner)
-        
         # Create a page mock
         page_mock = MagicMock()
         page_mock.url = "https://example.com/ssrf_test"
+        
+        # Initialize the SSRF agent with our mocks
+        ssrf_agent = SSRFAgent(enhanced_mock_llm, enhanced_mock_scanner, page_mock)
         
         # Create a task mock
         task = {
@@ -244,8 +244,12 @@ class TestSSRFDetection:
     
     def test_ssrf_parameter_detection(self, enhanced_mock_scanner, enhanced_mock_llm):
         """Test that the SSRF agent can identify potential SSRF parameters in URLs."""
+        # Create a page mock
+        page_mock = MagicMock()
+        page_mock.url = "https://example.com/ssrf_test"
+        
         # Initialize the SSRF agent with our mocks
-        ssrf_agent = SSRFAgent(enhanced_mock_llm, enhanced_mock_scanner)
+        ssrf_agent = SSRFAgent(enhanced_mock_llm, enhanced_mock_scanner, page_mock)
         
         # Mock URL with SSRF parameters
         test_url = "https://example.com/api/fetch?url=https://external.com&resource=data.json"
@@ -270,8 +274,12 @@ class TestSSRFDetection:
     @patch('utils.logger.get_logger')
     def test_ssrf_api_endpoint_detection(self, mock_logger, enhanced_mock_scanner, enhanced_mock_llm):
         """Test that the SSRF agent can identify potential SSRF API endpoints."""
+        # Create a page mock
+        page_mock = MagicMock()
+        page_mock.url = "https://example.com/ssrf_test"
+        
         # Initialize the SSRF agent with our mocks
-        ssrf_agent = SSRFAgent(enhanced_mock_llm, enhanced_mock_scanner)
+        ssrf_agent = SSRFAgent(enhanced_mock_llm, enhanced_mock_scanner, page_mock)
         
         # Mock URL with SSRF vulnerable API endpoint
         test_url = "https://example.com/api/import/external-data"

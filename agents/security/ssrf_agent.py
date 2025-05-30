@@ -12,8 +12,8 @@ from utils.logger import get_logger
 class SSRFAgent(SpecializedSecurityAgent):
     """Agent specializing in Server-Side Request Forgery testing."""
     
-    def __init__(self, llm_provider: LLMProvider, scanner: Scanner):
-        super().__init__("SSRFAgent", "ssrf_specialist", "ssrf", llm_provider, scanner)
+    def __init__(self, llm_provider: LLMProvider, scanner: Scanner, page: Page):
+        super().__init__("SSRFAgent", "ssrf_specialist", "ssrf", llm_provider, scanner, page)
         self.observed_url_parameters = set()
         self.observed_file_uploads = set()
         self.observed_api_endpoints = set()
