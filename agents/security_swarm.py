@@ -28,6 +28,7 @@ from agents.security.xss_agent import XSSAgent
 from agents.security.sqli_agent import SQLInjectionAgent
 from agents.security.csrf_agent import CSRFAgent
 from agents.security.auth_agent import AuthenticationAgent
+from agents.security.api_security_agent import APISecurityAgent
 
 
 class SecuritySwarm:
@@ -53,6 +54,7 @@ class SecuritySwarm:
             "insecure_design": InsecureDesignAgent(llm_provider, scanner),
             "data_integrity": DataIntegrityAgent(llm_provider, scanner),
             "ssrf": SSRFAgent(llm_provider, scanner),
+            "api": APISecurityAgent(llm_provider, scanner),
             "validator": ValidationAgent(llm_provider, scanner)
         }
     
