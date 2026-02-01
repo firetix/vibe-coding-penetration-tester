@@ -1,6 +1,6 @@
 # Vibe Pentester Backlog
 
-*Last updated: 2026-01-31*
+*Last updated: 2026-02-01*
 
 ## Current Status
 - **Deployment**: ✅ Live at https://vibehack.io (redirects to www.vibehack.io)
@@ -21,8 +21,11 @@
 - [ ] **Integrate vision API capabilities for visual analysis** - Could detect visual security issues (CAPTCHA weaknesses, UI redressing)
 - [ ] **Run against HackerOne reports** - Find first LLM-powered vulnerability in the wild
 - [ ] **Add collaborative testing capabilities** - Multi-user testing sessions
-- [ ] **Improve subdomain enumeration techniques** - Better DNS enumeration
 - [ ] **Add API security testing capabilities** - OWASP API Top 10 coverage ⬅️ *DRAFTED*
+
+### In Progress
+- [x] **Improve subdomain enumeration techniques** - PR #3: https://github.com/firetix/vibe-coding-penetration-tester/pull/3
+  - Added CT logs (crt.sh), DNS zone transfers, pattern generation, parallel resolution
 
 ### Completed Items
 - [x] Add support for Anthropic Claude models
