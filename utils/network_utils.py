@@ -9,6 +9,7 @@ from playwright.sync_api import Page
 
 from utils.logger import get_logger
 
+
 def check_hostname(url_start: str, url_to_check: str) -> bool:
     """
     Check if two URLs have the same hostname.
@@ -24,19 +25,43 @@ def check_hostname(url_start: str, url_to_check: str) -> bool:
     url_to_check_hostname = urlparse(url_to_check).netloc
     return url_start_hostname == url_to_check_hostname
 
-def enumerate_subdomains(url: str, limit: int = 100) -> List[str]:
+def enumerate_subdomains(url: str, limit: int = 100, enhanced: bool = True) -> List[str]:
     """
-    Find valid subdomains for a given domain by testing common subdomain names.
+    Find valid subdomains for a given domain using multiple techniques.
+    
+    This function supports two modes:
+    - Enhanced mode (default): Uses Certificate Transparency logs, DNS zone transfers,
+      pattern generation, and parallel wordlist brute force for comprehensive discovery.
+    - Basic mode: Simple sequential HTTP-based subdomain checking (legacy behavior).
     
     Args:
         url: Base URL to check subdomains for
-        limit: Maximum number of subdomains to check
+        limit: Maximum number of subdomains to check from wordlist
+        enhanced: Use enhanced enumeration techniques (default: True)
         
     Returns:
-        list: List of valid subdomain URLs that returned HTTP 200
+        list: List of valid subdomain URLs that are reachable
     """ 
     logger = get_logger()
-    logger.info(f"Enumerating subdomains for {url}", color="cyan")
+    
+    # Try enhanced enumeration first if enabled
+    if enhanced:
+        try:
+            from utils.subdomain_enumerator import enumerate_subdomains_enhanced
+            logger.info(f"Using enhanced subdomain enumeration for {url}", color="cyan")
+            return enumerate_subdomains_enhanced(
+                url, 
+                limit=limit,
+                use_ct_logs=True,
+                use_zone_transfer=True
+            )
+        except ImportError as e:
+            logger.warning(f"Enhanced enumeration unavailable ({e}), falling back to basic mode")
+        except Exception as e:
+            logger.warning(f"Enhanced enumeration failed ({e}), falling back to basic mode")
+    
+    # Basic enumeration (legacy fallback)
+    logger.info(f"Enumerating subdomains for {url} (basic mode)", color="cyan")
     
     # Extract the root domain from the URL
     parsed = urlparse(url)

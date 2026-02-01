@@ -5,6 +5,7 @@ colorama>=0.4.6
 playwright>=1.40.0
 PyYAML>=6.0.0
 requests>=2.30.0
+dnspython>=2.4.0  # Required for enhanced subdomain enumeration
 tiktoken>=0.5.0
 pydantic>=2.5.0
 fastapi>=0.104.0

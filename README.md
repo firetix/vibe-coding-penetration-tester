@@ -222,7 +222,7 @@ Reports are generated in both text and markdown formats, containing:
 - [x] Implement more sophisticated planning algorithms with fallback mechanisms
 - [x] Add better execution strategies and error handling for Ollama models
 - [ ] Add collaborative testing capabilities
-- [ ] Improve subdomain enumeration techniques
+- [x] Improve subdomain enumeration techniques (CT logs, zone transfers, parallel resolution)
 - [x] Add API security testing capabilities
 - [x] Add basic documentation and examples
 
