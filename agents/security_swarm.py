@@ -28,6 +28,7 @@ from agents.security.xss_agent import XSSAgent
 from agents.security.sqli_agent import SQLInjectionAgent
 from agents.security.csrf_agent import CSRFAgent
 from agents.security.auth_agent import AuthenticationAgent
+from agents.security.api_security_agent import APISecurityAgent
 
 
 class SecuritySwarm:
@@ -53,6 +54,7 @@ class SecuritySwarm:
             "insecure_design": InsecureDesignAgent(llm_provider, scanner),
             "data_integrity": DataIntegrityAgent(llm_provider, scanner),
             "ssrf": SSRFAgent(llm_provider, scanner),
+            "api_security": APISecurityAgent(llm_provider, scanner),
             "validator": ValidationAgent(llm_provider, scanner)
         }
     
@@ -247,6 +249,8 @@ class SecuritySwarm:
             "insecure_design": "insecure_design",
             "data_integrity": "data_integrity",
             "ssrf": "ssrf",
+            "api_security": "api_security",
+            "api": "api_security",
         }
         
         agent_key = task_to_agent_map.get(task_type.lower())
@@ -496,6 +500,7 @@ class PlannerAgent(BaseAgent):
             "insecure_design": ["design", "business logic", "workflow", "rate limit", "validation pattern"],
             "data_integrity": ["integrity", "deserialization", "signature", "update mechanism"],
             "ssrf": ["ssrf", "server-side request forgery", "server request"],
+            "api_security": ["api", "rest", "graphql", "endpoint", "bola", "mass assignment", "api security"],
             "scan": ["scan", "reconnaissance", "header", "information disclosure"]
         }
         
@@ -717,6 +722,14 @@ class PlannerAgent(BaseAgent):
                     "priority": "high",
                     "details": {
                         "check_for": ["url_validation", "server_requests", "internal_service_access"]
+                    }
+                },
+                {
+                    "type": "api_security",
+                    "target": "REST/GraphQL API endpoints",
+                    "priority": "high",
+                    "details": {
+                        "check_for": ["bola", "broken_auth", "mass_assignment", "security_misconfiguration", "graphql_introspection"]
                     }
                 },
                 {
