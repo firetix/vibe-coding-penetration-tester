@@ -24,13 +24,19 @@ def check_hostname(url_start: str, url_to_check: str) -> bool:
     url_to_check_hostname = urlparse(url_to_check).netloc
     return url_start_hostname == url_to_check_hostname
 
-def enumerate_subdomains(url: str, limit: int = 100) -> List[str]:
+def enumerate_subdomains(url: str, limit: int = 100, enhanced: bool = True) -> List[str]:
     """
     Find valid subdomains for a given domain by testing common subdomain names.
     
+    When enhanced=True (default), uses multiple discovery techniques:
+    - Certificate Transparency log parsing via crt.sh
+    - Concurrent DNS brute-forcing
+    - Permutation-based discovery
+    
     Args:
         url: Base URL to check subdomains for
-        limit: Maximum number of subdomains to check
+        limit: Maximum number of subdomains to check (for wordlist)
+        enhanced: Use enhanced multi-technique enumeration (default: True)
         
     Returns:
         list: List of valid subdomain URLs that returned HTTP 200
@@ -49,6 +55,34 @@ def enumerate_subdomains(url: str, limit: int = 100) -> List[str]:
     if len(parts) > 2:
         hostname = '.'.join(parts[-2:])
 
+    # Use enhanced enumeration if enabled
+    if enhanced:
+        try:
+            from utils.subdomain_discovery import enumerate_subdomains_enhanced
+            
+            logger.info("Using enhanced subdomain enumeration (CT logs + DNS + permutations)", color="cyan")
+            results = enumerate_subdomains_enhanced(
+                url=url,
+                use_ct_logs=True,
+                use_dns_bruteforce=True,
+                use_permutations=True,
+                check_alive=True,
+                limit=limit
+            )
+            
+            # Return alive service URLs
+            valid_domains = [svc['url'] for svc in results['alive_services']]
+            logger.info(f"Enhanced enumeration found {len(valid_domains)} alive subdomains", color="green")
+            return valid_domains
+            
+        except ImportError as e:
+            logger.warning(f"Enhanced enumeration unavailable: {e}. Falling back to basic method.")
+        except Exception as e:
+            logger.warning(f"Enhanced enumeration failed: {e}. Falling back to basic method.")
+
+    # Basic enumeration (fallback)
+    logger.info("Using basic subdomain enumeration (wordlist only)", color="yellow")
+    
     # Load subdomain list
     subdomains_path = pathlib.Path(__file__).parent.parent / "lists" / "subdomains.txt"
     try:

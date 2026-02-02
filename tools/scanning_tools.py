@@ -501,15 +501,65 @@ def extract_links(url: str) -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-def enumerate_subdomains(domain: str, techniques: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Enumerate subdomains for a given domain using various techniques."""
+def enumerate_subdomains(domain: str, techniques: Optional[List[str]] = None, use_enhanced: bool = True) -> Dict[str, Any]:
+    """
+    Enumerate subdomains for a given domain using various techniques.
+    
+    When use_enhanced=True (default), uses real discovery techniques:
+    - Certificate Transparency log parsing via crt.sh API
+    - Concurrent DNS brute-forcing with resolution verification
+    - Permutation-based discovery for deeper enumeration
+    - HTTP/HTTPS alive checking
+    
+    Args:
+        domain: Target domain to enumerate
+        techniques: List of techniques to use (for compatibility)
+        use_enhanced: Use enhanced multi-technique enumeration (default: True)
+        
+    Returns:
+        Dict with discovered subdomains, alive services, and metadata
+    """
     logger = get_logger()
     logger.info(f"Enumerating subdomains for {domain}")
     
     # Set default techniques if not provided
     if not techniques:
-        techniques = ["wordlist", "certificate", "dns"]
+        techniques = ["wordlist", "certificate", "dns", "permutation"]
     
+    # Try enhanced enumeration first
+    if use_enhanced:
+        try:
+            from utils.subdomain_discovery import enumerate_subdomains_enhanced
+            
+            logger.info("Using enhanced multi-technique subdomain enumeration", color="cyan")
+            
+            results = enumerate_subdomains_enhanced(
+                url=domain,
+                use_ct_logs="certificate" in techniques,
+                use_dns_bruteforce="dns" in techniques or "wordlist" in techniques,
+                use_permutations="permutation" in techniques,
+                check_alive=True,
+                limit=200
+            )
+            
+            return {
+                "subdomains": results['subdomains'],
+                "alive_services": results['alive_services'],
+                "domain": results['domain'],
+                "techniques": techniques,
+                "discovered_count": results['total_discovered'],
+                "alive_count": results['total_alive'],
+                "sources": results['sources'],
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except ImportError as e:
+            logger.warning(f"Enhanced enumeration unavailable: {e}. Using fallback.")
+        except Exception as e:
+            logger.warning(f"Enhanced enumeration failed: {e}. Using fallback.")
+    
+    # Fallback to basic/simulated enumeration
+    logger.info("Using basic subdomain enumeration (fallback mode)", color="yellow")
     discovered_subdomains = []
     
     # Load subdomains from the wordlist
@@ -519,13 +569,12 @@ def enumerate_subdomains(domain: str, techniques: Optional[List[str]] = None) ->
         for subdomain in subdomain_list:
             full_subdomain = f"{subdomain}.{domain}"
             
-            # In a real implementation, we would check if the subdomain resolves
-            # For simulation purposes, randomly "discover" some subdomains
+            # In fallback mode, randomly "discover" some subdomains for simulation
             if random.random() < 0.05:  # 5% chance of finding a valid subdomain
                 discovered_subdomains.append(full_subdomain)
                 logger.info(f"Discovered subdomain: {full_subdomain}")
     
-    # Simulate certificate transparency and DNS techniques
+    # Simulate certificate transparency and DNS techniques in fallback mode
     if "certificate" in techniques or "dns" in techniques:
         # Add a few random "discovered" subdomains for simulation
         extra_count = random.randint(1, 5)
@@ -538,9 +587,12 @@ def enumerate_subdomains(domain: str, techniques: Optional[List[str]] = None) ->
     
     return {
         "subdomains": discovered_subdomains,
+        "alive_services": [],
         "domain": domain,
         "techniques": techniques,
         "discovered_count": len(discovered_subdomains),
+        "alive_count": 0,
+        "sources": {"fallback": len(discovered_subdomains)},
         "timestamp": datetime.now().isoformat()
     }
 
