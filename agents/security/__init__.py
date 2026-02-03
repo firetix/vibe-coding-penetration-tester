@@ -11,6 +11,7 @@ from agents.security.xss_agent import XSSAgent
 from agents.security.sqli_agent import SQLInjectionAgent
 from agents.security.csrf_agent import CSRFAgent
 from agents.security.auth_agent import AuthenticationAgent
+from agents.security.api_security_agent import APISecurityAgent
 
 # Export the classes for easier importing
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     'XSSAgent',
     'SQLInjectionAgent',
     'CSRFAgent',
-    'AuthenticationAgent'
+    'AuthenticationAgent',
+    'APISecurityAgent'
 ]
