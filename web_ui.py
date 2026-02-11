@@ -16,6 +16,11 @@ except ImportError:
     print("WARNING: flask_cors is not installed. CORS support will be disabled.")
     print("To enable CORS, install flask_cors: pip install flask_cors")
 
+try:
+    import stripe  # type: ignore
+except Exception:
+    stripe = None
+
 from utils.logging_manager import LoggingManager
 from utils.activity_tracker import ActivityTracker
 from utils.report_manager import ReportManager
@@ -74,7 +79,8 @@ activity_tracker = ActivityTracker()
 report_manager = ReportManager(app.config['UPLOAD_FOLDER'])
 session_manager = SessionManager()
 scan_controller = ScanController(session_manager, report_manager)
-billing_store = BillingStore(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'vpt.db'))
+_default_billing_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'vpt.db')
+billing_store = BillingStore(os.environ.get('VPT_BILLING_DB_PATH', _default_billing_db_path))
 
 
 @app.before_request
@@ -535,7 +541,23 @@ def billing_checkout():
 
 @app.route('/api/billing/webhook', methods=['POST'])
 def billing_webhook():
-    payload = request.get_json(silent=True) or {}
+    payload_raw = request.get_data(as_text=False)
+    sig_header = request.headers.get('Stripe-Signature')
+    webhook_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    allow_unverified = os.environ.get('VPT_ALLOW_UNVERIFIED_WEBHOOKS') == '1'
+
+    if allow_unverified:
+        payload = request.get_json(silent=True) or {}
+    else:
+        if not stripe or not webhook_secret:
+            return jsonify({'status': 'error', 'message': 'Webhook verification is not configured'}), 400
+        if not sig_header:
+            return jsonify({'status': 'error', 'message': 'Missing webhook signature'}), 400
+        try:
+            payload = stripe.Webhook.construct_event(payload=payload_raw, sig_header=sig_header, secret=webhook_secret)
+        except Exception:
+            return jsonify({'status': 'error', 'message': 'Invalid webhook signature'}), 400
+
     event_type = payload.get('type')
     data_object = payload.get('data', {}).get('object', {})
     checkout_session_id = data_object.get('id') or payload.get('checkout_session_id')
@@ -546,6 +568,8 @@ def billing_webhook():
     checkout = billing_store.mark_checkout_completed(checkout_session_id)
     if not checkout:
         return jsonify({'status': 'error', 'message': 'Unknown checkout session'}), 404
+    if not checkout.get('just_completed', False):
+        return jsonify({'status': 'success', 'message': 'Webhook already processed'})
 
     account_id = checkout['account_id']
     scan_mode = checkout['scan_mode']

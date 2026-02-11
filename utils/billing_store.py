@@ -218,7 +218,9 @@ class BillingStore:
                 if not row:
                     return None
                 if row["status"] == "completed":
-                    return dict(row)
+                    existing = dict(row)
+                    existing["just_completed"] = False
+                    return existing
                 conn.execute(
                     "UPDATE checkout_sessions SET status = 'completed', updated_at = ? WHERE checkout_session_id = ?",
                     (now, checkout_session_id),
@@ -228,7 +230,11 @@ class BillingStore:
                     "SELECT * FROM checkout_sessions WHERE checkout_session_id = ?",
                     (checkout_session_id,),
                 ).fetchone()
-                return dict(updated) if updated else None
+                if not updated:
+                    return None
+                updated_payload = dict(updated)
+                updated_payload["just_completed"] = True
+                return updated_payload
 
     def record_payment(
         self,

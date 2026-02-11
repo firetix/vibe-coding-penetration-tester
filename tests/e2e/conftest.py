@@ -51,12 +51,17 @@ def _spawn_flask_process(module_expr: str, port: int, extra_env: Dict[str, str])
 @pytest.fixture(scope="session")
 def web_api_server() -> str:
     port = _free_port()
+    web_api_db_path = os.path.join("/tmp", f"vpt_e2e_web_api_{port}.db")
+    if os.path.exists(web_api_db_path):
+        os.remove(web_api_db_path)
     proc = _spawn_flask_process(
         "from web_api import create_app; app=create_app()",
         port,
         {
             "VPT_E2E_MODE": "1",
             "VPT_HOSTED_MODE": "1",
+            "VPT_ALLOW_UNVERIFIED_WEBHOOKS": "1",
+            "VPT_BILLING_DB_PATH": web_api_db_path,
         },
     )
     base_url = f"http://127.0.0.1:{port}"
@@ -74,12 +79,17 @@ def web_api_server() -> str:
 @pytest.fixture(scope="session")
 def legacy_server() -> str:
     port = _free_port()
+    legacy_db_path = os.path.join("/tmp", f"vpt_e2e_legacy_{port}.db")
+    if os.path.exists(legacy_db_path):
+        os.remove(legacy_db_path)
     proc = _spawn_flask_process(
         "import web_ui; app=web_ui.app",
         port,
         {
             "VPT_E2E_MODE": "1",
             "VPT_HOSTED_MODE": "1",
+            "VPT_ALLOW_UNVERIFIED_WEBHOOKS": "1",
+            "VPT_BILLING_DB_PATH": legacy_db_path,
         },
     )
     base_url = f"http://127.0.0.1:{port}"

@@ -66,6 +66,10 @@ def _mock_checkout_url(checkout_session_id: str) -> str:
     return f"{request.host_url.rstrip('/')}/mock-checkout/{checkout_session_id}"
 
 
+def _allow_unverified_webhooks() -> bool:
+    return os.environ.get("VPT_ALLOW_UNVERIFIED_WEBHOOKS") == "1"
+
+
 def register_routes(app, billing_store):
     """Register billing and entitlement routes."""
     bp = Blueprint("billing", __name__, url_prefix="/api")
@@ -146,16 +150,17 @@ def register_routes(app, billing_store):
         sig_header = request.headers.get("Stripe-Signature")
         webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
 
-        event = None
-        if stripe and webhook_secret and sig_header:
+        if _allow_unverified_webhooks():
+            event = request.get_json(silent=True) or {}
+        else:
+            if not stripe or not webhook_secret:
+                return error_response("Webhook verification is not configured", 400)
+            if not sig_header:
+                return error_response("Missing webhook signature", 400)
             try:
                 event = stripe.Webhook.construct_event(payload=payload, sig_header=sig_header, secret=webhook_secret)
             except Exception:
                 return error_response("Invalid webhook signature", 400)
-
-        if event is None:
-            # Test/mock path
-            event = request.get_json(silent=True) or {}
 
         event_type = event.get("type")
         data_object = (event.get("data") or {}).get("object", {})
@@ -167,6 +172,8 @@ def register_routes(app, billing_store):
         checkout = billing_store.mark_checkout_completed(checkout_session_id)
         if not checkout:
             return error_response("Unknown checkout session", 404)
+        if not checkout.get("just_completed", False):
+            return success_response(message="Webhook already processed")
 
         account_id = checkout["account_id"]
         scan_mode = checkout["scan_mode"]
