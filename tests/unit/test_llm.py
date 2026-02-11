@@ -89,9 +89,9 @@ class TestLLMProvider:
         result = provider.chat_completion(messages)
         
         # Assert
-        assert result["content"] == "This is a test response"
-        assert result["finish_reason"] == "stop"
-        assert result["model"] == "gpt-4o"
+        assert result.choices[0].message.content == "This is a test response"
+        assert result.choices[0].finish_reason == "stop"
+        assert result.model == "gpt-4o"
         mock_client.chat.completions.create.assert_called_once()
     
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test_key"})
@@ -110,9 +110,9 @@ class TestLLMProvider:
         result = provider.chat_completion(messages)
         
         # Assert
-        assert result["content"] == "This is a test response"
-        assert result["finish_reason"] == "stop"
-        assert result["model"] == "claude-3-5-sonnet"
+        assert result.choices[0].message.content == "This is a test response"
+        assert result.choices[0].finish_reason == "stop"
+        assert result.model == "claude-3-5-sonnet"
         mock_client.messages.create.assert_called_once()
     
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
@@ -156,16 +156,19 @@ class TestLLMProvider:
         # Act
         result = provider.chat_completion(messages, tools=tools)
         
-        # Verify the format of the tool_calls in the result
-        print(f"Debug - tool_calls in result: {result['tool_calls']}")
-        
+        tool_calls = result.choices[0].message.tool_calls
+        first_call = tool_calls[0]
+        first_id = first_call.get("id") if isinstance(first_call, dict) else first_call.id
+        first_function = first_call.get("function") if isinstance(first_call, dict) else first_call.function
+        first_name = first_function.get("name") if isinstance(first_function, dict) else first_function.name
+
         # Assert
-        assert result["content"] is None
-        assert result["tool_calls"] is not None
-        assert isinstance(result["tool_calls"], list)
-        assert len(result["tool_calls"]) > 0
-        assert result["tool_calls"][0]["id"] == "call_123"
-        assert result["tool_calls"][0]["function"]["name"] == "test_function"
+        assert result.choices[0].message.content is None
+        assert tool_calls is not None
+        assert isinstance(tool_calls, list)
+        assert len(tool_calls) > 0
+        assert first_id == "call_123"
+        assert first_name == "test_function"
         mock_client.chat.completions.create.assert_called_once()
     
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})

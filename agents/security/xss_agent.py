@@ -533,8 +533,6 @@ class XSSAgent(SpecializedSecurityAgent):
         sanitization_bypass_indicators = [
             # Nested tags bypass
             "<<script>",
-            # Unclosed tags
-            "<script",
             # Null byte bypass
             "%00",
             # Encoded XSS
@@ -612,29 +610,31 @@ class XSSAgent(SpecializedSecurityAgent):
     
     def _check_for_api_xss(self, page: Page, tool_call: Any) -> Optional[Dict[str, Any]]:
         """Check for XSS vulnerabilities in API calls (client-side validation bypass)."""
-        # Check if this is a POST request to an API endpoint
-        is_api_post = "/api/" in page.url.lower() and "POST" in str(tool_call).upper()
-        
-        if not is_api_post:
+        if "/api/" not in page.url.lower():
             return None
-            
+
+        # Respect explicit non-POST methods, but allow missing method metadata.
+        request_method = self._extract_request_method_from_tool_call(tool_call)
+        if request_method and request_method != "POST":
+            return None
+
         # Extract the request body
         request_body = self._extract_request_body_from_tool_call(tool_call)
-        
+
         if not request_body:
             return None
-            
+
         # Check for XSS payloads in the request body
         has_xss_payload = False
         matched_pattern = None
-        
+
         # Check basic patterns
         for pattern in self.xss_basic_patterns:
             if pattern.lower() in request_body.lower():
                 has_xss_payload = True
                 matched_pattern = pattern
                 break
-                
+
         # Check evasion techniques
         if not has_xss_payload:
             for pattern in self.evasion_patterns:
@@ -642,11 +642,11 @@ class XSSAgent(SpecializedSecurityAgent):
                     has_xss_payload = True
                     matched_pattern = pattern
                     break
-        
+
         if has_xss_payload:
             # Identify the specific API operation
             api_operation = page.url.split("/api/")[-1] if "/api/" in page.url else "unknown"
-            
+
             return {
                 "issue_type": "Stored XSS via API",
                 "endpoint": page.url,
@@ -655,7 +655,7 @@ class XSSAgent(SpecializedSecurityAgent):
                 "matched_pattern": matched_pattern,
                 "evidence": "XSS payload submitted directly to API, bypassing client-side validation"
             }
-        
+
         return None
     
     def _determine_xss_type(self, url: str) -> str:
@@ -700,9 +700,80 @@ class XSSAgent(SpecializedSecurityAgent):
     
     def _extract_request_body_from_tool_call(self, tool_call: Any) -> str:
         """Extract request body from a tool call."""
-        request_body = ""
-        if hasattr(tool_call, 'function') and hasattr(tool_call.function, 'arguments'):
-            request_body = str(getattr(tool_call.function.arguments, 'body', ""))
-        else:
-            request_body = str(tool_call.get('function', {}).get('arguments', {}).get("body", ""))
-        return request_body
+        def _extract_from_dict(mapping: Dict[str, Any]) -> str:
+            if not isinstance(mapping, dict):
+                return ""
+            if "body" in mapping and mapping.get("body") is not None:
+                return str(mapping.get("body"))
+
+            nested_args = mapping.get("arguments")
+            if isinstance(nested_args, dict) and "body" in nested_args and nested_args.get("body") is not None:
+                return str(nested_args.get("body"))
+
+            for value in mapping.values():
+                if isinstance(value, dict):
+                    nested = _extract_from_dict(value)
+                    if nested:
+                        return nested
+            return ""
+
+        if isinstance(tool_call, dict):
+            direct_body = _extract_from_dict(tool_call)
+            if direct_body:
+                return direct_body
+
+        if hasattr(tool_call, "function") and hasattr(tool_call.function, "arguments"):
+            arguments = tool_call.function.arguments
+            if isinstance(arguments, dict):
+                direct_body = _extract_from_dict(arguments)
+                if direct_body:
+                    return direct_body
+            else:
+                body_attr = getattr(arguments, "body", "")
+                if isinstance(body_attr, str) and body_attr:
+                    return body_attr
+
+        if hasattr(tool_call, "get"):
+            try:
+                function_args = tool_call.get("function", {})
+                if isinstance(function_args, dict):
+                    direct_body = _extract_from_dict(function_args)
+                    if direct_body:
+                        return direct_body
+
+                top_level_args = tool_call.get("arguments", {})
+                if isinstance(top_level_args, dict):
+                    direct_body = _extract_from_dict(top_level_args)
+                    if direct_body:
+                        return direct_body
+            except Exception:
+                return ""
+        return ""
+
+    def _extract_request_method_from_tool_call(self, tool_call: Any) -> str:
+        """Extract HTTP request method from a tool call when available."""
+        allowed_methods = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+
+        def _normalize(value: Any) -> str:
+            if not isinstance(value, str):
+                return ""
+            normalized = value.strip().upper()
+            return normalized if normalized in allowed_methods else ""
+
+        method = ""
+        if isinstance(tool_call, dict):
+            method = _normalize(tool_call.get("method", ""))
+            if method:
+                return method
+
+        if hasattr(tool_call, "function") and hasattr(tool_call.function, "arguments"):
+            method = _normalize(getattr(tool_call.function.arguments, "method", ""))
+            if method:
+                return method
+
+        if hasattr(tool_call, "get"):
+            try:
+                method = _normalize(tool_call.get("method", ""))
+            except Exception:
+                method = ""
+        return method

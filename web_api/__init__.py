@@ -2,7 +2,8 @@
 
 import os
 import logging
-from flask import Flask
+import uuid
+from flask import Flask, g, request
 import time
 
 # Try to import CORS, but don't fail if it's not available
@@ -19,10 +20,12 @@ from utils.activity_tracker import ActivityTracker
 from utils.report_manager import ReportManager
 from utils.session_manager import SessionManager
 from utils.scan_controller import ScanController
+from utils.billing_store import BillingStore
+from utils.entitlements import is_hosted_mode
 
 from web_api.middleware.error_handler import register_error_handlers
 from web_api.routes import (
-    session, scan, activity, report, status, static
+    session, scan, activity, report, status, static, billing
 )
 
 def create_app():
@@ -63,13 +66,39 @@ def create_app():
     report_manager = ReportManager(app.config['UPLOAD_FOLDER'])
     session_manager = SessionManager()
     scan_controller = ScanController(session_manager, report_manager)
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'vpt.db')
+    billing_store = BillingStore(db_path=db_path)
+
+    @app.before_request
+    def attach_account_identity():
+        account_id = request.cookies.get('vpt_account_id')
+        if not account_id:
+            account_id = str(uuid.uuid4())
+            g._set_account_cookie = True
+        else:
+            g._set_account_cookie = False
+        g.account_id = account_id
+        billing_store.ensure_account(account_id)
+
+    @app.after_request
+    def persist_account_identity(response):
+        if getattr(g, '_set_account_cookie', False):
+            response.set_cookie(
+                'vpt_account_id',
+                g.account_id,
+                max_age=60 * 60 * 24 * 365,
+                httponly=True,
+                samesite='Lax'
+            )
+        return response
     
     # Register route handlers
     session.register_routes(app, session_manager, activity_tracker, scan_controller)
-    scan.register_routes(app, session_manager, scan_controller, activity_tracker)
+    scan.register_routes(app, session_manager, scan_controller, activity_tracker, billing_store=billing_store)
     activity.register_routes(app, session_manager, activity_tracker)
     report.register_routes(app, session_manager, report_manager)
-    status.register_routes(app, session_manager, activity_tracker)
+    status.register_routes(app, session_manager, activity_tracker, billing_store=billing_store)
+    billing.register_routes(app, billing_store)
     static.register_routes(app)
     
     # Start session cleanup in the background

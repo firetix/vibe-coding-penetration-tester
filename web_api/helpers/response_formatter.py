@@ -27,7 +27,14 @@ def error_response(message, status_code=400, error_details=None):
         
     return jsonify(response), status_code
 
-def scan_status_response(scan=None, activities=None, session_id=None, is_running=False):
+def scan_status_response(
+    scan=None,
+    activities=None,
+    session_id=None,
+    is_running=False,
+    entitlements=None,
+    paywall_state=None,
+):
     """Format a scan status response based on current scan state."""
     if not scan:
         return jsonify({
@@ -38,7 +45,9 @@ def scan_status_response(scan=None, activities=None, session_id=None, is_running
             'agent_logs': activities or [],
             'action_plan': [],
             'current_action': 'ready',
-            'report_available': False
+            'report_available': False,
+            'entitlements': entitlements,
+            'paywall_state': paywall_state,
         })
         
     # A report is available if a scan is completed and has a report_dir
@@ -56,5 +65,7 @@ def scan_status_response(scan=None, activities=None, session_id=None, is_running
         'current_action': 'scanning' if is_running else 'completed',
         'vulnerabilities': scan.get('vulnerabilities', []),
         'report_dir': scan.get('report_dir') if not is_running else None,
-        'report_available': report_available
+        'report_available': report_available,
+        'entitlements': entitlements,
+        'paywall_state': paywall_state,
     })

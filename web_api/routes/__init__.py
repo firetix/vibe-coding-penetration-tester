@@ -7,4 +7,5 @@ This package contains route handlers organized by functionality:
 - report.py: Report generation and retrieval routes
 - status.py: Status check routes
 - static.py: Static file serving routes
+- billing.py: Billing and entitlement routes
 """

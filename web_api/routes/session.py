@@ -19,8 +19,13 @@ def register_routes(app, session_manager, activity_tracker, scan_controller):
     @handle_errors
     def init_session():
         """Initialize a new session."""
+        data = parse_request()
+        client_id = data.get('client_id')
+        if client_id and session_manager.check_session(client_id):
+            return success_response(data={'session_id': client_id, 'restored': True})
+
         session_id = session_manager.create_session()
-        return success_response(data={'session_id': session_id})
+        return success_response(data={'session_id': session_id, 'restored': False})
 
     @bp.route('/check', methods=['POST'])
     @handle_errors
