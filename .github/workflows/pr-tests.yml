@@ -3,6 +3,15 @@ name: PR Tests
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      preview_url:
+        description: "Optional Vercel preview URL to run deployed smoke tests against"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   test:
@@ -36,3 +45,101 @@ jobs:
       - name: Run frontend smoke E2E
         run: |
           python -m pytest tests/e2e/frontend -m e2e_frontend_smoke -q
+
+  vercel-preview-e2e:
+    name: Vercel Preview E2E
+    needs: test
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.preview_url != '')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERCEL_BYPASS_TOKEN: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        run: |
+          playwright install chromium
+
+      - name: Resolve Vercel preview URL
+        id: resolve_preview
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.preview_url }}" ]; then
+            echo "preview_url=${{ inputs.preview_url }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No pull request number found and no manual preview_url input was provided."
+            exit 1
+          fi
+
+          for attempt in $(seq 1 30); do
+            COMMENTS_JSON="$(gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments --paginate || true)"
+            PREVIEW_URL="$(printf '%s' "$COMMENTS_JSON" | python -c 'import json,re,sys
+raw=sys.stdin.read().strip()
+if not raw:
+    print("")
+    raise SystemExit(0)
+comments=json.loads(raw)
+vercel=[c for c in comments if c.get("user",{}).get("login")=="vercel[bot]"]
+vercel.sort(key=lambda c: c.get("created_at",""))
+body=vercel[-1].get("body","") if vercel else ""
+match=re.search(r"https://[A-Za-z0-9.-]+\\.vercel\\.app", body)
+print(match.group(0) if match else "")')"
+
+            if [ -n "$PREVIEW_URL" ]; then
+              echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+              echo "Resolved preview URL: $PREVIEW_URL"
+              exit 0
+            fi
+
+            echo "Waiting for Vercel preview comment (attempt $attempt/30)..."
+            sleep 20
+          done
+
+          echo "Failed to resolve a Vercel preview URL from PR comments."
+          exit 1
+
+      - name: Wait for preview readiness
+        shell: bash
+        run: |
+          PREVIEW_URL="${{ steps.resolve_preview.outputs.preview_url }}"
+          for attempt in $(seq 1 30); do
+            if [ -n "$VERCEL_BYPASS_TOKEN" ]; then
+              STATUS_CODE="$(curl -s -o /dev/null -w "%{http_code}" \
+                -H "x-vercel-protection-bypass: $VERCEL_BYPASS_TOKEN" \
+                -H "x-vercel-set-bypass-cookie: true" \
+                "$PREVIEW_URL" || true)"
+            else
+              STATUS_CODE="$(curl -s -o /dev/null -w "%{http_code}" "$PREVIEW_URL" || true)"
+            fi
+            if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 500 ]; then
+              echo "Preview is reachable with status $STATUS_CODE"
+              exit 0
+            fi
+            echo "Preview not ready yet (status $STATUS_CODE), attempt $attempt/30..."
+            sleep 10
+          done
+          echo "Preview URL did not become reachable in time."
+          exit 1
+
+      - name: Run deployed Vercel E2E smoke
+        env:
+          VPT_BASE_URL: ${{ steps.resolve_preview.outputs.preview_url }}
+          VERCEL_BYPASS_TOKEN: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          python -m pytest tests/e2e/vercel -m e2e_vercel_preview -q
