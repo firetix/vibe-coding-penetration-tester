@@ -9,11 +9,16 @@ from utils.logger import get_logger
 
 class DataIntegrityAgent(SpecializedSecurityAgent):
     """Agent specializing in Software and Data Integrity Failures testing."""
-    
+
     def __init__(self, llm_provider: LLMProvider, scanner: Scanner):
-        super().__init__("DataIntegrityAgent", "integrity_specialist", 
-                        "data_integrity", llm_provider, scanner)
-    
+        super().__init__(
+            "DataIntegrityAgent",
+            "integrity_specialist",
+            "data_integrity",
+            llm_provider,
+            scanner,
+        )
+
     def _get_system_prompt(self) -> str:
         """Get the system prompt for data integrity testing."""
         return """
@@ -46,28 +51,38 @@ class DataIntegrityAgent(SpecializedSecurityAgent):
         - Unsigned/unvalidated plugins or extensions
         - CI/CD pipeline weaknesses
         """
-    
-    def _check_for_vulnerabilities(self, tool_name: str, tool_result: Dict[str, Any], 
-                                  result: Dict[str, Any], page: Page, tool_call: Any) -> Dict[str, Any]:
+
+    def _check_for_vulnerabilities(
+        self,
+        tool_name: str,
+        tool_result: Dict[str, Any],
+        result: Dict[str, Any],
+        page: Page,
+        tool_call: Any,
+    ) -> Dict[str, Any]:
         """Check for data integrity vulnerabilities in tool results."""
         logger = get_logger()
-        
+
         # Check for integrity issues
         if tool_result.get("integrity_issue_found", False):
             result["vulnerability_found"] = True
             result["vulnerability_type"] = "Software and Data Integrity Failure"
             result["severity"] = tool_result.get("severity", "high")
             result["details"] = tool_result
-            
-            logger.security(f"Found Data Integrity issue: {', '.join(tool_result.get('issues', ['Unknown issue']))}")
-        
+
+            logger.security(
+                f"Found Data Integrity issue: {', '.join(tool_result.get('issues', ['Unknown issue']))}"
+            )
+
         # Check for deserialization issues
         elif tool_result.get("deserialization_issue_found", False):
             result["vulnerability_found"] = True
             result["vulnerability_type"] = "Insecure Deserialization"
             result["severity"] = tool_result.get("severity", "critical")
             result["details"] = tool_result
-            
-            logger.security(f"Found Insecure Deserialization in {tool_result.get('data_format', '')} data")
-            
+
+            logger.security(
+                f"Found Insecure Deserialization in {tool_result.get('data_format', '')} data"
+            )
+
         return result

@@ -1,8 +1,9 @@
 openai>=1.12.0
 anthropic>=0.19.0
+dnspython>=2.4.0
 beautifulsoup4>=4.13.0
 colorama>=0.4.6
-playwright>=1.40.0
+playwright==1.40.0
 PyYAML>=6.0.0
 requests>=2.30.0
 tiktoken>=0.5.0
@@ -12,5 +13,3 @@ gunicorn>=21.2.0
 python-dotenv>=1.0.0
 # Explicitly specify Flask-CORS rather than using 'flask_cors' format
 Flask-CORS>=4.0.0
-# Use Vercel Analytics (@vercel/analytics)
-vercel-analytics>=0.1.1

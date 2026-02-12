@@ -29,7 +29,9 @@ def _wait_for_server(base_url: str, timeout: float = 30.0) -> None:
     raise RuntimeError(f"Server did not start at {base_url}: {last_err}")
 
 
-def _spawn_flask_process(module_expr: str, port: int, extra_env: Dict[str, str]) -> subprocess.Popen:
+def _spawn_flask_process(
+    module_expr: str, port: int, extra_env: Dict[str, str]
+) -> subprocess.Popen:
     env = os.environ.copy()
     env.update(extra_env)
     env["VPT_TEST_PORT"] = str(port)
@@ -114,7 +116,9 @@ def http_client() -> requests.Session:
 
 @pytest.fixture
 def initialized_session(web_api_server, http_client):
-    response = http_client.post(f"{web_api_server}/api/session/init", json={"client_id": "e2e"}, timeout=10)
+    response = http_client.post(
+        f"{web_api_server}/api/session/init", json={"client_id": "e2e"}, timeout=10
+    )
     response.raise_for_status()
     payload = response.json()
     session_id = payload.get("session_id")
@@ -122,15 +126,21 @@ def initialized_session(web_api_server, http_client):
     return session_id
 
 
-def poll_until_complete(base_url: str, client: requests.Session, session_id: str, timeout: float = 10.0):
+def poll_until_complete(
+    base_url: str, client: requests.Session, session_id: str, timeout: float = 10.0
+):
     deadline = time.time() + timeout
     last_payload = None
     while time.time() < deadline:
-        resp = client.get(f"{base_url}/status", params={"session_id": session_id}, timeout=10)
+        resp = client.get(
+            f"{base_url}/status", params={"session_id": session_id}, timeout=10
+        )
         resp.raise_for_status()
         payload = resp.json()
         last_payload = payload
         if payload.get("is_running") is False and payload.get("progress", 0) >= 100:
             return payload
         time.sleep(0.25)
-    raise AssertionError(f"Scan did not complete within timeout. Last payload={last_payload}")
+    raise AssertionError(
+        f"Scan did not complete within timeout. Last payload={last_payload}"
+    )

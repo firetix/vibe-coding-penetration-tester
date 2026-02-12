@@ -76,11 +76,15 @@ class BillingStore:
         if not pro_until:
             return False
         try:
-            return datetime.fromisoformat(pro_until).replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
+            return datetime.fromisoformat(pro_until).replace(
+                tzinfo=timezone.utc
+            ) > datetime.now(timezone.utc)
         except Exception:
             return False
 
-    def _entitlements_from_row(self, account_id: str, row: Optional[sqlite3.Row]) -> Dict[str, Any]:
+    def _entitlements_from_row(
+        self, account_id: str, row: Optional[sqlite3.Row]
+    ) -> Dict[str, Any]:
         if not row:
             return {
                 "account_id": account_id,
@@ -138,7 +142,9 @@ class BillingStore:
             ).fetchone()
         return self._entitlements_from_row(account_id, row)
 
-    def try_consume_entitlement_for_scan(self, account_id: str, scan_mode: str) -> Dict[str, Any]:
+    def try_consume_entitlement_for_scan(
+        self, account_id: str, scan_mode: str
+    ) -> Dict[str, Any]:
         """
         Atomically decide and consume entitlement for a scan start.
         Returns:
@@ -160,7 +166,11 @@ class BillingStore:
                 entitlements = self._entitlements_from_row(account_id, row)
 
                 if entitlements["pro_active"]:
-                    return {"allowed": True, "consume": None, "entitlements": entitlements}
+                    return {
+                        "allowed": True,
+                        "consume": None,
+                        "entitlements": entitlements,
+                    }
 
                 if scan_mode == "quick":
                     updated = conn.execute(
@@ -181,7 +191,9 @@ class BillingStore:
                         return {
                             "allowed": True,
                             "consume": "free",
-                            "entitlements": self._entitlements_from_row(account_id, consumed_row),
+                            "entitlements": self._entitlements_from_row(
+                                account_id, consumed_row
+                            ),
                         }
 
                 updated = conn.execute(
@@ -202,7 +214,9 @@ class BillingStore:
                     return {
                         "allowed": True,
                         "consume": "credit",
-                        "entitlements": self._entitlements_from_row(account_id, consumed_row),
+                        "entitlements": self._entitlements_from_row(
+                            account_id, consumed_row
+                        ),
                     }
 
                 return {"allowed": False, "consume": None, "entitlements": entitlements}
@@ -317,11 +331,22 @@ class BillingStore:
                         checkout_session_id, account_id, scan_mode, status, price_id, amount, currency, created_at, updated_at
                     ) VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?)
                     """,
-                    (checkout_session_id, account_id, scan_mode, price_id, amount, currency, now, now),
+                    (
+                        checkout_session_id,
+                        account_id,
+                        scan_mode,
+                        price_id,
+                        amount,
+                        currency,
+                        now,
+                        now,
+                    ),
                 )
                 conn.commit()
 
-    def get_checkout_session(self, checkout_session_id: str) -> Optional[Dict[str, Any]]:
+    def get_checkout_session(
+        self, checkout_session_id: str
+    ) -> Optional[Dict[str, Any]]:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM checkout_sessions WHERE checkout_session_id = ?",
@@ -331,7 +356,9 @@ class BillingStore:
             return None
         return dict(row)
 
-    def mark_checkout_completed(self, checkout_session_id: str) -> Optional[Dict[str, Any]]:
+    def mark_checkout_completed(
+        self, checkout_session_id: str
+    ) -> Optional[Dict[str, Any]]:
         now = time.time()
         with self._lock:
             with self._connect() as conn:
@@ -376,7 +403,15 @@ class BillingStore:
                     INSERT INTO payments(payment_intent_id, checkout_session_id, account_id, status, amount, currency, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (payment_intent_id, checkout_session_id, account_id, status, amount, currency, time.time()),
+                    (
+                        payment_intent_id,
+                        checkout_session_id,
+                        account_id,
+                        status,
+                        amount,
+                        currency,
+                        time.time(),
+                    ),
                 )
                 conn.commit()
 
@@ -389,7 +424,9 @@ class BillingStore:
                 )
                 conn.commit()
 
-    def count_recent_events_by_account(self, account_id: str, event_type: str, window_seconds: int) -> int:
+    def count_recent_events_by_account(
+        self, account_id: str, event_type: str, window_seconds: int
+    ) -> int:
         since = time.time() - window_seconds
         with self._connect() as conn:
             row = conn.execute(
@@ -402,7 +439,9 @@ class BillingStore:
             ).fetchone()
         return int(row["c"]) if row else 0
 
-    def count_recent_events_by_ip(self, ip: str, event_type: str, window_seconds: int) -> int:
+    def count_recent_events_by_ip(
+        self, ip: str, event_type: str, window_seconds: int
+    ) -> int:
         since = time.time() - window_seconds
         with self._connect() as conn:
             row = conn.execute(

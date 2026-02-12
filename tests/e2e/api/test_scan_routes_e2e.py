@@ -39,17 +39,25 @@ def test_scan_start_requires_url(web_api_server, http_client, initialized_sessio
 
 
 @pytest.mark.e2e_api_critical
-def test_scan_start_requires_authorization_in_hosted_mode(web_api_server, http_client, initialized_session):
+def test_scan_start_requires_authorization_in_hosted_mode(
+    web_api_server, http_client, initialized_session
+):
     response = http_client.post(
         f"{web_api_server}/api/scan/start",
-        json={"session_id": initialized_session, "url": "https://example.com", "scan_mode": "quick"},
+        json={
+            "session_id": initialized_session,
+            "url": "https://example.com",
+            "scan_mode": "quick",
+        },
         timeout=10,
     )
     assert response.status_code == 400
 
 
 @pytest.mark.e2e_api_critical
-def test_scan_start_success_then_status(web_api_server, http_client, initialized_session):
+def test_scan_start_success_then_status(
+    web_api_server, http_client, initialized_session
+):
     start = http_client.post(
         f"{web_api_server}/api/scan/start",
         json={
@@ -79,7 +87,11 @@ def test_scan_start_success_then_status(web_api_server, http_client, initialized
 def test_scan_paywall_after_first_free_scan(web_api_server):
     client = __import__("requests").Session()
     try:
-        init = client.post(f"{web_api_server}/api/session/init", json={"client_id": "paywall"}, timeout=10)
+        init = client.post(
+            f"{web_api_server}/api/session/init",
+            json={"client_id": "paywall"},
+            timeout=10,
+        )
         session_id = init.json().get("session_id")
 
         first = client.post(
@@ -116,7 +128,11 @@ def test_scan_paywall_after_first_free_scan(web_api_server):
 def test_paywalled_attempts_return_402_not_rate_limit(web_api_server):
     client = __import__("requests").Session()
     try:
-        init = client.post(f"{web_api_server}/api/session/init", json={"client_id": "paywall-402-loop"}, timeout=10)
+        init = client.post(
+            f"{web_api_server}/api/session/init",
+            json={"client_id": "paywall-402-loop"},
+            timeout=10,
+        )
         session_id = init.json().get("session_id")
 
         first = client.post(
@@ -183,7 +199,11 @@ def test_hosted_checkout_url_uses_billing_route_when_mock_disabled():
     try:
         _wait_for_server(base_url)
         client = requests.Session()
-        session_id = client.post(f"{base_url}/api/session/init", json={"client_id": "mock-disabled"}, timeout=10).json()["session_id"]
+        session_id = client.post(
+            f"{base_url}/api/session/init",
+            json={"client_id": "mock-disabled"},
+            timeout=10,
+        ).json()["session_id"]
 
         first = client.post(
             f"{base_url}/api/scan/start",
@@ -212,7 +232,9 @@ def test_hosted_checkout_url_uses_billing_route_when_mock_disabled():
         assert "/billing/checkout" in body.get("checkout_url", "")
         assert "/mock-checkout/" not in body.get("checkout_url", "")
 
-        checkout_redirect = client.get(body["checkout_url"], allow_redirects=False, timeout=10)
+        checkout_redirect = client.get(
+            body["checkout_url"], allow_redirects=False, timeout=10
+        )
         assert checkout_redirect.status_code == 503
 
         mock_direct = client.get(f"{base_url}/mock-checkout/cs_test", timeout=10)

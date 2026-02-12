@@ -1,6 +1,5 @@
 import unittest
-from unittest.mock import Mock, patch, MagicMock
-import pytest
+from unittest.mock import Mock, MagicMock
 
 from agents.security.xss_agent import XSSAgent
 from core.llm import LLMProvider
@@ -12,17 +11,17 @@ class TestXSSAgent(unittest.TestCase):
         # Create mocks for dependencies
         self.llm_provider_mock = Mock(spec=LLMProvider)
         self.scanner_mock = Mock(spec=Scanner)
-        
+
         # Create the XSS agent
         self.xss_agent = XSSAgent(self.llm_provider_mock, self.scanner_mock)
-        
+
         # Create a mock Page object to simulate Playwright
         self.page_mock = MagicMock()
-        
+
         # Set up the page mock to return HTML content
         self.page_mock.content.return_value = "<html><body>Test content</body></html>"
         self.page_mock.url = "http://example.com"
-        
+
         # Mock evaluate method
         self.page_mock.evaluate.return_value = False
 
@@ -31,7 +30,7 @@ class TestXSSAgent(unittest.TestCase):
         self.assertEqual(self.xss_agent.name, "XSSAgent")
         self.assertEqual(self.xss_agent.role, "xss_specialist")
         self.assertEqual(self.xss_agent.security_type, "xss")
-        
+
         # Verify patterns are initialized
         self.assertIsNotNone(self.xss_agent.xss_basic_patterns)
         self.assertIsNotNone(self.xss_agent.context_patterns)
@@ -54,7 +53,7 @@ class TestXSSAgent(unittest.TestCase):
     def test_check_url_for_xss_with_xss_payload(self):
         """Test URL XSS check with suspicious XSS payload."""
         url = "http://example.com/?q=<script>alert(1)</script>"
-        
+
         # Mock that the payload is reflected in the HTML
         self.page_mock.content.return_value = """
         <html>
@@ -63,10 +62,10 @@ class TestXSSAgent(unittest.TestCase):
         </body>
         </html>
         """
-        
+
         # Execute the test
         result = self.xss_agent._check_url_for_xss(url, self.page_mock)
-        
+
         # Verify results
         self.assertIsNotNone(result)
         self.assertEqual(result["issue_type"], "Reflected XSS")
@@ -77,7 +76,7 @@ class TestXSSAgent(unittest.TestCase):
     def test_check_url_for_xss_with_encoded_payload(self):
         """Test URL XSS check with URL-encoded XSS payload."""
         url = "http://example.com/?q=%3Cscript%3Ealert(1)%3C/script%3E"
-        
+
         # Mock that the decoded payload is reflected in the HTML
         self.page_mock.content.return_value = """
         <html>
@@ -86,10 +85,10 @@ class TestXSSAgent(unittest.TestCase):
         </body>
         </html>
         """
-        
+
         # Execute the test
         result = self.xss_agent._check_url_for_xss(url, self.page_mock)
-        
+
         # Verify results
         self.assertIsNotNone(result)
         self.assertEqual(result["issue_type"], "Reflected XSS")
@@ -106,13 +105,13 @@ class TestXSSAgent(unittest.TestCase):
         """Test DOM XSS check with source and sink."""
         js_code = "document.write(location.hash.substring(1))"
         js_result = "XSS executed"
-        
+
         # Mock that the evaluation is successful
         self.page_mock.evaluate.return_value = True
-        
+
         # Execute the test
         result = self.xss_agent._check_for_dom_xss(js_code, js_result, self.page_mock)
-        
+
         # Verify results
         self.assertIsNotNone(result)
         self.assertEqual(result["source"], "location")
@@ -121,7 +120,7 @@ class TestXSSAgent(unittest.TestCase):
     def test_check_for_reflected_content_with_direct_reflection(self):
         """Test reflected content check with direct reflection."""
         input_value = "<script>alert(1)</script>"
-        
+
         # Mock the page content with direct reflection
         self.page_mock.content.return_value = """
         <html>
@@ -130,13 +129,15 @@ class TestXSSAgent(unittest.TestCase):
         </body>
         </html>
         """
-        
+
         # Mock the context detection
         self.page_mock.evaluate.return_value = "HTML content in <div> element"
-        
+
         # Execute the test
-        result = self.xss_agent._check_for_reflected_content(self.page_mock, input_value)
-        
+        result = self.xss_agent._check_for_reflected_content(
+            self.page_mock, input_value
+        )
+
         # Verify results
         self.assertIsNotNone(result)
         self.assertEqual(result["context"], "HTML content in <div> element")
@@ -145,7 +146,7 @@ class TestXSSAgent(unittest.TestCase):
     def test_check_for_reflected_content_with_encoded_reflection(self):
         """Test reflected content check with encoded reflection."""
         input_value = "<script>alert(1)</script>"
-        
+
         # Mock the page content with encoded reflection
         self.page_mock.content.return_value = """
         <html>
@@ -154,22 +155,26 @@ class TestXSSAgent(unittest.TestCase):
         </body>
         </html>
         """
-        
+
         # Execute the test
-        result = self.xss_agent._check_for_reflected_content(self.page_mock, input_value)
-        
+        result = self.xss_agent._check_for_reflected_content(
+            self.page_mock, input_value
+        )
+
         # Verify results
         self.assertIsNotNone(result)
-        self.assertEqual(result["evidence"], "XSS payload reflected in page content (encoded)")
+        self.assertEqual(
+            result["evidence"], "XSS payload reflected in page content (encoded)"
+        )
         self.assertEqual(result["context"], "Encoded content")
 
     def test_check_for_sanitization_bypass_with_nested_tags(self):
         """Test sanitization bypass check with nested tags."""
         input_value = "<<script>alert(1)</script>"
-        
+
         # Mock the page URL to simulate a feedback form
         self.page_mock.url = "http://example.com/feedback"
-        
+
         # Mock the page content with successful bypass
         self.page_mock.content.return_value = """
         <html>
@@ -179,10 +184,12 @@ class TestXSSAgent(unittest.TestCase):
         </body>
         </html>
         """
-        
+
         # Execute the test
-        result = self.xss_agent._check_for_sanitization_bypass(self.page_mock, input_value)
-        
+        result = self.xss_agent._check_for_sanitization_bypass(
+            self.page_mock, input_value
+        )
+
         # Verify results
         self.assertIsNotNone(result)
         self.assertIn("Nested Tags", result["type"])
@@ -192,14 +199,18 @@ class TestXSSAgent(unittest.TestCase):
         """Test API XSS check with XSS payload."""
         # Mock API endpoint URL
         self.page_mock.url = "http://example.com/api/comments"
-        
+
         # Create a tool call mock
         tool_call_mock = Mock()
-        tool_call_mock.get = MagicMock(return_value={"arguments": {"body": '{"comment": "<script>alert(1)</script>"}'}})
-        
+        tool_call_mock.get = MagicMock(
+            return_value={
+                "arguments": {"body": '{"comment": "<script>alert(1)</script>"}'}
+            }
+        )
+
         # Execute the test
         result = self.xss_agent._check_for_api_xss(self.page_mock, tool_call_mock)
-        
+
         # Verify results
         self.assertIsNotNone(result)
         self.assertEqual(result["issue_type"], "Stored XSS via API")

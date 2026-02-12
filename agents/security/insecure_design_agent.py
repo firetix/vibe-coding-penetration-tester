@@ -9,11 +9,16 @@ from utils.logger import get_logger
 
 class InsecureDesignAgent(SpecializedSecurityAgent):
     """Agent specializing in Insecure Design testing."""
-    
+
     def __init__(self, llm_provider: LLMProvider, scanner: Scanner):
-        super().__init__("InsecureDesignAgent", "design_specialist", 
-                        "insecure_design", llm_provider, scanner)
-    
+        super().__init__(
+            "InsecureDesignAgent",
+            "design_specialist",
+            "insecure_design",
+            llm_provider,
+            scanner,
+        )
+
     def _get_system_prompt(self) -> str:
         """Get the system prompt for insecure design testing."""
         return """
@@ -48,28 +53,38 @@ class InsecureDesignAgent(SpecializedSecurityAgent):
         - Race conditions in multi-step processes
         - Business logic that can be abused
         """
-    
-    def _check_for_vulnerabilities(self, tool_name: str, tool_result: Dict[str, Any], 
-                                  result: Dict[str, Any], page: Page, tool_call: Any) -> Dict[str, Any]:
+
+    def _check_for_vulnerabilities(
+        self,
+        tool_name: str,
+        tool_result: Dict[str, Any],
+        result: Dict[str, Any],
+        page: Page,
+        tool_call: Any,
+    ) -> Dict[str, Any]:
         """Check for insecure design vulnerabilities in tool results."""
         logger = get_logger()
-        
+
         # Check for design flaws reported by tools
         if tool_result.get("design_issue_found", False):
             result["vulnerability_found"] = True
             result["vulnerability_type"] = "Insecure Design"
             result["severity"] = tool_result.get("severity", "medium")
             result["details"] = tool_result
-            
-            logger.security(f"Found Insecure Design issue: {', '.join(tool_result.get('issues', ['Unknown issue']))}")
-        
+
+            logger.security(
+                f"Found Insecure Design issue: {', '.join(tool_result.get('issues', ['Unknown issue']))}"
+            )
+
         # Check for business logic flaws
         elif tool_result.get("logic_issue_found", False):
             result["vulnerability_found"] = True
             result["vulnerability_type"] = "Business Logic Flaw"
             result["severity"] = tool_result.get("severity", "high")
             result["details"] = tool_result
-            
-            logger.security(f"Found Business Logic Flaw in workflow: {tool_result.get('vulnerable_workflow', '')}")
-        
+
+            logger.security(
+                f"Found Business Logic Flaw in workflow: {tool_result.get('vulnerable_workflow', '')}"
+            )
+
         return result

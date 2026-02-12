@@ -9,11 +9,16 @@ from utils.logger import get_logger
 
 class AccessControlAgent(SpecializedSecurityAgent):
     """Agent specializing in Broken Access Control testing."""
-    
+
     def __init__(self, llm_provider: LLMProvider, scanner: Scanner):
-        super().__init__("AccessControlAgent", "access_control_specialist", 
-                        "access_control", llm_provider, scanner)
-    
+        super().__init__(
+            "AccessControlAgent",
+            "access_control_specialist",
+            "access_control",
+            llm_provider,
+            scanner,
+        )
+
     def _get_system_prompt(self) -> str:
         """Get the system prompt for access control testing."""
         return """
@@ -48,32 +53,46 @@ class AccessControlAgent(SpecializedSecurityAgent):
         - Manipulating cookies or session data
         - Browser-based attacks (XSS, CSRF) that lead to access control bypasses
         """
-    
-    def _check_for_vulnerabilities(self, tool_name: str, tool_result: Dict[str, Any], 
-                                  result: Dict[str, Any], page: Page, tool_call: Any) -> Dict[str, Any]:
+
+    def _check_for_vulnerabilities(
+        self,
+        tool_name: str,
+        tool_result: Dict[str, Any],
+        result: Dict[str, Any],
+        page: Page,
+        tool_call: Any,
+    ) -> Dict[str, Any]:
         """Check for access control vulnerabilities in tool results."""
         logger = get_logger()
-        
+
         # Check for direct access control issues
         if tool_result.get("access_control_issue_found", False):
             result["vulnerability_found"] = True
             result["vulnerability_type"] = "Broken Access Control"
             result["severity"] = tool_result.get("severity", "high")
             result["details"] = tool_result
-            
-            logger.security(f"Found Broken Access Control vulnerability at {tool_result.get('resource', '')}")
-        
+
+            logger.security(
+                f"Found Broken Access Control vulnerability at {tool_result.get('resource', '')}"
+            )
+
         # Check for privilege escalation
         elif tool_result.get("escalation_found", False):
             result["vulnerability_found"] = True
             result["vulnerability_type"] = "Privilege Escalation"
             result["severity"] = tool_result.get("severity", "critical")
             result["details"] = tool_result
-            
-            logger.security(f"Found Privilege Escalation vulnerability via {tool_result.get('vulnerable_path', '')}")
-        
+
+            logger.security(
+                f"Found Privilege Escalation vulnerability via {tool_result.get('vulnerable_path', '')}"
+            )
+
         # Check if browser interaction revealed access control issues
-        elif tool_name in ["goto", "click"] and "admin" in str(tool_result).lower() and "success" in str(tool_result).lower():
+        elif (
+            tool_name in ["goto", "click"]
+            and "admin" in str(tool_result).lower()
+            and "success" in str(tool_result).lower()
+        ):
             # This could be a successful access to admin functionality
             result["vulnerability_found"] = True
             result["vulnerability_type"] = "Broken Access Control"
@@ -82,9 +101,11 @@ class AccessControlAgent(SpecializedSecurityAgent):
                 "issue_type": "Unauthorized Access to Admin Functionality",
                 "url": page.url,
                 "evidence": f"Successfully accessed admin functionality via {tool_name}",
-                "affected_resource": str(tool_result)
+                "affected_resource": str(tool_result),
             }
-            
-            logger.security(f"Found potential unauthorized access to admin functionality")
-        
+
+            logger.security(
+                "Found potential unauthorized access to admin functionality"
+            )
+
         return result
