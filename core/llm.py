@@ -53,8 +53,11 @@ class LLMProvider:
         if self.provider == "openai":
             self.client = OpenAI(api_key=self.openai_api_key)
             normalized_openai_model = self._normalize_model_name(self.model)
-            if self._is_supported_openai_model(normalized_openai_model):
-                self.model = normalized_openai_model
+            canonical_openai_model = self._canonicalize_openai_model_name(
+                normalized_openai_model
+            )
+            if self._is_supported_openai_model(canonical_openai_model):
+                self.model = canonical_openai_model
             else:
                 self.model = "gpt-4o"  # Default fallback for unknown OpenAI model names
         elif self.provider == "anthropic":
@@ -199,8 +202,21 @@ class LLMProvider:
         return model_name.strip().lower()
 
     @classmethod
+    def _canonicalize_openai_model_name(cls, model_name: str) -> str:
+        """
+        Normalize OpenAI model aliases to canonical IDs.
+        Example: codex-5.3 -> gpt-5.3-codex
+        """
+        normalized = cls._normalize_model_name(model_name)
+        if normalized.startswith("codex-"):
+            version = normalized[len("codex-") :]
+            if re.fullmatch(r"\d+(?:\.\d+)*", version):
+                return f"gpt-{version}-codex"
+        return normalized
+
+    @classmethod
     def _is_supported_openai_model(cls, model_name: str) -> bool:
-        """Accept OpenAI GPT, ChatGPT, and O-series model naming patterns."""
+        """Accept canonical OpenAI GPT, ChatGPT, and O-series model naming patterns."""
         normalized = cls._normalize_model_name(model_name)
         if not normalized:
             return False

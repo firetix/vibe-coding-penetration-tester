@@ -53,7 +53,7 @@ class TestLLMProvider:
         mock_openai.return_value = mock_client
 
         # Act
-        provider = LLMProvider(provider="openai", model=" GPT-5.3-CODEX ")
+        provider = LLMProvider(provider="openai", model=" CoDeX-5.3 ")
 
         # Assert
         assert provider.provider == "openai"
@@ -95,13 +95,13 @@ class TestLLMProvider:
 
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
     @patch("core.llm.OpenAI")
-    def test_openai_legacy_codex_alias_falls_back_to_default(self, mock_openai):
+    def test_openai_invalid_codex_alias_falls_back_to_default(self, mock_openai):
         # Arrange
         mock_client = MagicMock()
         mock_openai.return_value = mock_client
 
         # Act
-        provider = LLMProvider(provider="openai", model="codex-5.3")
+        provider = LLMProvider(provider="openai", model="codex-latest")
 
         # Assert
         assert provider.provider == "openai"
