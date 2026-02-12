@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import importlib.util
 import os
 import sys
 from datetime import datetime
@@ -15,6 +16,10 @@ load_dotenv()
 
 
 def parse_arguments():
+    available_providers = ["openai", "anthropic", "ollama"]
+    if importlib.util.find_spec("google.generativeai") is not None:
+        available_providers.append("gemini")
+
     parser = argparse.ArgumentParser(
         description="VibePenTester - Advanced AI Security Testing Agent"
     )
@@ -29,8 +34,11 @@ def parse_arguments():
         "--provider",
         type=str,
         default="openai",
-        choices=["openai", "anthropic", "ollama", "gemini"],
-        help="LLM provider",
+        choices=available_providers,
+        help=(
+            "LLM provider. Available providers depend on installed SDKs "
+            "(gemini appears when google-generativeai is installed)."
+        ),
     )
     parser.add_argument(
         "--scope",
