@@ -5,7 +5,7 @@ import json
 import time
 import uuid
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, session
+from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, redirect, session
 
 # Try to import CORS, but don't fail if it's not available
 try:
@@ -30,6 +30,7 @@ from utils.billing_store import BillingStore
 from utils.entitlements import (
     check_scan_rate_limits,
     consume_entitlement,
+    extract_client_ip,
     evaluate_entitlement_for_scan,
     is_hosted_mode,
     is_valid_target_for_hosted,
@@ -113,6 +114,14 @@ def persist_account_identity(response):
 # Session maintenance - cleanup old sessions periodically
 def cleanup_sessions():
     session_manager.cleanup_old_sessions(max_age_seconds=3600)  # 1 hour
+
+
+def _coerce_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+    return False
 
 # Helper decorator for auto-creating sessions
 def auto_create_session(f):
@@ -307,6 +316,9 @@ def start_scan():
         config = data.get('config', {}) or {}
         scan_mode = parse_scan_mode(data.get('scan_mode') or config.get('scan_mode'))
         config['scan_mode'] = scan_mode
+        pending_entitlement_consume = None
+        pending_usage_event_ip = None
+        account_id = None
         
         if not session_id:
             session_id = session_manager.create_session()
@@ -317,7 +329,7 @@ def start_scan():
 
         if is_hosted_mode():
             account_id = getattr(request, '_vpt_account_id', None)
-            authorization_confirmed = data.get('authorization_confirmed')
+            authorization_confirmed = _coerce_bool(data.get('authorization_confirmed'))
             if not authorization_confirmed:
                 return jsonify({'status': 'error', 'message': 'Authorization confirmation is required for hosted scans'}), 400
 
@@ -325,12 +337,14 @@ def start_scan():
             if not target_ok:
                 return jsonify({'status': 'error', 'message': target_reason or 'Target blocked in hosted mode'}), 400
 
-            ip_address = request.headers.get('X-Forwarded-For', request.remote_addr or '')
+            ip_address = extract_client_ip(
+                request.remote_addr,
+                request.headers.get('X-Forwarded-For'),
+            )
             rate_ok, rate_reason = check_scan_rate_limits(billing_store, account_id, ip_address)
             if not rate_ok:
                 return jsonify({'status': 'error', 'message': rate_reason or 'Rate limit exceeded'}), 429
 
-            billing_store.record_usage_event(account_id, ip_address, 'scan_start')
             ent_check = evaluate_entitlement_for_scan(billing_store, account_id, scan_mode)
             if not ent_check['allowed']:
                 checkout_session_id = f"cs_{uuid.uuid4().hex}"
@@ -342,13 +356,24 @@ def start_scan():
                 checkout_url = f"{request.host_url.rstrip('/')}/mock-checkout/{checkout_session_id}"
                 return jsonify(payment_required_payload(ent_check['entitlements'], checkout_url)), 402
 
-            consume_entitlement(billing_store, account_id, ent_check['consume'])
+            pending_entitlement_consume = ent_check['consume']
+            pending_usage_event_ip = ip_address
         
         # Start the scan
         scan_id = scan_controller.start_scan(
             session_id, url, config, 
             activity_callback=activity_tracker.add_activity
         )
+        if is_hosted_mode() and pending_entitlement_consume and account_id:
+            try:
+                consume_entitlement(billing_store, account_id, pending_entitlement_consume)
+            except Exception:
+                logger.exception("Failed to consume entitlement after scan start for account %s", account_id)
+        if is_hosted_mode() and pending_usage_event_ip and account_id:
+            try:
+                billing_store.record_usage_event(account_id, pending_usage_event_ip, 'scan_start')
+            except Exception:
+                logger.exception("Failed to record scan usage event for account %s", account_id)
         
         return jsonify({
             'status': 'success',
@@ -542,6 +567,34 @@ def billing_checkout():
         'scan_mode': scan_mode
     })
 
+
+def _complete_checkout_session(checkout_session_id, payment_intent_id=None):
+    checkout = billing_store.mark_checkout_completed(checkout_session_id)
+    if not checkout:
+        return None, jsonify({'status': 'error', 'message': 'Unknown checkout session'}), 404
+    if not checkout.get('just_completed', False):
+        return checkout, None, 200
+
+    account_id = checkout['account_id']
+    scan_mode = checkout['scan_mode']
+    if scan_mode == 'solutions':
+        billing_store.add_credits(account_id, 10)
+    elif scan_mode == 'deep':
+        billing_store.add_credits(account_id, 5)
+    else:
+        billing_store.activate_pro(account_id, 30)
+
+    billing_store.record_payment(
+        account_id=account_id,
+        checkout_session_id=checkout_session_id,
+        status='completed',
+        amount=checkout.get('amount'),
+        currency=checkout.get('currency') or 'usd',
+        payment_intent_id=payment_intent_id,
+    )
+    return checkout, None, 200
+
+
 @app.route('/api/billing/webhook', methods=['POST'])
 def billing_webhook():
     payload_raw = request.get_data(as_text=False)
@@ -568,29 +621,25 @@ def billing_webhook():
     if event_type != 'checkout.session.completed' or not checkout_session_id:
         return jsonify({'status': 'success', 'message': 'Webhook ignored'})
 
-    checkout = billing_store.mark_checkout_completed(checkout_session_id)
-    if not checkout:
-        return jsonify({'status': 'error', 'message': 'Unknown checkout session'}), 404
+    checkout, error_response, error_status = _complete_checkout_session(
+        checkout_session_id,
+        payment_intent_id=data_object.get('payment_intent'),
+    )
+    if error_response is not None:
+        return error_response, error_status
     if not checkout.get('just_completed', False):
         return jsonify({'status': 'success', 'message': 'Webhook already processed'})
-
-    account_id = checkout['account_id']
-    scan_mode = checkout['scan_mode']
-    if scan_mode == 'solutions':
-        billing_store.add_credits(account_id, 10)
-    elif scan_mode == 'deep':
-        billing_store.add_credits(account_id, 5)
-    else:
-        billing_store.activate_pro(account_id, 30)
-
-    billing_store.record_payment(
-        account_id=account_id,
-        checkout_session_id=checkout_session_id,
-        status='completed',
-        amount=checkout.get('amount'),
-        currency=checkout.get('currency') or 'usd',
-    )
     return jsonify({'status': 'success', 'message': 'Webhook processed'})
+
+
+@app.route('/mock-checkout/<checkout_session_id>', methods=['GET'])
+def mock_checkout(checkout_session_id):
+    checkout, error_response, error_status = _complete_checkout_session(checkout_session_id)
+    if error_response is not None:
+        return error_response, error_status
+
+    status_value = 'success' if checkout.get('just_completed', False) else 'already_complete'
+    return redirect(f"/?checkout={status_value}")
 
 @app.route('/api/report/<report_id>', methods=['GET'])
 def get_report(report_id):
@@ -910,6 +959,9 @@ def start_scan_compat():
         session_id = data.get('session_id')
         url = data.get('url')
         scan_mode = parse_scan_mode(data.get('scan_mode'))
+        pending_entitlement_consume = None
+        pending_usage_event_ip = None
+        account_id = None
         
         logger.info(f"Extracted session_id: {session_id}, url: {url}")
         
@@ -970,9 +1022,7 @@ def start_scan_compat():
         # Hosted SaaS controls: authorization, target policy, rate limiting, and paywall.
         if is_hosted_mode():
             account_id = getattr(request, '_vpt_account_id', None)
-            authorization_confirmed = data.get('authorization_confirmed')
-            if isinstance(authorization_confirmed, str):
-                authorization_confirmed = authorization_confirmed.lower() in {'1', 'true', 'yes', 'on'}
+            authorization_confirmed = _coerce_bool(data.get('authorization_confirmed'))
             if not authorization_confirmed:
                 return jsonify({'status': 'error', 'message': 'Authorization confirmation is required for hosted scans'}), 400
 
@@ -980,12 +1030,14 @@ def start_scan_compat():
             if not target_ok:
                 return jsonify({'status': 'error', 'message': target_reason or 'Target blocked in hosted mode'}), 400
 
-            ip_address = request.headers.get('X-Forwarded-For', request.remote_addr or '')
+            ip_address = extract_client_ip(
+                request.remote_addr,
+                request.headers.get('X-Forwarded-For'),
+            )
             rate_ok, rate_reason = check_scan_rate_limits(billing_store, account_id, ip_address)
             if not rate_ok:
                 return jsonify({'status': 'error', 'message': rate_reason or 'Rate limit exceeded'}), 429
 
-            billing_store.record_usage_event(account_id, ip_address, 'scan_start')
             ent_check = evaluate_entitlement_for_scan(billing_store, account_id, scan_mode)
             if not ent_check['allowed']:
                 checkout_session_id = f"cs_{uuid.uuid4().hex}"
@@ -997,7 +1049,8 @@ def start_scan_compat():
                 checkout_url = f"{request.host_url.rstrip('/')}/mock-checkout/{checkout_session_id}"
                 return jsonify(payment_required_payload(ent_check['entitlements'], checkout_url)), 402
 
-            consume_entitlement(billing_store, account_id, ent_check['consume'])
+            pending_entitlement_consume = ent_check['consume']
+            pending_usage_event_ip = ip_address
         
         # Get all active sessions after validation
         active_sessions_after = session_manager.get_all_sessions()
@@ -1012,6 +1065,16 @@ def start_scan_compat():
             session_id, url, config, 
             activity_callback=activity_tracker.add_activity
         )
+        if is_hosted_mode() and pending_entitlement_consume and account_id:
+            try:
+                consume_entitlement(billing_store, account_id, pending_entitlement_consume)
+            except Exception:
+                logger.exception("Failed to consume entitlement after scan start for account %s", account_id)
+        if is_hosted_mode() and pending_usage_event_ip and account_id:
+            try:
+                billing_store.record_usage_event(account_id, pending_usage_event_ip, 'scan_start')
+            except Exception:
+                logger.exception("Failed to record scan usage event for account %s", account_id)
         
         logger.info(f"Scan started successfully with scan_id: {scan_id}")
         return jsonify({

@@ -1,6 +1,7 @@
 import ipaddress
 import os
 import uuid
+import socket
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
@@ -27,6 +28,87 @@ def generate_account_id() -> str:
     return str(uuid.uuid4())
 
 
+def _is_blocked_ip(ip) -> bool:
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _parse_ip_candidate(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    candidate = value.strip()
+    if not candidate or candidate.lower() == "unknown":
+        return None
+
+    if candidate.startswith("[") and "]" in candidate:
+        candidate = candidate[1:candidate.index("]")]
+    if "%" in candidate:
+        candidate = candidate.split("%", 1)[0]
+
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        # Handle IPv4 addresses that may include port suffixes.
+        if ":" in candidate and candidate.count(":") == 1:
+            host, _, _port = candidate.partition(":")
+            try:
+                return str(ipaddress.ip_address(host))
+            except ValueError:
+                return None
+        return None
+
+
+def should_trust_proxy_headers() -> bool:
+    return os.environ.get("VPT_TRUST_PROXY_HEADERS", "0") == "1"
+
+
+def extract_client_ip(
+    remote_addr: Optional[str],
+    x_forwarded_for: Optional[str],
+    trust_proxy_headers: Optional[bool] = None,
+) -> str:
+    trust_proxy = should_trust_proxy_headers() if trust_proxy_headers is None else trust_proxy_headers
+
+    if trust_proxy and x_forwarded_for:
+        first_hop = x_forwarded_for.split(",", 1)[0].strip()
+        parsed = _parse_ip_candidate(first_hop)
+        if parsed:
+            return parsed
+
+    parsed_remote = _parse_ip_candidate(remote_addr)
+    return parsed_remote or ""
+
+
+def _hostname_resolves_to_blocked_ip(hostname: str) -> Tuple[bool, Optional[str]]:
+    try:
+        addr_info = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        # If DNS resolution is unavailable, do not hard-fail valid public hostnames.
+        return False, None
+    except Exception:
+        return False, None
+
+    resolved_ips = set()
+    for info in addr_info:
+        address = info[4][0]
+        try:
+            resolved_ips.add(ipaddress.ip_address(address))
+        except ValueError:
+            continue
+
+    for ip in resolved_ips:
+        if _is_blocked_ip(ip):
+            return True, "Target resolves to a private/internal IP address in hosted mode"
+
+    return False, None
+
+
 def is_valid_target_for_hosted(url: str) -> Tuple[bool, Optional[str]]:
     """Block localhost/private/internal targets in hosted mode."""
     try:
@@ -40,11 +122,12 @@ def is_valid_target_for_hosted(url: str) -> Tuple[bool, Optional[str]]:
 
         try:
             ip = ipaddress.ip_address(hostname)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            if _is_blocked_ip(ip):
                 return False, "Private/internal IP targets are blocked in hosted mode"
         except ValueError:
-            # Hostname is not an IP, allow domain names.
-            pass
+            blocked, reason = _hostname_resolves_to_blocked_ip(hostname)
+            if blocked:
+                return False, reason
 
         return True, None
     except Exception:

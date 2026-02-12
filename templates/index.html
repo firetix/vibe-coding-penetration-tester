@@ -511,6 +511,11 @@
                         console.log(data.restored ? 
                             "Restored server session ID:" : 
                             "Received new server session ID:", sessionId);
+                    } else if (!sessionId) {
+                        // Prevent null session loops when API responds without session_id.
+                        sessionId = generateSessionId();
+                        localStorage.setItem('vpt_session_id', sessionId);
+                        console.warn("Session init returned no session_id; generated fallback session ID:", sessionId);
                     }
                     return sessionId;
                 })
@@ -547,7 +552,17 @@
                     return Promise.resolve(sessionId);
                 }
                 if (!sessionInitPromise) {
-                    sessionInitPromise = initializeSession();
+                    sessionInitPromise = initializeSession()
+                    .then((resolvedSessionId) => {
+                        if (!resolvedSessionId) {
+                            throw new Error('Session initialization did not produce a session ID');
+                        }
+                        return resolvedSessionId;
+                    })
+                    .catch((error) => {
+                        sessionInitPromise = null;
+                        throw error;
+                    });
                 }
                 return sessionInitPromise;
             }
@@ -968,7 +983,10 @@
 
                 if (!sessionId) {
                     ensureSessionReady()
-                    .then(() => {
+                    .then((readySessionId) => {
+                        if (!readySessionId) {
+                            throw new Error('Session initialization failed');
+                        }
                         scanForm.requestSubmit();
                     })
                     .catch(error => {

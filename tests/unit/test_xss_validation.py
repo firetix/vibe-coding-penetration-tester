@@ -283,7 +283,51 @@ class TestXSSValidation:
         
         # Assert
         assert result["validated"] == False
-    
+
+    def test_xss_validation_does_not_override_non_expert_tool_validation(self, validation_agent, mock_page):
+        """Keep explicit tool-based validation when deterministic XSS checks are negative."""
+        finding = {
+            "vulnerability_type": "Cross-Site Scripting (XSS)",
+            "target": "https://example.com/test",
+            "severity": "high",
+            "details": {
+                "payload": "<script>alert(1)</script>",
+                "evidence": "Manual payload execution observed",
+            },
+        }
+        page_info = {"url": "https://example.com/test", "title": "Test Page"}
+
+        # Deterministic XSS validation should fail (no reflected payload).
+        mock_page.content.return_value = "<html><body><p>sanitized output</p></body></html>"
+        validation_agent.browser_tools.execute_js.side_effect = [
+            None,
+            {"detected": False, "method": None},
+        ]
+
+        with patch.object(
+            validation_agent,
+            "think",
+            return_value={
+                "content": "",
+                "tool_calls": [{"function": {"name": "validate_finding", "arguments": "{}"}}],
+            },
+        ), patch.object(
+            validation_agent,
+            "execute_tool",
+            return_value={
+                "validated": True,
+                "details": {
+                    "validation_method": "manual_reproduction",
+                    "confidence_level": "high",
+                },
+            },
+        ):
+            result = validation_agent.validate_finding(finding, mock_page, page_info)
+
+        assert result["validated"] is True
+        assert result["details"]["validation_method"] == "manual_reproduction"
+        assert "runtime_xss_validation" in result["details"]
+
     def test_xss_validation_with_dom_modification_detection(self, validation_agent, mock_page):
         """Test XSS validation with DOM modification detection."""
         # Arrange

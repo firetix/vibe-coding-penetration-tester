@@ -37,3 +37,66 @@ def test_web_ui_compat_core_endpoints(legacy_server):
         assert state.status_code == 200
     finally:
         client.close()
+
+
+@pytest.mark.compat_legacy
+@pytest.mark.e2e_api_full
+def test_web_ui_api_scan_start_rejects_false_authorization_string(legacy_server):
+    client = requests.Session()
+    try:
+        init = client.post(f"{legacy_server}/api/session/init", json={"client_id": "legacy-auth"}, timeout=10)
+        assert init.status_code == 200
+        session_id = init.json().get("session_id")
+        assert session_id
+
+        response = client.post(
+            f"{legacy_server}/api/scan/start",
+            json={
+                "session_id": session_id,
+                "url": "https://example.com",
+                "scan_mode": "quick",
+                "authorization_confirmed": "false",
+            },
+            timeout=10,
+        )
+        assert response.status_code == 400
+    finally:
+        client.close()
+
+
+@pytest.mark.compat_legacy
+@pytest.mark.e2e_api_full
+def test_web_ui_paywalled_attempts_return_402_not_429(legacy_server):
+    client = requests.Session()
+    try:
+        init = client.post(f"{legacy_server}/api/session/init", json={"client_id": "legacy-paywall"}, timeout=10)
+        assert init.status_code == 200
+        session_id = init.json().get("session_id")
+        assert session_id
+
+        first = client.post(
+            f"{legacy_server}/scan",
+            data={
+                "session_id": session_id,
+                "url": "https://example.com",
+                "scan_mode": "quick",
+                "authorization_confirmed": "true",
+            },
+            timeout=10,
+        )
+        assert first.status_code == 200
+
+        for _ in range(6):
+            response = client.post(
+                f"{legacy_server}/scan",
+                data={
+                    "session_id": session_id,
+                    "url": "https://example.com",
+                    "scan_mode": "quick",
+                    "authorization_confirmed": "true",
+                },
+                timeout=10,
+            )
+            assert response.status_code == 402
+    finally:
+        client.close()

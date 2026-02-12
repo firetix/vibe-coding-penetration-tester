@@ -2,9 +2,9 @@
 
 import os
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from flask import Blueprint, g, request
+from flask import Blueprint, g, redirect, request
 
 from web_api.helpers.request_parser import parse_request
 from web_api.helpers.response_formatter import error_response, success_response
@@ -73,6 +73,32 @@ def _allow_unverified_webhooks() -> bool:
 def register_routes(app, billing_store):
     """Register billing and entitlement routes."""
     bp = Blueprint("billing", __name__, url_prefix="/api")
+
+    def _complete_checkout(checkout_session_id: str, payment_intent_id: Optional[str] = None):
+        checkout = billing_store.mark_checkout_completed(checkout_session_id)
+        if not checkout:
+            return None, error_response("Unknown checkout session", 404)
+        if not checkout.get("just_completed", False):
+            return checkout, None
+
+        account_id = checkout["account_id"]
+        scan_mode = checkout["scan_mode"]
+        if scan_mode == "solutions":
+            billing_store.add_credits(account_id, credits=10)
+        elif scan_mode == "deep":
+            billing_store.add_credits(account_id, credits=5)
+        else:
+            billing_store.activate_pro(account_id, days=30)
+
+        billing_store.record_payment(
+            account_id=account_id,
+            checkout_session_id=checkout_session_id,
+            status="completed",
+            amount=checkout.get("amount"),
+            currency=checkout.get("currency") or "usd",
+            payment_intent_id=payment_intent_id,
+        )
+        return checkout, None
 
     @bp.route("/entitlements", methods=["GET"])
     @handle_errors
@@ -169,33 +195,26 @@ def register_routes(app, billing_store):
         if event_type != "checkout.session.completed" or not checkout_session_id:
             return success_response(message="Webhook ignored")
 
-        checkout = billing_store.mark_checkout_completed(checkout_session_id)
-        if not checkout:
-            return error_response("Unknown checkout session", 404)
+        checkout, checkout_error = _complete_checkout(
+            checkout_session_id,
+            payment_intent_id=data_object.get("payment_intent"),
+        )
+        if checkout_error is not None:
+            return checkout_error
         if not checkout.get("just_completed", False):
             return success_response(message="Webhook already processed")
 
-        account_id = checkout["account_id"]
-        scan_mode = checkout["scan_mode"]
-
-        # Grant entitlement idempotently by checking for existing completion status in checkout row.
-        # mark_checkout_completed already short-circuits repeated updates.
-        if scan_mode == "solutions":
-            billing_store.add_credits(account_id, credits=10)
-        elif scan_mode == "deep":
-            billing_store.add_credits(account_id, credits=5)
-        else:
-            billing_store.activate_pro(account_id, days=30)
-
-        billing_store.record_payment(
-            account_id=account_id,
-            checkout_session_id=checkout_session_id,
-            status="completed",
-            amount=checkout.get("amount"),
-            currency=checkout.get("currency") or "usd",
-            payment_intent_id=data_object.get("payment_intent"),
-        )
-
         return success_response(message="Webhook processed")
+
+    @app.route("/mock-checkout/<checkout_session_id>", methods=["GET"])
+    @handle_errors
+    def mock_checkout(checkout_session_id: str):
+        """Mock checkout completion endpoint for local/test flows when Stripe isn't configured."""
+        checkout, checkout_error = _complete_checkout(checkout_session_id)
+        if checkout_error is not None:
+            return checkout_error
+
+        suffix = "success" if checkout.get("just_completed", False) else "already_complete"
+        return redirect(f"/?checkout={suffix}")
 
     app.register_blueprint(bp)

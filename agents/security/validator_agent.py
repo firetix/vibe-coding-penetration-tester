@@ -129,8 +129,18 @@ class ValidationAgent(BaseAgent):
         vuln_type = finding.get("vulnerability_type", "").lower()
         if "xss" in vuln_type:
             xss_validation = self._validate_xss_finding(finding, page)
-            validation_result = xss_validation
-        
+            # Prefer deterministic positives, and only override a positive expert-analysis
+            # verdict when deterministic checks cannot reproduce execution/reflection.
+            if xss_validation.get("validated"):
+                validation_result = xss_validation
+            elif not validation_result.get("validated"):
+                validation_result = xss_validation
+            elif validation_result.get("details", {}).get("validation_method") == "expert_analysis":
+                validation_result = xss_validation
+            else:
+                validation_result.setdefault("details", {})
+                validation_result["details"]["runtime_xss_validation"] = xss_validation.get("details", {})
+
         return validation_result
 
     def _validate_xss_finding(self, finding: Dict[str, Any], page: Page) -> Dict[str, Any]:

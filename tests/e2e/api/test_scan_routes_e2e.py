@@ -88,6 +88,41 @@ def test_scan_paywall_after_first_free_scan(web_api_server):
 
 
 @pytest.mark.e2e_api_full
+def test_paywalled_attempts_return_402_not_rate_limit(web_api_server):
+    client = __import__("requests").Session()
+    try:
+        init = client.post(f"{web_api_server}/api/session/init", json={"client_id": "paywall-402-loop"}, timeout=10)
+        session_id = init.json().get("session_id")
+
+        first = client.post(
+            f"{web_api_server}/api/scan/start",
+            json={
+                "session_id": session_id,
+                "url": "https://example.com",
+                "scan_mode": "quick",
+                "authorization_confirmed": True,
+            },
+            timeout=10,
+        )
+        assert first.status_code == 200
+
+        for _ in range(6):
+            response = client.post(
+                f"{web_api_server}/api/scan/start",
+                json={
+                    "session_id": session_id,
+                    "url": "https://example.com",
+                    "scan_mode": "quick",
+                    "authorization_confirmed": True,
+                },
+                timeout=10,
+            )
+            assert response.status_code == 402
+    finally:
+        client.close()
+
+
+@pytest.mark.e2e_api_full
 def test_scan_status_missing_scan_id(web_api_server, http_client, initialized_session):
     response = http_client.post(
         f"{web_api_server}/api/scan/status",

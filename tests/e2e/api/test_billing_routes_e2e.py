@@ -52,6 +52,25 @@ def test_billing_checkout(web_api_server, http_client):
     assert payload.get("checkout_session_id")
 
 
+@pytest.mark.e2e_api_full
+def test_mock_checkout_route_is_reachable_and_completes_checkout(web_api_server, http_client):
+    http_client.get(f"{web_api_server}/status", timeout=10)
+    before = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()["entitlements"]
+
+    checkout = http_client.post(
+        f"{web_api_server}/api/billing/checkout",
+        json={"scan_mode": "deep"},
+        timeout=10,
+    ).json()
+
+    redirect_response = http_client.get(checkout["checkout_url"], allow_redirects=False, timeout=10)
+    assert redirect_response.status_code in (301, 302, 303, 307, 308)
+    assert redirect_response.headers.get("Location", "").startswith("/?checkout=")
+
+    after = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()["entitlements"]
+    assert after["deep_scan_credits"] == before["deep_scan_credits"] + 5
+
+
 @pytest.mark.e2e_api_critical
 def test_billing_webhook_idempotent(web_api_server, http_client):
     http_client.get(f"{web_api_server}/status", timeout=10)

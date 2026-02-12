@@ -12,6 +12,7 @@ from web_api.middleware.error_handler import handle_errors
 from utils.entitlements import (
     check_scan_rate_limits,
     consume_entitlement,
+    extract_client_ip,
     evaluate_entitlement_for_scan,
     is_hosted_mode,
     is_valid_target_for_hosted,
@@ -62,12 +63,13 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
         if not target_ok:
             return error_response(target_reason or "Target is blocked in hosted mode", 400)
 
-        ip_address = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+        ip_address = extract_client_ip(
+            request.remote_addr,
+            request.headers.get("X-Forwarded-For"),
+        )
         rate_ok, rate_reason = check_scan_rate_limits(billing_store, account_id, ip_address)
         if not rate_ok:
             return error_response(rate_reason or "Rate limit exceeded", 429)
-
-        billing_store.record_usage_event(account_id, ip_address, "scan_start")
 
         ent_check = evaluate_entitlement_for_scan(billing_store, account_id, scan_mode)
         if not ent_check["allowed"]:
@@ -75,9 +77,34 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
             payload = payment_required_payload(ent_check["entitlements"], checkout_url)
             return jsonify(payload), 402
 
-        updated = consume_entitlement(billing_store, account_id, ent_check["consume"])
-        g.entitlements = updated
+        g.pending_entitlement_consume = ent_check["consume"]
+        g.pending_usage_event_ip = ip_address
+        g.entitlements = ent_check["entitlements"]
         return None
+
+    def _finalize_entitlement_consumption():
+        if not is_hosted_mode() or billing_store is None:
+            return
+
+        consume_kind = getattr(g, "pending_entitlement_consume", None)
+        account_id = getattr(g, "account_id", None)
+        if not account_id:
+            return
+
+        if consume_kind:
+            try:
+                g.entitlements = consume_entitlement(billing_store, account_id, consume_kind)
+                g.pending_entitlement_consume = None
+            except Exception:
+                logger.exception("Failed to consume entitlement after scan start for account %s", account_id)
+
+        usage_ip = getattr(g, "pending_usage_event_ip", None)
+        if usage_ip:
+            try:
+                billing_store.record_usage_event(account_id, usage_ip, "scan_start")
+                g.pending_usage_event_ip = None
+            except Exception:
+                logger.exception("Failed to record scan usage event for account %s", account_id)
 
     @bp.route('/start', methods=['POST'])
     @handle_errors
@@ -114,6 +141,7 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
             session_id, url, config,
             activity_callback=activity_adapter
         )
+        _finalize_entitlement_consumption()
 
         response_data = {
             'scan_id': scan_id,
@@ -257,6 +285,7 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
             session_id, url, config,
             activity_callback=activity_adapter
         )
+        _finalize_entitlement_consumption()
 
         logger.info(f"Scan started successfully with scan_id: {scan_id}")
         response_data = {
