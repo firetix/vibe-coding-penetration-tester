@@ -574,7 +574,7 @@ def parse_url(url: str, **kwargs) -> Dict[str, Any]:
             "url": url
         }
 
-def test_login_sqli(page: Page, form_selector: str, username_field: str, password_field: str, submit_button: str, max_tests: int = 3, timeout_per_test: int = 10000, **kwargs) -> Dict[str, Any]:
+def run_login_sqli_test(page: Page, form_selector: str, username_field: str, password_field: str, submit_button: str, max_tests: int = 3, timeout_per_test: int = 10000, **kwargs) -> Dict[str, Any]:
     """Test a login form specifically for SQL injection vulnerabilities.
     
     This function tests common SQL injection payloads that can bypass authentication
@@ -866,6 +866,15 @@ def test_login_sqli(page: Page, form_selector: str, username_field: str, passwor
         "modal_detected": form_visible,
         "timestamp": datetime.now().isoformat()
     }
+
+
+def test_login_sqli(*args, **kwargs) -> Dict[str, Any]:
+    """Backward-compatible wrapper for older imports."""
+    return run_login_sqli_test(*args, **kwargs)
+
+
+# Prevent pytest from collecting this compatibility wrapper as a test.
+test_login_sqli.__test__ = False
 
 def analyze_response(status_code: int, headers: Dict[str, str], body: str, **kwargs) -> Dict[str, Any]:
     """Analyze an HTTP response for security issues."""

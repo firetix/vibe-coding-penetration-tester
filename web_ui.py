@@ -3,8 +3,9 @@
 import os
 import json
 import time
+import uuid
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, session
+from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, redirect, session
 
 # Try to import CORS, but don't fail if it's not available
 try:
@@ -15,11 +16,25 @@ except ImportError:
     print("WARNING: flask_cors is not installed. CORS support will be disabled.")
     print("To enable CORS, install flask_cors: pip install flask_cors")
 
+try:
+    import stripe  # type: ignore
+except Exception:
+    stripe = None
+
 from utils.logging_manager import LoggingManager
 from utils.activity_tracker import ActivityTracker
 from utils.report_manager import ReportManager
 from utils.session_manager import SessionManager
 from utils.scan_controller import ScanController
+from utils.billing_store import BillingStore
+from utils.entitlements import (
+    check_scan_rate_limits,
+    extract_client_ip,
+    is_hosted_mode,
+    is_valid_target_for_hosted,
+    parse_scan_mode,
+    payment_required_payload,
+)
 
 # Initialize logging
 logging_manager = LoggingManager()
@@ -63,10 +78,150 @@ activity_tracker = ActivityTracker()
 report_manager = ReportManager(app.config['UPLOAD_FOLDER'])
 session_manager = SessionManager()
 scan_controller = ScanController(session_manager, report_manager)
+if is_vercel:
+    _default_billing_db_path = '/tmp/vpt.db'
+else:
+    _default_billing_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'vpt.db')
+billing_store = BillingStore(os.environ.get('VPT_BILLING_DB_PATH', _default_billing_db_path))
+
+
+@app.before_request
+def attach_account_identity():
+    account_id = request.cookies.get('vpt_account_id')
+    if not account_id:
+        account_id = str(uuid.uuid4())
+        request._vpt_new_account_cookie = True
+    else:
+        request._vpt_new_account_cookie = False
+    request._vpt_account_id = account_id
+    billing_store.ensure_account(account_id)
+
+
+@app.after_request
+def persist_account_identity(response):
+    if getattr(request, '_vpt_new_account_cookie', False):
+        response.set_cookie(
+            'vpt_account_id',
+            getattr(request, '_vpt_account_id'),
+            max_age=60 * 60 * 24 * 365,
+            httponly=True,
+            samesite='Lax'
+        )
+    return response
 
 # Session maintenance - cleanup old sessions periodically
 def cleanup_sessions():
     session_manager.cleanup_old_sessions(max_age_seconds=3600)  # 1 hour
+
+
+def _coerce_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+    return False
+
+
+def _allow_mock_checkout():
+    explicit = os.environ.get('VPT_ENABLE_MOCK_CHECKOUT')
+    if explicit == '0':
+        return False
+    if explicit == '1':
+        return True
+    if os.environ.get('VPT_E2E_MODE') == '1':
+        return True
+    return os.environ.get('VPT_HOSTED_MODE', '0') != '1'
+
+
+def _line_item_for_mode(scan_mode):
+    if scan_mode == 'solutions':
+        price_id = os.environ.get('STRIPE_PRICE_CREDIT_PACK')
+        if price_id:
+            return {'price': price_id, 'quantity': 1}
+        return {
+            'price_data': {
+                'currency': 'usd',
+                'unit_amount': 2900,
+                'product_data': {'name': 'Vibe Pen Tester - Solutions Pack'},
+            },
+            'quantity': 1,
+        }
+    if scan_mode == 'deep':
+        price_id = os.environ.get('STRIPE_PRICE_CREDIT_PACK')
+        if price_id:
+            return {'price': price_id, 'quantity': 1}
+        return {
+            'price_data': {
+                'currency': 'usd',
+                'unit_amount': 900,
+                'product_data': {'name': 'Vibe Pen Tester - Deep Scan Credit'},
+            },
+            'quantity': 1,
+        }
+
+    price_id = os.environ.get('STRIPE_PRICE_PRO_MONTHLY')
+    if price_id:
+        return {'price': price_id, 'quantity': 1}
+    return {
+        'price_data': {
+            'currency': 'usd',
+            'unit_amount': 1900,
+            'recurring': {'interval': 'month'},
+            'product_data': {'name': 'Vibe Pen Tester - Pro Monthly'},
+        },
+        'quantity': 1,
+    }
+
+
+def _create_checkout_payload(account_id, scan_mode, success_url=None, cancel_url=None):
+    checkout_session_id = f"cs_{uuid.uuid4().hex}"
+    checkout_url = None
+    amount = 0
+    currency = 'usd'
+
+    stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY')
+    if stripe and stripe_secret_key:
+        try:
+            stripe.api_key = stripe_secret_key
+            resolved_success_url = success_url or f"{request.host_url.rstrip('/')}/?checkout=success"
+            resolved_cancel_url = cancel_url or f"{request.host_url.rstrip('/')}/?checkout=cancel"
+            line_item = _line_item_for_mode(scan_mode)
+            session = stripe.checkout.Session.create(
+                mode='payment' if scan_mode in {'deep', 'solutions'} else 'subscription',
+                line_items=[line_item],
+                success_url=resolved_success_url,
+                cancel_url=resolved_cancel_url,
+                metadata={
+                    'account_id': account_id,
+                    'scan_mode': scan_mode,
+                },
+            )
+            checkout_session_id = session.id
+            checkout_url = session.url
+            amount = getattr(session, 'amount_total', 0) or 0
+            currency = getattr(session, 'currency', 'usd') or 'usd'
+        except Exception:
+            checkout_url = None
+
+    if checkout_url is None:
+        if not _allow_mock_checkout():
+            return None, jsonify({'status': 'error', 'message': 'Checkout is unavailable; Stripe is not configured'}), 503
+        checkout_url = f"{request.host_url.rstrip('/')}/mock-checkout/{checkout_session_id}"
+
+    billing_store.create_checkout_session(
+        checkout_session_id=checkout_session_id,
+        account_id=account_id,
+        scan_mode=scan_mode,
+        amount=amount,
+        currency=currency,
+    )
+
+    return {
+        'status': 'success',
+        'checkout_session_id': checkout_session_id,
+        'checkout_url': checkout_url,
+        'scan_mode': scan_mode
+    }, None, 200
 
 # Helper decorator for auto-creating sessions
 def auto_create_session(f):
@@ -258,7 +413,12 @@ def start_scan():
             
         session_id = data.get('session_id')
         url = data.get('url')
-        config = data.get('config', {})
+        config = data.get('config', {}) or {}
+        scan_mode = parse_scan_mode(data.get('scan_mode') or config.get('scan_mode'))
+        config['scan_mode'] = scan_mode
+        pending_entitlement_consume = None
+        pending_usage_event_ip = None
+        account_id = None
         
         if not session_id:
             session_id = session_manager.create_session()
@@ -266,16 +426,57 @@ def start_scan():
             
         if not url:
             return jsonify({'status': 'error', 'message': 'Missing URL'}), 400
+
+        if is_hosted_mode():
+            account_id = getattr(request, '_vpt_account_id', None)
+            authorization_confirmed = _coerce_bool(data.get('authorization_confirmed'))
+            if not authorization_confirmed:
+                return jsonify({'status': 'error', 'message': 'Authorization confirmation is required for hosted scans'}), 400
+
+            target_ok, target_reason = is_valid_target_for_hosted(url)
+            if not target_ok:
+                return jsonify({'status': 'error', 'message': target_reason or 'Target blocked in hosted mode'}), 400
+
+            ip_address = extract_client_ip(
+                request.remote_addr,
+                request.headers.get('X-Forwarded-For'),
+            )
+            rate_ok, rate_reason = check_scan_rate_limits(billing_store, account_id, ip_address)
+            if not rate_ok:
+                return jsonify({'status': 'error', 'message': rate_reason or 'Rate limit exceeded'}), 429
+
+            ent_check = billing_store.try_consume_entitlement_for_scan(account_id, scan_mode)
+            if not ent_check['allowed']:
+                checkout_url = f"{request.host_url.rstrip('/')}/billing/checkout?scan_mode={scan_mode}"
+                return jsonify(payment_required_payload(ent_check['entitlements'], checkout_url)), 402
+
+            pending_entitlement_consume = ent_check['consume']
+            pending_usage_event_ip = ip_address
         
         # Start the scan
-        scan_id = scan_controller.start_scan(
-            session_id, url, config, 
-            activity_callback=activity_tracker.add_activity
-        )
+        try:
+            scan_id = scan_controller.start_scan(
+                session_id, url, config,
+                activity_callback=activity_tracker.add_activity
+            )
+        except Exception:
+            if is_hosted_mode() and pending_entitlement_consume and account_id:
+                try:
+                    billing_store.refund_consumption(account_id, pending_entitlement_consume)
+                except Exception:
+                    logger.exception("Failed to refund entitlement after scan start failure for account %s", account_id)
+            raise
+
+        if is_hosted_mode() and pending_usage_event_ip and account_id:
+            try:
+                billing_store.record_usage_event(account_id, pending_usage_event_ip, 'scan_start')
+            except Exception:
+                logger.exception("Failed to record scan usage event for account %s", account_id)
         
         return jsonify({
             'status': 'success',
             'scan_id': scan_id,
+            'scan_mode': scan_mode,
             'message': f'Scan started for {url}'
         })
     except Exception as e:
@@ -439,6 +640,114 @@ def get_reports():
     reports = report_manager.get_report_list()
     return jsonify({'reports': reports})
 
+@app.route('/api/entitlements', methods=['GET'])
+def get_entitlements():
+    account_id = getattr(request, '_vpt_account_id', None)
+    entitlements = billing_store.get_entitlements(account_id)
+    return jsonify({'status': 'success', 'entitlements': entitlements})
+
+@app.route('/api/billing/checkout', methods=['POST'])
+def billing_checkout():
+    data = request.get_json(silent=True) or {}
+    account_id = getattr(request, '_vpt_account_id', None)
+    scan_mode = parse_scan_mode(data.get('scan_mode'))
+    payload, error_response, error_status = _create_checkout_payload(
+        account_id=account_id,
+        scan_mode=scan_mode,
+        success_url=data.get('success_url'),
+        cancel_url=data.get('cancel_url'),
+    )
+    if error_response is not None:
+        return error_response, error_status
+    return jsonify(payload)
+
+
+def _complete_checkout_session(checkout_session_id, payment_intent_id=None):
+    checkout = billing_store.mark_checkout_completed(checkout_session_id)
+    if not checkout:
+        return None, jsonify({'status': 'error', 'message': 'Unknown checkout session'}), 404
+    if not checkout.get('just_completed', False):
+        return checkout, None, 200
+
+    account_id = checkout['account_id']
+    scan_mode = checkout['scan_mode']
+    if scan_mode == 'solutions':
+        billing_store.add_credits(account_id, 10)
+    elif scan_mode == 'deep':
+        billing_store.add_credits(account_id, 5)
+    else:
+        billing_store.activate_pro(account_id, 30)
+
+    billing_store.record_payment(
+        account_id=account_id,
+        checkout_session_id=checkout_session_id,
+        status='completed',
+        amount=checkout.get('amount'),
+        currency=checkout.get('currency') or 'usd',
+        payment_intent_id=payment_intent_id,
+    )
+    return checkout, None, 200
+
+
+@app.route('/api/billing/webhook', methods=['POST'])
+def billing_webhook():
+    payload_raw = request.get_data(as_text=False)
+    sig_header = request.headers.get('Stripe-Signature')
+    webhook_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    allow_unverified = os.environ.get('VPT_ALLOW_UNVERIFIED_WEBHOOKS') == '1'
+
+    if allow_unverified:
+        payload = request.get_json(silent=True) or {}
+    else:
+        if not stripe or not webhook_secret:
+            return jsonify({'status': 'error', 'message': 'Webhook verification is not configured'}), 400
+        if not sig_header:
+            return jsonify({'status': 'error', 'message': 'Missing webhook signature'}), 400
+        try:
+            payload = stripe.Webhook.construct_event(payload=payload_raw, sig_header=sig_header, secret=webhook_secret)
+        except Exception:
+            return jsonify({'status': 'error', 'message': 'Invalid webhook signature'}), 400
+
+    event_type = payload.get('type')
+    data_object = payload.get('data', {}).get('object', {})
+    checkout_session_id = data_object.get('id') or payload.get('checkout_session_id')
+
+    if event_type != 'checkout.session.completed' or not checkout_session_id:
+        return jsonify({'status': 'success', 'message': 'Webhook ignored'})
+
+    checkout, error_response, error_status = _complete_checkout_session(
+        checkout_session_id,
+        payment_intent_id=data_object.get('payment_intent'),
+    )
+    if error_response is not None:
+        return error_response, error_status
+    if not checkout.get('just_completed', False):
+        return jsonify({'status': 'success', 'message': 'Webhook already processed'})
+    return jsonify({'status': 'success', 'message': 'Webhook processed'})
+
+
+@app.route('/mock-checkout/<checkout_session_id>', methods=['GET'])
+def mock_checkout(checkout_session_id):
+    if not _allow_mock_checkout():
+        return jsonify({'status': 'error', 'message': 'Not found'}), 404
+
+    checkout, error_response, error_status = _complete_checkout_session(checkout_session_id)
+    if error_response is not None:
+        return error_response, error_status
+
+    status_value = 'success' if checkout.get('just_completed', False) else 'already_complete'
+    return redirect(f"/?checkout={status_value}")
+
+
+@app.route('/billing/checkout', methods=['GET'])
+def browser_checkout():
+    account_id = getattr(request, '_vpt_account_id', None)
+    scan_mode = parse_scan_mode(request.args.get('scan_mode'))
+    payload, error_response, error_status = _create_checkout_payload(account_id=account_id, scan_mode=scan_mode)
+    if error_response is not None:
+        return error_response, error_status
+    return redirect(payload['checkout_url'])
+
 @app.route('/api/report/<report_id>', methods=['GET'])
 def get_report(report_id):
     report = report_manager.get_report(report_id)
@@ -463,6 +772,18 @@ def status_check():
     
     # Log both sources for debugging
     logger.debug(f"Status request received - cookie session: {flask_cookie_session_id}, query param: {query_session_id}")
+
+    account_id = getattr(request, '_vpt_account_id', None)
+    entitlements = billing_store.get_entitlements(account_id) if account_id else None
+    paywall_state = {
+        'is_hosted': is_hosted_mode(),
+        'requires_payment_for_next_scan': bool(
+            entitlements
+            and entitlements.get('free_scans_remaining', 0) <= 0
+            and not entitlements.get('pro_active')
+            and entitlements.get('deep_scan_credits', 0) <= 0
+        )
+    } if entitlements else None
     
     # Decision logic for which session to use
     if flask_cookie_session_id and session_manager.check_session(flask_cookie_session_id):
@@ -492,7 +813,9 @@ def status_check():
             'progress': 0,
             'current_task': 'Ready',
             'is_running': False,
-            'session_id': session_id
+            'session_id': session_id,
+            'entitlements': entitlements,
+            'paywall_state': paywall_state
         })
     
     # Log current active sessions for debugging
@@ -617,7 +940,9 @@ def status_check():
             'agent_logs': activities,
             'action_plan': action_plan,
             'current_action': 'scanning',
-            'vulnerabilities': scan.get('vulnerabilities', [])
+            'vulnerabilities': scan.get('vulnerabilities', []),
+            'entitlements': entitlements,
+            'paywall_state': paywall_state
         }
         
         # Log the response data size for debugging
@@ -690,7 +1015,9 @@ def status_check():
                 'action_plan': action_plan,
                 'current_action': 'completed',
                 'vulnerabilities': scan.get('vulnerabilities', []),
-                'report_dir': scan.get('report_dir')
+                'report_dir': scan.get('report_dir'),
+                'entitlements': entitlements,
+                'paywall_state': paywall_state
             })
         else:
             # No scans found
@@ -703,7 +1030,9 @@ def status_check():
                 'scan_id': '',
                 'agent_logs': [],
                 'action_plan': [],
-                'current_action': 'ready'
+                'current_action': 'ready',
+                'entitlements': entitlements,
+                'paywall_state': paywall_state
             })
 
 # Scan endpoint for starting a scan
@@ -736,6 +1065,10 @@ def start_scan_compat():
         # Extract parameters
         session_id = data.get('session_id')
         url = data.get('url')
+        scan_mode = parse_scan_mode(data.get('scan_mode'))
+        pending_entitlement_consume = None
+        pending_usage_event_ip = None
+        account_id = None
         
         logger.info(f"Extracted session_id: {session_id}, url: {url}")
         
@@ -790,6 +1123,35 @@ def start_scan_compat():
             old_session_id = session_id
             session_id = session_manager.create_session()
             logger.info(f"Created new session: {session_id} (replacing invalid session: {old_session_id})")
+
+        config['scan_mode'] = scan_mode
+
+        # Hosted SaaS controls: authorization, target policy, rate limiting, and paywall.
+        if is_hosted_mode():
+            account_id = getattr(request, '_vpt_account_id', None)
+            authorization_confirmed = _coerce_bool(data.get('authorization_confirmed'))
+            if not authorization_confirmed:
+                return jsonify({'status': 'error', 'message': 'Authorization confirmation is required for hosted scans'}), 400
+
+            target_ok, target_reason = is_valid_target_for_hosted(url)
+            if not target_ok:
+                return jsonify({'status': 'error', 'message': target_reason or 'Target blocked in hosted mode'}), 400
+
+            ip_address = extract_client_ip(
+                request.remote_addr,
+                request.headers.get('X-Forwarded-For'),
+            )
+            rate_ok, rate_reason = check_scan_rate_limits(billing_store, account_id, ip_address)
+            if not rate_ok:
+                return jsonify({'status': 'error', 'message': rate_reason or 'Rate limit exceeded'}), 429
+
+            ent_check = billing_store.try_consume_entitlement_for_scan(account_id, scan_mode)
+            if not ent_check['allowed']:
+                checkout_url = f"{request.host_url.rstrip('/')}/billing/checkout?scan_mode={scan_mode}"
+                return jsonify(payment_required_payload(ent_check['entitlements'], checkout_url)), 402
+
+            pending_entitlement_consume = ent_check['consume']
+            pending_usage_event_ip = ip_address
         
         # Get all active sessions after validation
         active_sessions_after = session_manager.get_all_sessions()
@@ -800,16 +1162,31 @@ def start_scan_compat():
         
         # Start the scan
         logger.info(f"Starting scan for URL {url} with session {session_id} and config {config}")
-        scan_id = scan_controller.start_scan(
-            session_id, url, config, 
-            activity_callback=activity_tracker.add_activity
-        )
+        try:
+            scan_id = scan_controller.start_scan(
+                session_id, url, config,
+                activity_callback=activity_tracker.add_activity
+            )
+        except Exception:
+            if is_hosted_mode() and pending_entitlement_consume and account_id:
+                try:
+                    billing_store.refund_consumption(account_id, pending_entitlement_consume)
+                except Exception:
+                    logger.exception("Failed to refund entitlement after scan start failure for account %s", account_id)
+            raise
+
+        if is_hosted_mode() and pending_usage_event_ip and account_id:
+            try:
+                billing_store.record_usage_event(account_id, pending_usage_event_ip, 'scan_start')
+            except Exception:
+                logger.exception("Failed to record scan usage event for account %s", account_id)
         
         logger.info(f"Scan started successfully with scan_id: {scan_id}")
         return jsonify({
             'status': 'success',
             'scan_id': scan_id,
             'session_id': session_id,
+            'scan_mode': scan_mode,
             'message': f'Scan started for {url}'
         })
     except Exception as e:
@@ -939,6 +1316,8 @@ def api_state():
         active_scans = session_manager.get_active_scans(session_id)
         completed_scans = session_manager.get_completed_scans(session_id)
         is_scanning = len(active_scans) > 0
+        account_id = getattr(request, '_vpt_account_id', None)
+        entitlements = billing_store.get_entitlements(account_id) if account_id else None
         
         # Get most recent scan if available
         current_scan = None
@@ -953,8 +1332,18 @@ def api_state():
             'state': {
                 'session_id': session_id,
                 'is_scanning': is_scanning,
-                'current_scan': current_scan
-            }
+                'current_scan': current_scan,
+                'entitlements': entitlements
+            },
+            'paywall_state': {
+                'is_hosted': is_hosted_mode(),
+                'requires_payment_for_next_scan': bool(
+                    entitlements
+                    and entitlements.get('free_scans_remaining', 0) <= 0
+                    and not entitlements.get('pro_active')
+                    and entitlements.get('deep_scan_credits', 0) <= 0
+                )
+            } if entitlements else None
         })
     except Exception as e:
         logger.error(f"Error in state endpoint: {str(e)}")

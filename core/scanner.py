@@ -170,7 +170,7 @@ class Scanner:
                     self.logger.info(f"Page loaded with status code: {status}")
                     
                     # Handle HTTP error codes
-                    if status >= 400:
+                    if isinstance(status, int) and status >= 400:
                         self.logger.warning(f"Received HTTP error status: {status}")
                         if retry_count < max_retries - 1:
                             retry_count += 1

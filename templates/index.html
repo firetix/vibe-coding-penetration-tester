@@ -243,64 +243,96 @@
                                        placeholder="https://example.com" required>
                                 <div class="form-text">Enter the full URL you want to scan for vulnerabilities</div>
                             </div>
-                            
+
                             <div class="row mb-3">
                                 <div class="col-md-6">
-                                    <label for="provider" class="form-label">LLM Provider</label>
-                                    <select class="form-select" id="provider" name="provider">
-                                        <option value="openai" selected>OpenAI</option>
-                                        <option value="anthropic">Anthropic</option>
-                                        <option value="ollama">Ollama (Local)</option>
+                                    <label for="scan_mode" class="form-label">Scan Mode</label>
+                                    <select class="form-select" id="scan_mode" name="scan_mode">
+                                        <option value="quick" selected>Quick Scan (Free first scan)</option>
+                                        <option value="deep">Deep Scan (Paid)</option>
+                                        <option value="solutions">Deep + Fix Solutions (Paid)</option>
                                     </select>
-                                    <div class="form-text">Select the AI provider for the agent swarm</div>
+                                    <div class="form-text">One free quick scan is included. Additional scans require payment in hosted mode.</div>
                                 </div>
-                                
                                 <div class="col-md-6">
-                                    <label for="model" class="form-label">LLM Model</label>
-                                    <select class="form-select" id="model" name="model">
-                                        <optgroup label="OpenAI Models" id="openai-models">
-                                            <option value="gpt-4o" selected>GPT-4o</option>
-                                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                                            <option value="gpt-4">GPT-4</option>
-                                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                                        </optgroup>
-                                        <optgroup label="Anthropic Models" id="anthropic-models" style="display:none">
-                                            <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-                                            <option value="claude-3-opus">Claude 3 Opus</option>
-                                            <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                                            <option value="claude-3-haiku">Claude 3 Haiku</option>
-                                        </optgroup>
-                                        <optgroup label="Ollama Models" id="ollama-models" style="display:none">
-                                            <option value="llama3">Llama 3</option>
-                                            <option value="llama3:8b">Llama 3 (8B)</option>
-                                            <option value="mistral">Mistral</option>
-                                            <option value="mixtral">Mixtral</option>
-                                            <option value="phi3">Phi-3</option>
-                                            <option value="gemma:7b">Gemma (7B)</option>
-                                            <option value="deepseek-coder">DeepSeek Coder</option>
-                                        </optgroup>
-                                    </select>
-                                    <div class="form-text">Select the AI model for security testing</div>
+                                    <div class="form-check mt-4">
+                                        <input class="form-check-input" type="checkbox" id="authorization_confirmed" name="authorization_confirmed" required>
+                                        <label class="form-check-label" for="authorization_confirmed">
+                                            I confirm I am authorized to test this target
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
-                            
-                            <!-- API Token fields - conditionally displayed based on provider -->
-                            <div class="mb-3" id="openai-token-container">
-                                <label for="openai_api_key" class="form-label">OpenAI API Key <span class="text-muted">(Optional)</span></label>
-                                <input type="password" class="form-control" id="openai_api_key" name="openai_api_key" placeholder="sk-...">
-                                <div class="form-text">Enter your OpenAI API key or leave blank to use environment variable</div>
-                            </div>
-                            
-                            <div class="mb-3" id="anthropic-token-container" style="display:none">
-                                <label for="anthropic_api_key" class="form-label">Anthropic API Key <span class="text-muted">(Optional)</span></label>
-                                <input type="password" class="form-control" id="anthropic_api_key" name="anthropic_api_key" placeholder="sk-ant-...">
-                                <div class="form-text">Enter your Anthropic API key or leave blank to use environment variable</div>
-                            </div>
-                            
-                            <div class="mb-3" id="ollama-url-container" style="display:none">
-                                <label for="ollama_url" class="form-label">Ollama Server URL</label>
-                                <input type="text" class="form-control" id="ollama_url" name="ollama_url" value="http://localhost:11434">
-                                <div class="form-text">URL of your Ollama server (local or remote)</div>
+
+                            <details class="mb-3">
+                                <summary class="mb-2">Advanced Settings</summary>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="provider" class="form-label">LLM Provider</label>
+                                        <select class="form-select" id="provider" name="provider">
+                                            <option value="openai" selected>OpenAI</option>
+                                            <option value="anthropic">Anthropic</option>
+                                            <option value="ollama">Ollama (Local)</option>
+                                        </select>
+                                        <div class="form-text">Select the AI provider for the agent swarm</div>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <label for="model" class="form-label">LLM Model</label>
+                                        <select class="form-select" id="model" name="model">
+                                            <optgroup label="OpenAI Models" id="openai-models">
+                                                <option value="gpt-4o" selected>GPT-4o</option>
+                                                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                                <option value="gpt-4">GPT-4</option>
+                                                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                            </optgroup>
+                                            <optgroup label="Anthropic Models" id="anthropic-models" style="display:none">
+                                                <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+                                                <option value="claude-3-opus">Claude 3 Opus</option>
+                                                <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                                                <option value="claude-3-haiku">Claude 3 Haiku</option>
+                                            </optgroup>
+                                            <optgroup label="Ollama Models" id="ollama-models" style="display:none">
+                                                <option value="llama3">Llama 3</option>
+                                                <option value="llama3:8b">Llama 3 (8B)</option>
+                                                <option value="mistral">Mistral</option>
+                                                <option value="mixtral">Mixtral</option>
+                                                <option value="phi3">Phi-3</option>
+                                                <option value="gemma:7b">Gemma (7B)</option>
+                                                <option value="deepseek-coder">DeepSeek Coder</option>
+                                            </optgroup>
+                                        </select>
+                                        <div class="form-text">Select the AI model for security testing</div>
+                                    </div>
+                                </div>
+
+                                <!-- API Token fields - conditionally displayed based on provider -->
+                                <div class="mb-3" id="openai-token-container">
+                                    <label for="openai_api_key" class="form-label">OpenAI API Key <span class="text-muted">(Optional)</span></label>
+                                    <input type="password" class="form-control" id="openai_api_key" name="openai_api_key" placeholder="sk-...">
+                                    <div class="form-text">Enter your OpenAI API key or leave blank to use environment variable</div>
+                                </div>
+
+                                <div class="mb-3" id="anthropic-token-container" style="display:none">
+                                    <label for="anthropic_api_key" class="form-label">Anthropic API Key <span class="text-muted">(Optional)</span></label>
+                                    <input type="password" class="form-control" id="anthropic_api_key" name="anthropic_api_key" placeholder="sk-ant-...">
+                                    <div class="form-text">Enter your Anthropic API key or leave blank to use environment variable</div>
+                                </div>
+
+                                <div class="mb-3" id="ollama-url-container" style="display:none">
+                                    <label for="ollama_url" class="form-label">Ollama Server URL</label>
+                                    <input type="text" class="form-control" id="ollama_url" name="ollama_url" value="http://localhost:11434">
+                                    <div class="form-text">URL of your Ollama server (local or remote)</div>
+                                </div>
+                            </details>
+
+                            <div class="alert alert-warning d-none" id="paywall-alert">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>Payment required:</strong> Your free scan is used. Upgrade to continue.
+                                    </div>
+                                    <a href="#" target="_blank" class="btn btn-sm btn-warning" id="upgrade-link">Upgrade</a>
+                                </div>
                             </div>
                             
                             <div class="d-grid gap-2">
@@ -452,6 +484,8 @@
             const agentLogsEl = document.getElementById('agent-logs');
             const actionPlanListEl = document.getElementById('action-plan-list');
             const currentActionBadgeEl = document.getElementById('current-action-badge');
+            const paywallAlertEl = document.getElementById('paywall-alert');
+            const upgradeLinkEl = document.getElementById('upgrade-link');
             
             // Get or initialize session ID
             let sessionId = localStorage.getItem('vpt_session_id');
@@ -477,6 +511,11 @@
                         console.log(data.restored ? 
                             "Restored server session ID:" : 
                             "Received new server session ID:", sessionId);
+                    } else if (!sessionId) {
+                        // Prevent null session loops when API responds without session_id.
+                        sessionId = generateSessionId();
+                        localStorage.setItem('vpt_session_id', sessionId);
+                        console.warn("Session init returned no session_id; generated fallback session ID:", sessionId);
                     }
                     return sessionId;
                 })
@@ -497,6 +536,7 @@
             let prevLogsLength = 0;
             let prevActionPlanLength = 0;
             let scanInProgress = false;
+            let sessionInitPromise = null;
             
             // State persistence
             const STATE_STORAGE_KEY = 'vpt_scan_state';
@@ -505,6 +545,26 @@
             function generateSessionId() {
                 return 'session_' + Math.random().toString(36).substring(2, 15) + 
                        Math.random().toString(36).substring(2, 15);
+            }
+
+            function ensureSessionReady() {
+                if (sessionId) {
+                    return Promise.resolve(sessionId);
+                }
+                if (!sessionInitPromise) {
+                    sessionInitPromise = initializeSession()
+                    .then((resolvedSessionId) => {
+                        if (!resolvedSessionId) {
+                            throw new Error('Session initialization did not produce a session ID');
+                        }
+                        return resolvedSessionId;
+                    })
+                    .catch((error) => {
+                        sessionInitPromise = null;
+                        throw error;
+                    });
+                }
+                return sessionInitPromise;
             }
             
             // Save scan state to localStorage
@@ -538,13 +598,19 @@
                 }
             }
             
-            // On document ready, initialize session first
-            document.addEventListener('DOMContentLoaded', function() {
-                // Initialize session first, then check for existing scan state
-                initializeSession().then(() => {
+            function bootstrapSessionAndState() {
+                sessionInitPromise = initializeSession().then(() => {
                     restoreScanStateIfExists();
+                    return sessionId;
                 });
-            });
+            }
+
+            // Initialize session and restore state even when script executes after DOMContentLoaded.
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', bootstrapSessionAndState);
+            } else {
+                bootstrapSessionAndState();
+            }
             
             // Check for existing scan on page load and restore state
             function restoreScanStateIfExists() {
@@ -886,6 +952,8 @@
                 e.preventDefault();
                 
                 const url = document.getElementById('url').value;
+                const scanMode = document.getElementById('scan_mode').value;
+                const authorizationConfirmed = document.getElementById('authorization_confirmed').checked;
                 const provider = document.getElementById('provider').value;
                 const model = document.getElementById('model').value;
                 
@@ -902,9 +970,28 @@
                     alert('Please enter a valid URL');
                     return;
                 }
+
+                if (!authorizationConfirmed) {
+                    alert('Please confirm authorization before scanning');
+                    return;
+                }
                 
                 if (provider === 'ollama' && (!ollamaUrl || ollamaUrl.trim() === '')) {
                     alert('Please enter the Ollama server URL');
+                    return;
+                }
+
+                if (!sessionId) {
+                    ensureSessionReady()
+                    .then((readySessionId) => {
+                        if (!readySessionId) {
+                            throw new Error('Session initialization failed');
+                        }
+                        scanForm.requestSubmit();
+                    })
+                    .catch(error => {
+                        showError('Failed to initialize session: ' + error);
+                    });
                     return;
                 }
                 
@@ -912,6 +999,7 @@
                 isCancelled = false;
                 reportContainer.classList.add('d-none');
                 errorContainer.classList.add('d-none');
+                paywallAlertEl.classList.add('d-none');
                 
                 // Update status elements
                 statusUrlEl.textContent = url;
@@ -943,6 +1031,8 @@
                     'url': url,
                     'provider': provider,
                     'model': model,
+                    'scan_mode': scanMode,
+                    'authorization_confirmed': authorizationConfirmed ? 'true' : 'false',
                     'session_id': sessionId // Add session ID to track this scan
                 };
                 
@@ -989,8 +1079,21 @@
                     },
                     body: new URLSearchParams(formData)
                 })
-                .then(response => response.json())
-                .then(data => {
+                .then(async response => {
+                    const data = await response.json();
+                    return { statusCode: response.status, data };
+                })
+                .then(({ statusCode, data }) => {
+                    if (statusCode === 402 || data.status === 'payment_required') {
+                        scanInProgress = false;
+                        startScanBtn.disabled = false;
+                        startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                        paywallAlertEl.classList.remove('d-none');
+                        if (data.checkout_url) {
+                            upgradeLinkEl.href = data.checkout_url;
+                        }
+                        return;
+                    }
                     if (data.status === 'success') {
                         // Start polling for status
                         checkStatus();
@@ -1773,6 +1876,24 @@
                 prevLogsLength = 0;
                 prevActionPlanLength = 0;
             }
+
+            function resetUiAfterCancel() {
+                clearScanState();
+                scanStatusPanel.classList.add('d-none');
+                reportContainer.classList.add('d-none');
+                errorContainer.classList.add('d-none');
+                startScanBtn.disabled = false;
+                startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                prevLogsLength = 0;
+                prevActionPlanLength = 0;
+                agentLogsEl.innerHTML = '<div class="text-muted">Waiting for agent activities...</div>';
+                actionPlanListEl.innerHTML = '<li class="list-group-item text-center text-muted">Waiting for agent action plan...</li>';
+                progressBar.style.width = '0%';
+                progressBar.textContent = '0%';
+                progressBar.classList.add('progress-bar-striped', 'progress-bar-animated');
+                progressBar.classList.remove('bg-success');
+                scanInProgress = false;
+            }
             
             // Cancel button
             cancelBtn.addEventListener('click', function() {
@@ -1792,45 +1913,15 @@
                     .then(data => {
                         console.log('Reset response:', data);
                         if (data.status === 'success') {
-                            // Clear local state
-                            clearScanState();
-                            
-                            // Hide panels
-                            scanStatusPanel.classList.add('d-none');
-                            reportContainer.classList.add('d-none');
-                            errorContainer.classList.add('d-none');
-                            
-                            // Reset the scan button
-                            startScanBtn.disabled = false;
-                            startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
-                            
-                            // Reset log counters for the next scan
-                            prevLogsLength = 0;
-                            prevActionPlanLength = 0;
-                            
-                            // Reset UI elements
-                            agentLogsEl.innerHTML = '<div class="text-muted">Waiting for agent activities...</div>';
-                            actionPlanListEl.innerHTML = '<li class="list-group-item text-center text-muted">Waiting for agent action plan...</li>';
-                            
-                            // Reset progress bar
-                            progressBar.style.width = '0%';
-                            progressBar.textContent = '0%';
-                            progressBar.classList.add('progress-bar-striped', 'progress-bar-animated');
-                            progressBar.classList.remove('bg-success');
-                            
-                            // Reset scan in progress flag
-                            scanInProgress = false;
+                            resetUiAfterCancel();
+                        } else {
+                            console.warn('Reset endpoint returned non-success:', data);
+                            resetUiAfterCancel();
                         }
                     })
                     .catch(error => {
                         console.error('Error resetting scan state:', error);
-                        // Even if reset fails, still reset the UI
-                        scanStatusPanel.classList.add('d-none');
-                        startScanBtn.disabled = false;
-                        startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
-                        prevLogsLength = 0;
-                        prevActionPlanLength = 0;
-                        scanInProgress = false;
+                        resetUiAfterCancel();
                     });
                 }
             });
@@ -1869,9 +1960,6 @@
                 window.location.hash = '';
                 window.location.reload();
             });
-            
-            // Initialize state restoration on page load
-            restoreScanStateIfExists();
             
             // Handle page visibility changes to resume polling if needed
             document.addEventListener('visibilitychange', function() {

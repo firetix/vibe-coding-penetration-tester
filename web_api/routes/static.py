@@ -1,6 +1,6 @@
 """Static file serving routes."""
 
-from flask import Blueprint, render_template, send_from_directory
+from flask import Blueprint, current_app, render_template, send_from_directory
 import logging
 
 from web_api.middleware.error_handler import handle_errors
@@ -22,12 +22,12 @@ def register_routes(app):
     @handle_errors
     def serve_static(filename):
         """Serve static files."""
-        return send_from_directory('static', filename)
+        return send_from_directory(current_app.static_folder, filename)
     
     @bp.route('/favicon.ico')
     @handle_errors
     def favicon():
         """Serve the favicon."""
-        return send_from_directory('static', 'favicon.ico')
+        return send_from_directory(current_app.static_folder, 'favicon.ico')
     
     app.register_blueprint(bp)

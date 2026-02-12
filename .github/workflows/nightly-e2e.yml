@@ -1,0 +1,43 @@
+name: Nightly E2E
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        run: |
+          playwright install chromium
+
+      - name: Run full API E2E matrix
+        run: |
+          python -m pytest tests/e2e/api -m e2e_api_full -q
+
+      - name: Run full frontend E2E matrix
+        run: |
+          python -m pytest tests/e2e/frontend -m e2e_frontend_full -q
+
+      - name: Run legacy compatibility E2E
+        run: |
+          python -m pytest tests/e2e/legacy -m compat_legacy -q
+
+      - name: Run integration lab smoke suite
+        run: |
+          python -m pytest tests/integration -q

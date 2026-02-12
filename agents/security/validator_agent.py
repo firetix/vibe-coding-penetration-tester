@@ -1,4 +1,6 @@
 from typing import Dict, List, Any
+import html
+import urllib.parse
 from playwright.sync_api import Page
 
 from core.llm import LLMProvider
@@ -82,7 +84,8 @@ class ValidationAgent(BaseAgent):
             "validated": False,
             "details": {
                 "validation_method": "expert_analysis",
-                "notes": "Validation pending"
+                "notes": "Validation pending",
+                "confidence_level": "low"
             }
         }
         
@@ -109,15 +112,130 @@ class ValidationAgent(BaseAgent):
         else:
             # Use the followup response to determine validation
             content = response.get("content", "").lower()
-            if "validated" in content and ("confirmed" in content or "verified" in content):
+            if (
+                ("validated" in content and ("confirmed" in content or "verified" in content))
+                or ("confirmed" in content and "false positive" not in content and "cannot validate" not in content)
+                or ("real xss vulnerability" in content)
+            ):
                 validation_result["validated"] = True
                 validation_result["details"]["notes"] = "Validated through expert analysis"
+                validation_result["details"]["confidence_level"] = "medium"
                 logger.success(f"Validated {finding.get('vulnerability_type', 'unknown')} through expert analysis")
             elif "cannot validate" in content or "not validated" in content or "false positive" in content:
                 validation_result["details"]["notes"] = "Could not validate through expert analysis"
                 logger.warning(f"Could not validate {finding.get('vulnerability_type', 'unknown')} - likely a false positive")
-        
+
+        # Apply deterministic runtime-assisted validation for XSS findings.
+        vuln_type = finding.get("vulnerability_type", "").lower()
+        if "xss" in vuln_type:
+            xss_validation = self._validate_xss_finding(finding, page)
+            # Prefer deterministic positives, and only override a positive expert-analysis
+            # verdict when deterministic checks cannot reproduce execution/reflection.
+            if xss_validation.get("validated"):
+                validation_result = xss_validation
+            elif not validation_result.get("validated"):
+                validation_result = xss_validation
+            elif validation_result.get("details", {}).get("validation_method") == "expert_analysis":
+                validation_result = xss_validation
+            else:
+                validation_result.setdefault("details", {})
+                validation_result["details"]["runtime_xss_validation"] = xss_validation.get("details", {})
+
         return validation_result
+
+    def _validate_xss_finding(self, finding: Dict[str, Any], page: Page) -> Dict[str, Any]:
+        """Perform deterministic XSS validation using browser instrumentation and reflection checks."""
+        payload = str(finding.get("details", {}).get("payload", "") or "")
+        page_content = page.content() or ""
+        page_content_lower = page_content.lower()
+
+        result = {
+            "validated": False,
+            "details": {
+                "validation_method": "XSS analysis",
+                "validation_evidence": "No executable or reflected payload evidence found",
+                "confidence_level": "low"
+            }
+        }
+
+        # 1) Browser-assisted detector (preferred when available)
+        try:
+            self.browser_tools.execute_js(
+                "window.__vpt_xss_probe = true;"
+            )
+            detector_result = self.browser_tools.execute_js(
+                "return window.__xss_triggered || window.xssDetected || false;"
+            )
+            if isinstance(detector_result, dict) and detector_result.get("detected"):
+                result["validated"] = True
+                result["details"] = {
+                    "validation_method": "XSS detection via browser instrumentation",
+                    "validation_evidence": detector_result.get("method", "detected"),
+                    "confidence_level": "high"
+                }
+                return result
+            if detector_result is True:
+                result["validated"] = True
+                result["details"] = {
+                    "validation_method": "XSS detection via browser instrumentation",
+                    "validation_evidence": "detected",
+                    "confidence_level": "high"
+                }
+                return result
+        except Exception:
+            # Fall through to content reflection analysis.
+            pass
+
+        # 2) Reflection checks across common encoded forms
+        variants = self._payload_variants(payload)
+        matched_variant = next((v for v in variants if v and v.lower() in page_content_lower), None)
+        if matched_variant:
+            method = "Content reflection analysis"
+            lowered = matched_variant.lower()
+            if any(token in lowered for token in ["onerror", "onload", "onclick", "onmouseover"]):
+                method = "Event handler reflection analysis"
+            elif "javascript:" in lowered:
+                method = "JavaScript URI reflection analysis"
+
+            result["validated"] = True
+            result["details"] = {
+                "validation_method": method,
+                "validation_evidence": matched_variant,
+                "confidence_level": "medium"
+            }
+            return result
+
+        return result
+
+    def _payload_variants(self, payload: str) -> List[str]:
+        """Generate encoded/decoded payload variants to reduce false negatives."""
+        if not payload:
+            return []
+
+        variants = [payload]
+
+        try:
+            once = urllib.parse.unquote(payload)
+            variants.append(once)
+            variants.append(urllib.parse.unquote(once))
+        except Exception:
+            pass
+
+        try:
+            entities = html.unescape(payload)
+            variants.append(entities)
+            variants.append(html.unescape(variants[-1]))
+        except Exception:
+            pass
+
+        # Deduplicate while preserving order.
+        seen = set()
+        unique_variants = []
+        for value in variants:
+            if value not in seen:
+                seen.add(value)
+                unique_variants.append(value)
+        return unique_variants
     
     def _get_tool_name(self, tool_call: Any) -> str:
         """Extract the tool name from a tool call."""

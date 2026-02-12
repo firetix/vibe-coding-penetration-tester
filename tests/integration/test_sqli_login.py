@@ -1,6 +1,8 @@
 import os
 import sys
 import pytest
+from datetime import datetime
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 from unittest.mock import MagicMock
 
@@ -27,6 +29,15 @@ def page(browser):
     yield page
     context.close()
 
+
+def _open_login_modal_or_skip(page):
+    """Open the login modal on vulnweb or skip if the remote DOM is unstable."""
+    try:
+        page.click("a[href='#myModal']", timeout=10000)
+        page.wait_for_selector("form[action='/login']", timeout=10000)
+    except PlaywrightTimeoutError as exc:
+        pytest.skip(f"External target unavailable or UI changed: {exc}")
+
 def test_login_sqli_detection(page):
     """Test the SQL injection detection specifically for the testhtml5.vulnweb.com login form."""
     # Setup
@@ -41,8 +52,7 @@ def test_login_sqli_detection(page):
     page.goto("http://testhtml5.vulnweb.com/", wait_until="networkidle")
     
     # Open the login modal by clicking the login link
-    page.click("a[href='#myModal']")
-    page.wait_for_selector("form[action='/login']")
+    _open_login_modal_or_skip(page)
     
     # Define the form selectors
     form_selector = "form[action='/login']"
@@ -105,8 +115,7 @@ def test_login_sqli_detection(page):
     # Execute the task
     page.goto("http://testhtml5.vulnweb.com/", wait_until="networkidle")
     # Open the login modal by clicking the login link
-    page.click("a[href='#myModal']")
-    page.wait_for_selector("form[action='/login']")
+    _open_login_modal_or_skip(page)
     
     # Get page information for the task
     page_info = {

@@ -56,6 +56,10 @@ class ScanController:
                         config: Dict[str, Any], report_dir: str,
                         activity_callback: Optional[Callable] = None) -> None:
         try:
+            if os.environ.get("VPT_E2E_MODE") == "1":
+                self._run_e2e_scan_process(session_id, scan_id, url, config, report_dir, activity_callback)
+                return
+
             self.logger.info(f"Starting scan for {url} with scan_id: {scan_id}")
             self.logger.info(f"Using session_id: {session_id} for scan activities")
             
@@ -136,6 +140,84 @@ class ScanController:
         except Exception as e:
             self.logger.error(f"Error running scan: {str(e)}")
             self.session_manager.update_scan_status(session_id, scan_id, 'error', 100)
+
+    def _run_e2e_scan_process(self, session_id: str, scan_id: str, url: str,
+                              config: Dict[str, Any], report_dir: str,
+                              activity_callback: Optional[Callable] = None) -> None:
+        """Run a deterministic scan lifecycle for stable end-to-end tests."""
+        scan_mode = config.get("scan_mode", "quick")
+        vulnerabilities = [
+            {
+                "name": "Reflected XSS",
+                "severity": "high",
+                "vulnerability_type": "Cross-Site Scripting (XSS)",
+                "target": url,
+                "details": {
+                    "payload": "<script>alert(1)</script>",
+                    "evidence": "Payload reflected in response body"
+                }
+            }
+        ]
+
+        action_plan = [
+            "Security Testing Plan",
+            "Step 1: Initialize scan (Completed)",
+            "Step 2: Run deterministic E2E checks (Completed)",
+            "Step 3: Generate report artifacts (Completed)"
+        ]
+
+        def emit_activity(activity_type: str, description: str, details: Optional[Dict[str, Any]] = None):
+            if not activity_callback:
+                return
+            try:
+                activity_callback(
+                    session_id,
+                    activity_type,
+                    description,
+                    details or {},
+                    "E2EScanController"
+                )
+            except Exception as err:
+                self.logger.warning(f"E2E activity callback error: {err}")
+
+        self.session_manager.update_scan_status(
+            session_id,
+            scan_id,
+            "initializing",
+            5,
+            vulnerabilities=[],
+            action_plan=["Step 1: Initialize scan (Pending)"],
+            current_task="Initializing deterministic scan"
+        )
+        emit_activity("scan_start", "Deterministic E2E scan started", {"url": url, "scan_mode": scan_mode})
+        time.sleep(0.05)
+
+        self.session_manager.update_scan_status(
+            session_id,
+            scan_id,
+            "running",
+            45,
+            vulnerabilities=vulnerabilities,
+            action_plan=action_plan,
+            current_task="Running deterministic vulnerability checks"
+        )
+        emit_activity("security", "Running deterministic E2E security checks", {"scan_mode": scan_mode})
+        time.sleep(0.05)
+
+        save_result = self.report_manager.seed_deterministic_report(report_dir, url, scan_mode)
+        if save_result.get("status") != "success":
+            raise RuntimeError(f"Failed to save deterministic report: {save_result}")
+
+        self.session_manager.update_scan_status(
+            session_id,
+            scan_id,
+            "completed",
+            100,
+            vulnerabilities=vulnerabilities,
+            action_plan=action_plan,
+            current_task="Deterministic scan completed"
+        )
+        emit_activity("reporting", "Deterministic E2E report generated", {"report_dir": report_dir})
     
     def _create_progress_callback(self, session_id: str, scan_id: str, 
                                activity_callback: Optional[Callable] = None) -> Callable:

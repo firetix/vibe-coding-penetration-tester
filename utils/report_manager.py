@@ -166,6 +166,34 @@ class ReportManager:
         except Exception as e:
             self.logger.error(f"Error saving report: {str(e)}")
             return {'status': 'error', 'message': str(e)}
+
+    def seed_deterministic_report(self, report_dir: str, url: str, scan_mode: str = "quick") -> Dict[str, str]:
+        """Create deterministic report artifacts used by end-to-end tests."""
+        report_data = {
+            "status": "success",
+            "url": url,
+            "scan_mode": scan_mode,
+            "generated_by": "seed_deterministic_report",
+            "findings": [
+                {
+                    "name": "Reflected XSS",
+                    "severity": "high",
+                    "vulnerability_type": "Cross-Site Scripting (XSS)",
+                    "target": url,
+                    "details": {
+                        "payload": "<script>alert(1)</script>",
+                        "evidence": "Payload reflected in deterministic E2E fixture response"
+                    }
+                }
+            ],
+            "markdown": (
+                "# Deterministic E2E Report\n\n"
+                f"- Target: {url}\n"
+                f"- Scan mode: {scan_mode}\n"
+                "- Findings: 1\n"
+            )
+        }
+        return self.save_report(report_dir, report_data)
     
     def _sanitize_url(self, url: str) -> str:
         # Remove protocol
