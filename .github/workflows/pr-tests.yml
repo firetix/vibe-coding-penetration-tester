@@ -92,13 +92,13 @@ jobs:
             PREVIEW_URL="$(printf '%s' "$COMMENTS_JSON" \
               | jq -r 'map(select(.user.login=="vercel[bot]")) | last | .body // ""' \
               | grep -Eo 'https://[A-Za-z0-9.-]+\.vercel\.app' \
-              | head -n1)"
+              | head -n1 || true)"
 
             if [ -z "$PREVIEW_URL" ]; then
               CHECKS_JSON="$(gh pr checks "$PR_NUMBER" --json name,link --jq '.[] | select(.name=="Vercel") | .link' 2>/dev/null || true)"
               PREVIEW_URL="$(printf '%s' "$CHECKS_JSON" \
                 | grep -Eo 'https://[A-Za-z0-9.-]+\.vercel\.app' \
-                | head -n1)"
+                | head -n1 || true)"
             fi
 
             if [ -n "$PREVIEW_URL" ]; then
