@@ -5,7 +5,7 @@
       "src": "wsgi.py",
       "use": "@vercel/python",
       "config": {
-        "installCommand": "pip install -r requirements-vercel.txt"
+        "installCommand": "pip install -r requirements-vercel.txt && python -c \"import shutil, site; [shutil.rmtree(f'{p}/googleapiclient/discovery_cache', ignore_errors=True) for p in site.getsitepackages()]\""
       }
     }
   ],

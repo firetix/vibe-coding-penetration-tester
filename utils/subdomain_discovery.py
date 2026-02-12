@@ -14,6 +14,8 @@ from typing import List, Set, Dict, Any, Optional
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+import dns.resolver
+import dns.exception
 
 from utils.logger import get_logger
 
@@ -314,11 +316,22 @@ def resolve_dns(hostname: str, timeout: float = 2.0) -> bool:
     Returns:
         True if hostname resolves, False otherwise
     """
-    _ = timeout
     try:
-        socket.gethostbyname(hostname)
+        resolver = dns.resolver.Resolver(configure=True)
+        resolver.timeout = timeout
+        resolver.lifetime = timeout
+        resolver.resolve(hostname, "A")
         return True
-    except (socket.gaierror, socket.timeout, OSError):
+    except (
+        dns.resolver.NXDOMAIN,
+        dns.resolver.NoAnswer,
+        dns.resolver.NoNameservers,
+        dns.resolver.LifetimeTimeout,
+        dns.exception.Timeout,
+        socket.gaierror,
+        socket.timeout,
+        OSError,
+    ):
         return False
 
 

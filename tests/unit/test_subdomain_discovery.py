@@ -3,7 +3,7 @@ Unit tests for enhanced subdomain discovery module.
 """
 
 from unittest.mock import patch, MagicMock
-import socket
+import dns.resolver
 
 from utils.subdomain_discovery import (
     get_domain_from_url,
@@ -45,20 +45,33 @@ class TestGetDomainFromUrl:
 class TestResolveDns:
     """Tests for DNS resolution."""
 
-    @patch("socket.gethostbyname")
-    def test_successful_resolution(self, mock_gethostbyname):
-        mock_gethostbyname.return_value = "93.184.216.34"
-        assert resolve_dns("example.com") is True
-        mock_gethostbyname.assert_called_once_with("example.com")
+    @patch("utils.subdomain_discovery.dns.resolver.Resolver")
+    def test_successful_resolution(self, mock_resolver_cls):
+        mock_resolver = MagicMock()
+        mock_resolver_cls.return_value = mock_resolver
+        mock_resolver.resolve.return_value = ["93.184.216.34"]
 
-    @patch("socket.gethostbyname")
-    def test_failed_resolution(self, mock_gethostbyname):
-        mock_gethostbyname.side_effect = socket.gaierror("DNS lookup failed")
+        assert resolve_dns("example.com", timeout=1.5) is True
+        assert mock_resolver.timeout == 1.5
+        assert mock_resolver.lifetime == 1.5
+        mock_resolver.resolve.assert_called_once_with("example.com", "A")
+
+    @patch("utils.subdomain_discovery.dns.resolver.Resolver")
+    def test_failed_resolution(self, mock_resolver_cls):
+        mock_resolver = MagicMock()
+        mock_resolver_cls.return_value = mock_resolver
+        mock_resolver.resolve.side_effect = dns.resolver.NXDOMAIN("DNS lookup failed")
+
         assert resolve_dns("nonexistent.invalid") is False
 
-    @patch("socket.gethostbyname")
-    def test_timeout(self, mock_gethostbyname):
-        mock_gethostbyname.side_effect = socket.timeout("Timeout")
+    @patch("utils.subdomain_discovery.dns.resolver.Resolver")
+    def test_timeout(self, mock_resolver_cls):
+        mock_resolver = MagicMock()
+        mock_resolver_cls.return_value = mock_resolver
+        mock_resolver.resolve.side_effect = dns.resolver.LifetimeTimeout(
+            timeout=2.0, errors=[]
+        )
+
         assert resolve_dns("slow.example.com") is False
 
 

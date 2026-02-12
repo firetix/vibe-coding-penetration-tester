@@ -1,5 +1,6 @@
 openai>=1.12.0
 anthropic>=0.19.0
+google-generativeai>=0.5.0
 dnspython>=2.4.0
 beautifulsoup4>=4.13.0
 colorama>=0.4.6
