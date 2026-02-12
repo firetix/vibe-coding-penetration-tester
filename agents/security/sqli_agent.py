@@ -1,3 +1,4 @@
+import re
 from typing import Dict, Any
 from playwright.sync_api import Page
 
@@ -340,6 +341,3 @@ class SQLInjectionAgent(SpecializedSecurityAgent):
                         logger.security("Found UNION-based SQL Injection vulnerability")
 
         return result
-
-
-import re  # Add this at the top of the file

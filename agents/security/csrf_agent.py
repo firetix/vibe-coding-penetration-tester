@@ -70,6 +70,18 @@ class CSRFAgent(SpecializedSecurityAgent):
     ) -> Dict[str, Any]:
         """Check for CSRF vulnerabilities in tool results."""
         logger = get_logger()
+        csrf_indicators = [
+            "name='csrf",
+            'name="csrf',
+            "name='_token",
+            'name="_token',
+            "name='token",
+            'name="token',
+            "name='authenticity_token",
+            'name="authenticity_token',
+            "name='xsrf",
+            'name="xsrf',
+        ]
 
         # Check for CSRF issues reported by tools
         if tool_result.get("csrf_found", False) or tool_result.get(
@@ -110,20 +122,6 @@ class CSRFAgent(SpecializedSecurityAgent):
             # First, check if the form had a hidden token field
             html_content = page.content().lower()
 
-            # Look for common CSRF token indicators in the page
-            csrf_indicators = [
-                "name='csrf",
-                'name="csrf',
-                "name='_token",
-                'name="_token',
-                "name='token",
-                'name="token',
-                "name='authenticity_token",
-                'name="authenticity_token',
-                "name='xsrf",
-                'name="xsrf',
-            ]
-
             has_csrf_token = any(
                 indicator in html_content for indicator in csrf_indicators
             )
@@ -145,7 +143,7 @@ class CSRFAgent(SpecializedSecurityAgent):
                 check_origin_or_referer = (
                     "origin" in html_content or "referer" in html_content
                 )
-            except:
+            except Exception:
                 pass
 
             # Forms without CSRF protection are vulnerable
