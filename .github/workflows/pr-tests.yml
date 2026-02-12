@@ -49,7 +49,7 @@ jobs:
   vercel-preview-e2e:
     name: Vercel Preview E2E
     needs: test
-    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.preview_url != '')
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.preview_url != '')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -76,8 +76,8 @@ jobs:
         id: resolve_preview
         shell: bash
         run: |
-          if [ -n "${{ inputs.preview_url }}" ]; then
-            echo "preview_url=${{ inputs.preview_url }}" >> "$GITHUB_OUTPUT"
+          if [ -n "${{ github.event.inputs.preview_url }}" ]; then
+            echo "preview_url=${{ github.event.inputs.preview_url }}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
