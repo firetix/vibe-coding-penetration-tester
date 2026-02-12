@@ -66,7 +66,10 @@ def create_app():
     report_manager = ReportManager(app.config['UPLOAD_FOLDER'])
     session_manager = SessionManager()
     scan_controller = ScanController(session_manager, report_manager)
-    default_db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'vpt.db')
+    if is_vercel:
+        default_db_path = "/tmp/vpt.db"
+    else:
+        default_db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'vpt.db')
     db_path = os.environ.get("VPT_BILLING_DB_PATH", default_db_path)
     billing_store = BillingStore(db_path=db_path)
 

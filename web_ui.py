@@ -79,7 +79,10 @@ activity_tracker = ActivityTracker()
 report_manager = ReportManager(app.config['UPLOAD_FOLDER'])
 session_manager = SessionManager()
 scan_controller = ScanController(session_manager, report_manager)
-_default_billing_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'vpt.db')
+if is_vercel:
+    _default_billing_db_path = '/tmp/vpt.db'
+else:
+    _default_billing_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'vpt.db')
 billing_store = BillingStore(os.environ.get('VPT_BILLING_DB_PATH', _default_billing_db_path))
 
 
