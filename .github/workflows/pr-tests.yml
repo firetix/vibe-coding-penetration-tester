@@ -89,17 +89,10 @@ jobs:
 
           for attempt in $(seq 1 30); do
             COMMENTS_JSON="$(gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments --paginate || true)"
-            PREVIEW_URL="$(printf '%s' "$COMMENTS_JSON" | python -c 'import json,re,sys
-raw=sys.stdin.read().strip()
-if not raw:
-    print("")
-    raise SystemExit(0)
-comments=json.loads(raw)
-vercel=[c for c in comments if c.get("user",{}).get("login")=="vercel[bot]"]
-vercel.sort(key=lambda c: c.get("created_at",""))
-body=vercel[-1].get("body","") if vercel else ""
-match=re.search(r"https://[A-Za-z0-9.-]+\\.vercel\\.app", body)
-print(match.group(0) if match else "")')"
+            PREVIEW_URL="$(printf '%s' "$COMMENTS_JSON" \
+              | jq -r 'map(select(.user.login=="vercel[bot]")) | last | .body // ""' \
+              | grep -Eo 'https://[A-Za-z0-9.-]+\.vercel\.app' \
+              | head -n1)"
 
             if [ -n "$PREVIEW_URL" ]; then
               echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
