@@ -72,6 +72,46 @@ class BillingStore:
             )
             conn.commit()
 
+    def _is_pro_active(self, pro_until: Optional[str]) -> bool:
+        if not pro_until:
+            return False
+        try:
+            return datetime.fromisoformat(pro_until).replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
+        except Exception:
+            return False
+
+    def _entitlements_from_row(self, account_id: str, row: Optional[sqlite3.Row]) -> Dict[str, Any]:
+        if not row:
+            return {
+                "account_id": account_id,
+                "free_scans_remaining": 0,
+                "deep_scan_credits": 0,
+                "pro_until": None,
+                "pro_active": False,
+            }
+        pro_until = row["pro_until"]
+        return {
+            "account_id": account_id,
+            "free_scans_remaining": int(row["free_scans_remaining"]),
+            "deep_scan_credits": int(row["deep_scan_credits"]),
+            "pro_until": pro_until,
+            "pro_active": self._is_pro_active(pro_until),
+        }
+
+    def _ensure_account_locked(self, conn: sqlite3.Connection, account_id: str) -> None:
+        now = time.time()
+        conn.execute(
+            "INSERT OR IGNORE INTO accounts(account_id, created_at) VALUES (?, ?)",
+            (account_id, now),
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO entitlements(account_id, free_scans_remaining, deep_scan_credits, pro_until, updated_at)
+            VALUES (?, 1, 0, NULL, ?)
+            """,
+            (account_id, now),
+        )
+
     def ensure_account(self, account_id: str) -> None:
         now = time.time()
         with self._lock:
@@ -96,21 +136,105 @@ class BillingStore:
                 "SELECT free_scans_remaining, deep_scan_credits, pro_until FROM entitlements WHERE account_id = ?",
                 (account_id,),
             ).fetchone()
+        return self._entitlements_from_row(account_id, row)
 
-        pro_active = False
-        if row and row["pro_until"]:
-            try:
-                pro_active = datetime.fromisoformat(row["pro_until"]).replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
-            except Exception:
-                pro_active = False
+    def try_consume_entitlement_for_scan(self, account_id: str, scan_mode: str) -> Dict[str, Any]:
+        """
+        Atomically decide and consume entitlement for a scan start.
+        Returns:
+          {
+            "allowed": bool,
+            "consume": "free"|"credit"|None,
+            "entitlements": {...}
+          }
+        """
+        now = time.time()
+        with self._lock:
+            with self._connect() as conn:
+                self._ensure_account_locked(conn, account_id)
 
-        return {
-            "account_id": account_id,
-            "free_scans_remaining": int(row["free_scans_remaining"]) if row else 0,
-            "deep_scan_credits": int(row["deep_scan_credits"]) if row else 0,
-            "pro_until": row["pro_until"] if row else None,
-            "pro_active": pro_active,
-        }
+                row = conn.execute(
+                    "SELECT free_scans_remaining, deep_scan_credits, pro_until FROM entitlements WHERE account_id = ?",
+                    (account_id,),
+                ).fetchone()
+                entitlements = self._entitlements_from_row(account_id, row)
+
+                if entitlements["pro_active"]:
+                    return {"allowed": True, "consume": None, "entitlements": entitlements}
+
+                if scan_mode == "quick":
+                    updated = conn.execute(
+                        """
+                        UPDATE entitlements
+                        SET free_scans_remaining = free_scans_remaining - 1,
+                            updated_at = ?
+                        WHERE account_id = ? AND free_scans_remaining > 0
+                        """,
+                        (now, account_id),
+                    )
+                    if updated.rowcount == 1:
+                        conn.commit()
+                        consumed_row = conn.execute(
+                            "SELECT free_scans_remaining, deep_scan_credits, pro_until FROM entitlements WHERE account_id = ?",
+                            (account_id,),
+                        ).fetchone()
+                        return {
+                            "allowed": True,
+                            "consume": "free",
+                            "entitlements": self._entitlements_from_row(account_id, consumed_row),
+                        }
+
+                updated = conn.execute(
+                    """
+                    UPDATE entitlements
+                    SET deep_scan_credits = deep_scan_credits - 1,
+                        updated_at = ?
+                    WHERE account_id = ? AND deep_scan_credits > 0
+                    """,
+                    (now, account_id),
+                )
+                if updated.rowcount == 1:
+                    conn.commit()
+                    consumed_row = conn.execute(
+                        "SELECT free_scans_remaining, deep_scan_credits, pro_until FROM entitlements WHERE account_id = ?",
+                        (account_id,),
+                    ).fetchone()
+                    return {
+                        "allowed": True,
+                        "consume": "credit",
+                        "entitlements": self._entitlements_from_row(account_id, consumed_row),
+                    }
+
+                return {"allowed": False, "consume": None, "entitlements": entitlements}
+
+    def refund_consumption(self, account_id: str, consume: Optional[str]) -> None:
+        if consume not in {"free", "credit"}:
+            return
+        now = time.time()
+        with self._lock:
+            with self._connect() as conn:
+                self._ensure_account_locked(conn, account_id)
+                if consume == "free":
+                    conn.execute(
+                        """
+                        UPDATE entitlements
+                        SET free_scans_remaining = free_scans_remaining + 1,
+                            updated_at = ?
+                        WHERE account_id = ?
+                        """,
+                        (now, account_id),
+                    )
+                elif consume == "credit":
+                    conn.execute(
+                        """
+                        UPDATE entitlements
+                        SET deep_scan_credits = deep_scan_credits + 1,
+                            updated_at = ?
+                        WHERE account_id = ?
+                        """,
+                        (now, account_id),
+                    )
+                conn.commit()
 
     def decrement_free_scan(self, account_id: str) -> None:
         now = time.time()

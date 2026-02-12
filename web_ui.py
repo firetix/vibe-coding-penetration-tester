@@ -29,9 +29,7 @@ from utils.scan_controller import ScanController
 from utils.billing_store import BillingStore
 from utils.entitlements import (
     check_scan_rate_limits,
-    consume_entitlement,
     extract_client_ip,
-    evaluate_entitlement_for_scan,
     is_hosted_mode,
     is_valid_target_for_hosted,
     parse_scan_mode,
@@ -122,6 +120,108 @@ def _coerce_bool(value):
     if isinstance(value, str):
         return value.strip().lower() in {'1', 'true', 'yes', 'on'}
     return False
+
+
+def _allow_mock_checkout():
+    explicit = os.environ.get('VPT_ENABLE_MOCK_CHECKOUT')
+    if explicit == '0':
+        return False
+    if explicit == '1':
+        return True
+    if os.environ.get('VPT_E2E_MODE') == '1':
+        return True
+    return os.environ.get('VPT_HOSTED_MODE', '0') != '1'
+
+
+def _line_item_for_mode(scan_mode):
+    if scan_mode == 'solutions':
+        price_id = os.environ.get('STRIPE_PRICE_CREDIT_PACK')
+        if price_id:
+            return {'price': price_id, 'quantity': 1}
+        return {
+            'price_data': {
+                'currency': 'usd',
+                'unit_amount': 2900,
+                'product_data': {'name': 'Vibe Pen Tester - Solutions Pack'},
+            },
+            'quantity': 1,
+        }
+    if scan_mode == 'deep':
+        price_id = os.environ.get('STRIPE_PRICE_CREDIT_PACK')
+        if price_id:
+            return {'price': price_id, 'quantity': 1}
+        return {
+            'price_data': {
+                'currency': 'usd',
+                'unit_amount': 900,
+                'product_data': {'name': 'Vibe Pen Tester - Deep Scan Credit'},
+            },
+            'quantity': 1,
+        }
+
+    price_id = os.environ.get('STRIPE_PRICE_PRO_MONTHLY')
+    if price_id:
+        return {'price': price_id, 'quantity': 1}
+    return {
+        'price_data': {
+            'currency': 'usd',
+            'unit_amount': 1900,
+            'recurring': {'interval': 'month'},
+            'product_data': {'name': 'Vibe Pen Tester - Pro Monthly'},
+        },
+        'quantity': 1,
+    }
+
+
+def _create_checkout_payload(account_id, scan_mode, success_url=None, cancel_url=None):
+    checkout_session_id = f"cs_{uuid.uuid4().hex}"
+    checkout_url = None
+    amount = 0
+    currency = 'usd'
+
+    stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY')
+    if stripe and stripe_secret_key:
+        try:
+            stripe.api_key = stripe_secret_key
+            resolved_success_url = success_url or f"{request.host_url.rstrip('/')}/?checkout=success"
+            resolved_cancel_url = cancel_url or f"{request.host_url.rstrip('/')}/?checkout=cancel"
+            line_item = _line_item_for_mode(scan_mode)
+            session = stripe.checkout.Session.create(
+                mode='payment' if scan_mode in {'deep', 'solutions'} else 'subscription',
+                line_items=[line_item],
+                success_url=resolved_success_url,
+                cancel_url=resolved_cancel_url,
+                metadata={
+                    'account_id': account_id,
+                    'scan_mode': scan_mode,
+                },
+            )
+            checkout_session_id = session.id
+            checkout_url = session.url
+            amount = getattr(session, 'amount_total', 0) or 0
+            currency = getattr(session, 'currency', 'usd') or 'usd'
+        except Exception:
+            checkout_url = None
+
+    if checkout_url is None:
+        if not _allow_mock_checkout():
+            return None, jsonify({'status': 'error', 'message': 'Checkout is unavailable; Stripe is not configured'}), 503
+        checkout_url = f"{request.host_url.rstrip('/')}/mock-checkout/{checkout_session_id}"
+
+    billing_store.create_checkout_session(
+        checkout_session_id=checkout_session_id,
+        account_id=account_id,
+        scan_mode=scan_mode,
+        amount=amount,
+        currency=currency,
+    )
+
+    return {
+        'status': 'success',
+        'checkout_session_id': checkout_session_id,
+        'checkout_url': checkout_url,
+        'scan_mode': scan_mode
+    }, None, 200
 
 # Helper decorator for auto-creating sessions
 def auto_create_session(f):
@@ -345,30 +445,28 @@ def start_scan():
             if not rate_ok:
                 return jsonify({'status': 'error', 'message': rate_reason or 'Rate limit exceeded'}), 429
 
-            ent_check = evaluate_entitlement_for_scan(billing_store, account_id, scan_mode)
+            ent_check = billing_store.try_consume_entitlement_for_scan(account_id, scan_mode)
             if not ent_check['allowed']:
-                checkout_session_id = f"cs_{uuid.uuid4().hex}"
-                billing_store.create_checkout_session(
-                    checkout_session_id=checkout_session_id,
-                    account_id=account_id,
-                    scan_mode=scan_mode,
-                )
-                checkout_url = f"{request.host_url.rstrip('/')}/mock-checkout/{checkout_session_id}"
+                checkout_url = f"{request.host_url.rstrip('/')}/billing/checkout?scan_mode={scan_mode}"
                 return jsonify(payment_required_payload(ent_check['entitlements'], checkout_url)), 402
 
             pending_entitlement_consume = ent_check['consume']
             pending_usage_event_ip = ip_address
         
         # Start the scan
-        scan_id = scan_controller.start_scan(
-            session_id, url, config, 
-            activity_callback=activity_tracker.add_activity
-        )
-        if is_hosted_mode() and pending_entitlement_consume and account_id:
-            try:
-                consume_entitlement(billing_store, account_id, pending_entitlement_consume)
-            except Exception:
-                logger.exception("Failed to consume entitlement after scan start for account %s", account_id)
+        try:
+            scan_id = scan_controller.start_scan(
+                session_id, url, config,
+                activity_callback=activity_tracker.add_activity
+            )
+        except Exception:
+            if is_hosted_mode() and pending_entitlement_consume and account_id:
+                try:
+                    billing_store.refund_consumption(account_id, pending_entitlement_consume)
+                except Exception:
+                    logger.exception("Failed to refund entitlement after scan start failure for account %s", account_id)
+            raise
+
         if is_hosted_mode() and pending_usage_event_ip and account_id:
             try:
                 billing_store.record_usage_event(account_id, pending_usage_event_ip, 'scan_start')
@@ -553,19 +651,15 @@ def billing_checkout():
     data = request.get_json(silent=True) or {}
     account_id = getattr(request, '_vpt_account_id', None)
     scan_mode = parse_scan_mode(data.get('scan_mode'))
-    checkout_session_id = f"cs_{uuid.uuid4().hex}"
-    billing_store.create_checkout_session(
-        checkout_session_id=checkout_session_id,
+    payload, error_response, error_status = _create_checkout_payload(
         account_id=account_id,
         scan_mode=scan_mode,
+        success_url=data.get('success_url'),
+        cancel_url=data.get('cancel_url'),
     )
-    checkout_url = f"{request.host_url.rstrip('/')}/mock-checkout/{checkout_session_id}"
-    return jsonify({
-        'status': 'success',
-        'checkout_session_id': checkout_session_id,
-        'checkout_url': checkout_url,
-        'scan_mode': scan_mode
-    })
+    if error_response is not None:
+        return error_response, error_status
+    return jsonify(payload)
 
 
 def _complete_checkout_session(checkout_session_id, payment_intent_id=None):
@@ -634,12 +728,25 @@ def billing_webhook():
 
 @app.route('/mock-checkout/<checkout_session_id>', methods=['GET'])
 def mock_checkout(checkout_session_id):
+    if not _allow_mock_checkout():
+        return jsonify({'status': 'error', 'message': 'Not found'}), 404
+
     checkout, error_response, error_status = _complete_checkout_session(checkout_session_id)
     if error_response is not None:
         return error_response, error_status
 
     status_value = 'success' if checkout.get('just_completed', False) else 'already_complete'
     return redirect(f"/?checkout={status_value}")
+
+
+@app.route('/billing/checkout', methods=['GET'])
+def browser_checkout():
+    account_id = getattr(request, '_vpt_account_id', None)
+    scan_mode = parse_scan_mode(request.args.get('scan_mode'))
+    payload, error_response, error_status = _create_checkout_payload(account_id=account_id, scan_mode=scan_mode)
+    if error_response is not None:
+        return error_response, error_status
+    return redirect(payload['checkout_url'])
 
 @app.route('/api/report/<report_id>', methods=['GET'])
 def get_report(report_id):
@@ -1038,15 +1145,9 @@ def start_scan_compat():
             if not rate_ok:
                 return jsonify({'status': 'error', 'message': rate_reason or 'Rate limit exceeded'}), 429
 
-            ent_check = evaluate_entitlement_for_scan(billing_store, account_id, scan_mode)
+            ent_check = billing_store.try_consume_entitlement_for_scan(account_id, scan_mode)
             if not ent_check['allowed']:
-                checkout_session_id = f"cs_{uuid.uuid4().hex}"
-                billing_store.create_checkout_session(
-                    checkout_session_id=checkout_session_id,
-                    account_id=account_id,
-                    scan_mode=scan_mode,
-                )
-                checkout_url = f"{request.host_url.rstrip('/')}/mock-checkout/{checkout_session_id}"
+                checkout_url = f"{request.host_url.rstrip('/')}/billing/checkout?scan_mode={scan_mode}"
                 return jsonify(payment_required_payload(ent_check['entitlements'], checkout_url)), 402
 
             pending_entitlement_consume = ent_check['consume']
@@ -1061,15 +1162,19 @@ def start_scan_compat():
         
         # Start the scan
         logger.info(f"Starting scan for URL {url} with session {session_id} and config {config}")
-        scan_id = scan_controller.start_scan(
-            session_id, url, config, 
-            activity_callback=activity_tracker.add_activity
-        )
-        if is_hosted_mode() and pending_entitlement_consume and account_id:
-            try:
-                consume_entitlement(billing_store, account_id, pending_entitlement_consume)
-            except Exception:
-                logger.exception("Failed to consume entitlement after scan start for account %s", account_id)
+        try:
+            scan_id = scan_controller.start_scan(
+                session_id, url, config,
+                activity_callback=activity_tracker.add_activity
+            )
+        except Exception:
+            if is_hosted_mode() and pending_entitlement_consume and account_id:
+                try:
+                    billing_store.refund_consumption(account_id, pending_entitlement_consume)
+                except Exception:
+                    logger.exception("Failed to refund entitlement after scan start failure for account %s", account_id)
+            raise
+
         if is_hosted_mode() and pending_usage_event_ip and account_id:
             try:
                 billing_store.record_usage_event(account_id, pending_usage_event_ip, 'scan_start')

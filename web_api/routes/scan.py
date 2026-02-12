@@ -1,7 +1,6 @@
 """Scan management routes."""
 
 import logging
-import uuid
 
 from flask import Blueprint, g, jsonify, request
 
@@ -11,9 +10,7 @@ from web_api.middleware.session_validator import validate_session
 from web_api.middleware.error_handler import handle_errors
 from utils.entitlements import (
     check_scan_rate_limits,
-    consume_entitlement,
     extract_client_ip,
-    evaluate_entitlement_for_scan,
     is_hosted_mode,
     is_valid_target_for_hosted,
     parse_scan_mode,
@@ -36,15 +33,8 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
 
     bp = Blueprint('scan', __name__, url_prefix='/api/scan')
 
-    def _make_checkout_url(account_id: str, scan_mode: str) -> str:
-        checkout_session_id = f"cs_{uuid.uuid4().hex}"
-        if billing_store is not None:
-            billing_store.create_checkout_session(
-                checkout_session_id=checkout_session_id,
-                account_id=account_id,
-                scan_mode=scan_mode,
-            )
-        return f"{request.host_url.rstrip('/')}/mock-checkout/{checkout_session_id}"
+    def _make_checkout_url(scan_mode: str) -> str:
+        return f"{request.host_url.rstrip('/')}/billing/checkout?scan_mode={scan_mode}"
 
     def _enforce_hosted_policy(data, url: str, scan_mode: str):
         if not is_hosted_mode() or billing_store is None:
@@ -71,9 +61,9 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
         if not rate_ok:
             return error_response(rate_reason or "Rate limit exceeded", 429)
 
-        ent_check = evaluate_entitlement_for_scan(billing_store, account_id, scan_mode)
+        ent_check = billing_store.try_consume_entitlement_for_scan(account_id, scan_mode)
         if not ent_check["allowed"]:
-            checkout_url = _make_checkout_url(account_id, scan_mode)
+            checkout_url = _make_checkout_url(scan_mode)
             payload = payment_required_payload(ent_check["entitlements"], checkout_url)
             return jsonify(payload), 402
 
@@ -86,17 +76,9 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
         if not is_hosted_mode() or billing_store is None:
             return
 
-        consume_kind = getattr(g, "pending_entitlement_consume", None)
         account_id = getattr(g, "account_id", None)
         if not account_id:
             return
-
-        if consume_kind:
-            try:
-                g.entitlements = consume_entitlement(billing_store, account_id, consume_kind)
-                g.pending_entitlement_consume = None
-            except Exception:
-                logger.exception("Failed to consume entitlement after scan start for account %s", account_id)
 
         usage_ip = getattr(g, "pending_usage_event_ip", None)
         if usage_ip:
@@ -105,6 +87,23 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
                 g.pending_usage_event_ip = None
             except Exception:
                 logger.exception("Failed to record scan usage event for account %s", account_id)
+        g.pending_entitlement_consume = None
+
+    def _rollback_entitlement_consumption():
+        if not is_hosted_mode() or billing_store is None:
+            return
+
+        consume_kind = getattr(g, "pending_entitlement_consume", None)
+        account_id = getattr(g, "account_id", None)
+        if not consume_kind or not account_id:
+            return
+
+        try:
+            billing_store.refund_consumption(account_id, consume_kind)
+            g.entitlements = billing_store.get_entitlements(account_id)
+            g.pending_entitlement_consume = None
+        except Exception:
+            logger.exception("Failed to refund entitlement after scan start failure for account %s", account_id)
 
     @bp.route('/start', methods=['POST'])
     @handle_errors
@@ -137,10 +136,14 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
             return activity_tracker.add_activity(session_id, activity_type, description, details, agent_name)
 
         # Start the scan
-        scan_id = scan_controller.start_scan(
-            session_id, url, config,
-            activity_callback=activity_adapter
-        )
+        try:
+            scan_id = scan_controller.start_scan(
+                session_id, url, config,
+                activity_callback=activity_adapter
+            )
+        except Exception:
+            _rollback_entitlement_consumption()
+            raise
         _finalize_entitlement_consumption()
 
         response_data = {
@@ -281,10 +284,14 @@ def register_routes(app, session_manager, scan_controller, activity_tracker, bil
             agent_name = activity.get('agent', None)
             return activity_tracker.add_activity(session_id, activity_type, description, details, agent_name)
 
-        scan_id = scan_controller.start_scan(
-            session_id, url, config,
-            activity_callback=activity_adapter
-        )
+        try:
+            scan_id = scan_controller.start_scan(
+                session_id, url, config,
+                activity_callback=activity_adapter
+            )
+        except Exception:
+            _rollback_entitlement_consumption()
+            raise
         _finalize_entitlement_consumption()
 
         logger.info(f"Scan started successfully with scan_id: {scan_id}")

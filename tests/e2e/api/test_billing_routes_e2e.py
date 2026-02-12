@@ -71,6 +71,19 @@ def test_mock_checkout_route_is_reachable_and_completes_checkout(web_api_server,
     assert after["deep_scan_credits"] == before["deep_scan_credits"] + 5
 
 
+@pytest.mark.e2e_api_full
+def test_browser_checkout_route_redirects_to_checkout_url(web_api_server, http_client):
+    http_client.get(f"{web_api_server}/status", timeout=10)
+    response = http_client.get(
+        f"{web_api_server}/billing/checkout",
+        params={"scan_mode": "deep"},
+        allow_redirects=False,
+        timeout=10,
+    )
+    assert response.status_code in (301, 302, 303, 307, 308)
+    assert response.headers.get("Location")
+
+
 @pytest.mark.e2e_api_critical
 def test_billing_webhook_idempotent(web_api_server, http_client):
     http_client.get(f"{web_api_server}/status", timeout=10)
@@ -108,6 +121,7 @@ def test_billing_webhook_rejects_unsigned_without_test_mode():
     env.update(
         {
             "VPT_HOSTED_MODE": "1",
+            "VPT_ENABLE_MOCK_CHECKOUT": "1",
             "VPT_BILLING_DB_PATH": strict_db_path,
         }
     )
