@@ -118,7 +118,7 @@ class LLMProvider:
                     f"Make sure Ollama is running and accessible. Error: {str(e)}"
                 )
         elif self.provider == "gemini":  # Added Gemini initialization
-            if genai is None or genai_types is None:
+            if genai is None:
                 raise ValueError(
                     "Google Gemini SDK is not installed. Install dependency: google-generativeai."
                 )
