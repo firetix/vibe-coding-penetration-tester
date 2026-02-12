@@ -21,7 +21,9 @@ def test_extract_client_ip_uses_forwarded_header_when_trusted():
     assert ip == "203.0.113.9"
 
 
-def test_is_valid_target_for_hosted_blocks_hostname_resolving_to_private_ip(monkeypatch):
+def test_is_valid_target_for_hosted_blocks_hostname_resolving_to_private_ip(
+    monkeypatch,
+):
     def fake_getaddrinfo(*_args, **_kwargs):
         return [
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0)),

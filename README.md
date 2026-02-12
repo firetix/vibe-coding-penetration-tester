@@ -9,7 +9,7 @@
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-**✨ Live Demo: [vibehack.io](http://vibehack.io/)**
+**✨ Live Demo: [vibehack.io](http://vibehack.io/)** 
 
 **Vibe Coding**? Cool story. But your vibe might be "security breach waiting to happen." Introducing VibePenTester, the AI pen-tester who rolls its eyes at your half-baked code, discovers your vulnerabilities faster than your coworkers discover free pizza, and gently bullies your web app into compliance. Less "vibe check," more "reality check."
 
@@ -21,8 +21,7 @@
 
 ## 🌟 Key Features
 
-- **Intelligent Vulnerability Discovery**: Uses LLMs (OpenAI, Anthropic Claude, Google Gemini, and local Ollama models) for chat completions and function calling to understand application context and identify potential security weaknesses (and your career weaknesses too).
-- **Multi-Provider Embeddings**: Generates text embeddings using OpenAI, Ollama, or Google Gemini (`models/text-embedding-004`) for potential future use cases (e.g., semantic search, context retrieval).
+- **Intelligent Vulnerability Discovery**: Uses LLMs (OpenAI, Anthropic Claude, and local Ollama models) to understand application context and identify potential security weaknesses (and your career weaknesses too)
 - **Advanced Payload Generation**: Creates sophisticated test payloads tailored to the target application (more creative than your dating app profile)
 - **Context-Aware Testing**: Analyzes application behavior and responses to guide testing strategy (unlike your ex who never listened)
 - **Automated Exploit Verification**: Validates findings to eliminate false positives (we wish dating apps had this feature)
@@ -39,7 +38,6 @@
 - OpenAI API key (for using OpenAI models)
 - Anthropic API key (optional, for using Claude models)
 - Ollama (optional, for running models locally without API keys)
-- Google API Key (optional, for using Google Gemini models if not provided via UI. Obtain from [Google AI Studio](https://aistudio.google.com/app/apikey))
 - Playwright (no actual playwright experience required)
 
 ### Installation
@@ -83,17 +81,6 @@ python main.py --url https://example.com --provider ollama --model deepseek-r1
 
 # Using Ollama with a custom server URL (for remote Ollama instances)
 python main.py --url https://example.com --provider ollama --model llama3 --ollama-url http://ollama-server:11434
-
-# Using Google Gemini models
-# Use Google Gemini with default model (requires GOOGLE_API_KEY set)
-python main.py --url https://example.com --provider gemini
-
-# Use a specific Google Gemini model (e.g., gemini-2.0-flash)
-python main.py --url https://example.com --provider gemini --model gemini-2.0-flash
-# Note: Gemini embeddings use 'models/text-embedding-004' by default (configurable in config.yaml: llm.gemini.embedding_model)
-
-# Example running via Docker (assuming key is in .env file)
-docker run --rm -v $(pwd):/app --env-file .env your-vibepentester-image --url https://example.com --provider gemini
 ```
 
 ### Web Interface
@@ -112,7 +99,6 @@ Then open your browser to [http://localhost:5050](http://localhost:5050)
 - **Local Model Support**: Run security tests using Ollama with any locally available model
 - **Customizable Ollama Settings**: Configure Ollama server URL and model selection in the UI
 - **Smart Model Detection**: Automatic adjustment for smaller models with appropriate fallbacks
-- **Google Gemini Support**: Select Gemini models and optionally enter your Google API key directly in the UI.
 - **Real-time Scan Progress**: Watch as the AI agents work through the security testing process
 - **Interactive Reports**: View detailed findings with vulnerability explanations and remediation suggestions
 - **Mobile Responsive**: Works on desktops, tablets, and mobile devices
@@ -139,7 +125,7 @@ This application has been specially adapted to work with Vercel's serverless arc
 
 Why take our word for it? We've got receipts for days. Check out the `/reports_samples/` directory to see actual vulnerabilities detected in the wild. These aren't made-up examples — they're real bugs that could have tanked someone's weekend if we hadn't vibed with their code first.
 
-**✨ Live Demo: [vibehack.io](http://vibehack.io/)**
+**✨ Live Demo: [vibehack.io](http://vibehack.io/)** 
 
 We've deployed a fully functional instance to Vercel because we're that confident in our tool (or possibly that reckless with our API credits). Test it out before installing — your DevOps team will thank you later.
 
@@ -151,8 +137,8 @@ Remember: Your code might be passing all the tests, but are those tests passing 
 |--------|-------------|
 | `--url` | Target URL to test (required, unless you want to test the void) |
 | `--scope` | Scan scope (url, domain, or subdomain, default: url) |
-| `--provider` | LLM provider to use (openai, anthropic, gemini, or ollama, default: openai) |
-| `--model` | LLM model to use (e.g., OpenAI: gpt-4o; Anthropic: claude-3-opus; Gemini: gemini-1.5-pro; Ollama: llama3) |
+| `--provider` | LLM provider to use (openai, anthropic, or ollama, default: openai) |
+| `--model` | LLM model to use (OpenAI: gpt-4o; Anthropic: claude-3-7-sonnet-20250219, claude-3-7-sonnet-latest, claude-3-5-haiku-20241022; Ollama: llama3, mixtral, etc.) |
 | `--output` | Output directory for results (where the digital dirt gets stored) |
 | `--verbose` | Enable verbose logging (for those who enjoy reading horror stories in real-time) |
 | `--ollama-url` | Ollama server URL (used only with --provider=ollama, default: http://localhost:11434) |
@@ -163,7 +149,7 @@ VibePenTester is built with a modular architecture consisting of several key com
 
 - **OpenAI Swarm**: The backbone of our multi-agent system, leveraging OpenAI's powerful swarm architecture to coordinate multiple specialized agents (it's like The Avengers, but for hacking)
 - **SwarmCoordinator**: Orchestrates the scanning process and manages other components (the micromanager you actually want)
-- **LLMProvider**: Unified interface to different LLM providers (OpenAI, Anthropic, Google Gemini, and Ollama) for both chat completions/function calling and text embeddings (the universal translator of AI dialects).
+- **LLMProvider**: Unified interface to different LLM providers (OpenAI, Anthropic, and Ollama) (the universal translator of AI dialects)
 - **Scanner**: Handles web page interaction and data collection (digital detective with OCD)
 - **Agents**: Specialized security testing agents focusing on different aspects
   - Discovery agents for URL and attack surface identification (the nosy neighbors of the internet)
@@ -191,7 +177,7 @@ These features ensure VibePenTester works effectively even with smaller open-sou
 
 If you encounter issues with Ollama:
 
-1. **Connectivity Problems**:
+1. **Connectivity Problems**: 
    - Ensure Ollama is running with `ollama serve`
    - Check that the default URL (http://localhost:11434) is accessible
    - For remote servers, verify network connectivity and firewall settings
@@ -237,7 +223,7 @@ Reports are generated in both text and markdown formats, containing:
 - [x] Add better execution strategies and error handling for Ollama models
 - [ ] Add collaborative testing capabilities
 - [ ] Improve subdomain enumeration techniques
-- [ ] Add API security testing capabilities
+- [x] Add API security testing capabilities (REST/GraphQL endpoint discovery, BOLA/IDOR, auth bypass, rate limiting, mass assignment, data exposure)
 - [x] Add basic documentation and examples
 
 ## 🛡️ OWASP Top 10 Coverage
@@ -247,7 +233,7 @@ We provide comprehensive coverage for all OWASP Top 10 vulnerabilities, with spe
 - ✅ Injection (SQL, NoSQL, Command)
 - ✅ Broken Authentication
 - ✅ Cross-Site Scripting (XSS)
-- ✅ Insecure Direct Object References (IDOR)
+- ✅ Insecure Direct Object References (IDOR) 
 - ✅ Security Misconfiguration
 - ✅ Broken Access Control (advanced scenarios)
 - ✅ Cryptographic Failures (comprehensive detection)

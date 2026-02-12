@@ -11,51 +11,36 @@ DEFAULT_CONFIG = {
         "max_subdomains": 100,
         "request_delay": 0.5,  # seconds
         "timeout": 30,  # seconds
-        "user_agent": "VibePenTester Security Scanner"
+        "user_agent": "VibePenTester Security Scanner",
     },
     "security_testing": {
-        "xss": {
-            "enabled": True,
-            "max_payloads": 20
-        },
-        "sqli": {
-            "enabled": True,
-            "max_payloads": 20
-        },
-        "csrf": {
-            "enabled": True
-        },
-        "auth": {
-            "enabled": True
-        }
+        "xss": {"enabled": True, "max_payloads": 20},
+        "sqli": {"enabled": True, "max_payloads": 20},
+        "csrf": {"enabled": True},
+        "auth": {"enabled": True},
     },
     "reporting": {
         "min_severity": "low",  # low, medium, high, critical
         "include_evidence": True,
-        "include_remediation": True
+        "include_remediation": True,
     },
     "llm": {
-        "openai": {
-            "temperature": 0.7,
-            "max_tokens": 4000
-        },
-        "anthropic": {
-            "temperature": 0.7,
-            "max_tokens": 4000
-        }
-    }
+        "openai": {"temperature": 0.7, "max_tokens": 4000},
+        "anthropic": {"temperature": 0.7, "max_tokens": 4000},
+    },
 }
+
 
 def load_config(config_path: str = "config/config.yaml") -> Dict[str, Any]:
     """Load configuration from file or use defaults."""
     logger = get_logger()
-    
+
     if os.path.exists(config_path):
         try:
             with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
             logger.info(f"Loaded configuration from {config_path}")
-            
+
             # Merge with defaults to ensure all required fields exist
             merged_config = DEFAULT_CONFIG.copy()
             _deep_merge(merged_config, config)
@@ -65,8 +50,10 @@ def load_config(config_path: str = "config/config.yaml") -> Dict[str, Any]:
             logger.info("Using default configuration")
             return DEFAULT_CONFIG
     else:
-        logger.info(f"Configuration file {config_path} not found, using default configuration")
-        
+        logger.info(
+            f"Configuration file {config_path} not found, using default configuration"
+        )
+
         # Create default config file if it doesn't exist
         try:
             os.makedirs(os.path.dirname(config_path), exist_ok=True)
@@ -75,8 +62,9 @@ def load_config(config_path: str = "config/config.yaml") -> Dict[str, Any]:
             logger.info(f"Created default configuration file at {config_path}")
         except Exception as e:
             logger.error(f"Error creating default configuration file: {str(e)}")
-        
+
         return DEFAULT_CONFIG
+
 
 def _deep_merge(target: Dict[str, Any], source: Dict[str, Any]) -> Dict[str, Any]:
     """Deep merge two dictionaries, updating target with values from source."""

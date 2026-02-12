@@ -273,6 +273,7 @@
                                             <option value="openai" selected>OpenAI</option>
                                             <option value="anthropic">Anthropic</option>
                                             <option value="ollama">Ollama (Local)</option>
+                                            <option value="gemini">Gemini</option>
                                         </select>
                                         <div class="form-text">Select the AI provider for the agent swarm</div>
                                     </div>
@@ -301,6 +302,11 @@
                                                 <option value="gemma:7b">Gemma (7B)</option>
                                                 <option value="deepseek-coder">DeepSeek Coder</option>
                                             </optgroup>
+                                            <optgroup label="Gemini Models" id="gemini-models" style="display:none">
+                                                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                                                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                                                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                            </optgroup>
                                         </select>
                                         <div class="form-text">Select the AI model for security testing</div>
                                     </div>
@@ -323,6 +329,12 @@
                                     <label for="ollama_url" class="form-label">Ollama Server URL</label>
                                     <input type="text" class="form-control" id="ollama_url" name="ollama_url" value="http://localhost:11434">
                                     <div class="form-text">URL of your Ollama server (local or remote)</div>
+                                </div>
+
+                                <div class="mb-3" id="google-token-container" style="display:none">
+                                    <label for="google_api_key" class="form-label">Google API Key <span class="text-muted">(Optional)</span></label>
+                                    <input type="password" class="form-control" id="google_api_key" name="google_api_key" placeholder="AIza...">
+                                    <div class="form-text">Leave blank to use GOOGLE_API_KEY environment variable.</div>
                                 </div>
                             </details>
 
@@ -900,12 +912,14 @@
                 const openaiModels = document.getElementById('openai-models');
                 const anthropicModels = document.getElementById('anthropic-models');
                 const ollamaModels = document.getElementById('ollama-models');
+                const geminiModels = document.getElementById('gemini-models');
                 const modelSelect = document.getElementById('model');
                 
                 // Hide all model groups first
                 openaiModels.style.display = 'none';
                 anthropicModels.style.display = 'none';
                 ollamaModels.style.display = 'none';
+                geminiModels.style.display = 'none';
                 
                 // Show appropriate model group based on provider
                 if (provider === 'openai') {
@@ -917,17 +931,22 @@
                 } else if (provider === 'ollama') {
                     ollamaModels.style.display = '';
                     modelSelect.value = ollamaModels.querySelector('option').value;
+                } else if (provider === 'gemini') {
+                    geminiModels.style.display = '';
+                    modelSelect.value = geminiModels.querySelector('option').value;
                 }
                 
                 // Toggle API token input fields based on provider
                 const openaiTokenContainer = document.getElementById('openai-token-container');
                 const anthropicTokenContainer = document.getElementById('anthropic-token-container');
                 const ollamaUrlContainer = document.getElementById('ollama-url-container');
+                const googleTokenContainer = document.getElementById('google-token-container');
                 
                 // Hide all token containers first
                 openaiTokenContainer.style.display = 'none';
                 anthropicTokenContainer.style.display = 'none';
                 ollamaUrlContainer.style.display = 'none';
+                googleTokenContainer.style.display = 'none';
                 
                 // Show the appropriate token container
                 if (provider === 'openai') {
@@ -936,6 +955,8 @@
                     anthropicTokenContainer.style.display = '';
                 } else if (provider === 'ollama') {
                     ollamaUrlContainer.style.display = '';
+                } else if (provider === 'gemini') {
+                    googleTokenContainer.style.display = '';
                 }
             });
             
@@ -946,6 +967,7 @@
                 document.getElementById('openai-token-container').style.display = provider === 'openai' ? '' : 'none';
                 document.getElementById('anthropic-token-container').style.display = provider === 'anthropic' ? '' : 'none';
                 document.getElementById('ollama-url-container').style.display = provider === 'ollama' ? '' : 'none';
+                document.getElementById('google-token-container').style.display = provider === 'gemini' ? '' : 'none';
             });
             
             scanForm.addEventListener('submit', function(e) {
@@ -1014,6 +1036,8 @@
                     providerDisplay = 'Anthropic';
                 } else if (provider === 'ollama') {
                     providerDisplay = 'Ollama (Local)';
+                } else if (provider === 'gemini') {
+                    providerDisplay = 'Gemini';
                 }
                 
                 document.getElementById('statusPanelTitle').innerHTML = 
@@ -1051,6 +1075,11 @@
                     const anthropicKey = document.getElementById('anthropic_api_key').value;
                     if (anthropicKey) {
                         formData['anthropic_api_key'] = anthropicKey;
+                    }
+                } else if (provider === 'gemini') {
+                    const googleKey = document.getElementById('google_api_key').value;
+                    if (googleKey) {
+                        formData['google_api_key'] = googleKey;
                     }
                 }
                 

@@ -102,11 +102,17 @@ def register_routes(app, billing_store):
         if stripe and stripe_secret_key:
             try:
                 stripe.api_key = stripe_secret_key
-                resolved_success_url = success_url or f"{request.host_url.rstrip('/')}/?checkout=success"
-                resolved_cancel_url = cancel_url or f"{request.host_url.rstrip('/')}/?checkout=cancel"
+                resolved_success_url = (
+                    success_url or f"{request.host_url.rstrip('/')}/?checkout=success"
+                )
+                resolved_cancel_url = (
+                    cancel_url or f"{request.host_url.rstrip('/')}/?checkout=cancel"
+                )
                 line_item = _line_item_for_mode(scan_mode)
                 session = stripe.checkout.Session.create(
-                    mode="payment" if scan_mode in {"deep", "solutions"} else "subscription",
+                    mode="payment"
+                    if scan_mode in {"deep", "solutions"}
+                    else "subscription",
                     line_items=[line_item],
                     success_url=resolved_success_url,
                     cancel_url=resolved_cancel_url,
@@ -119,13 +125,19 @@ def register_routes(app, billing_store):
                 checkout_url = session.url
                 amount = getattr(session, "amount_total", 0) or 0
                 currency = getattr(session, "currency", "usd") or "usd"
-                price_id = os.environ.get("STRIPE_PRICE_CREDIT_PACK") if scan_mode in {"deep", "solutions"} else os.environ.get("STRIPE_PRICE_PRO_MONTHLY")
+                price_id = (
+                    os.environ.get("STRIPE_PRICE_CREDIT_PACK")
+                    if scan_mode in {"deep", "solutions"}
+                    else os.environ.get("STRIPE_PRICE_PRO_MONTHLY")
+                )
             except Exception:
                 checkout_url = None
 
         if checkout_url is None:
             if not _allow_mock_checkout():
-                return None, error_response("Checkout is unavailable; Stripe is not configured", 503)
+                return None, error_response(
+                    "Checkout is unavailable; Stripe is not configured", 503
+                )
             checkout_url = _mock_checkout_url(checkout_session_id)
 
         billing_store.create_checkout_session(
@@ -143,7 +155,9 @@ def register_routes(app, billing_store):
             "scan_mode": scan_mode,
         }, None
 
-    def _complete_checkout(checkout_session_id: str, payment_intent_id: Optional[str] = None):
+    def _complete_checkout(
+        checkout_session_id: str, payment_intent_id: Optional[str] = None
+    ):
         checkout = billing_store.mark_checkout_completed(checkout_session_id)
         if not checkout:
             return None, error_response("Unknown checkout session", 404)
@@ -214,7 +228,9 @@ def register_routes(app, billing_store):
             if not sig_header:
                 return error_response("Missing webhook signature", 400)
             try:
-                event = stripe.Webhook.construct_event(payload=payload, sig_header=sig_header, secret=webhook_secret)
+                event = stripe.Webhook.construct_event(
+                    payload=payload, sig_header=sig_header, secret=webhook_secret
+                )
             except Exception:
                 return error_response("Invalid webhook signature", 400)
 
@@ -247,7 +263,9 @@ def register_routes(app, billing_store):
         if checkout_error is not None:
             return checkout_error
 
-        suffix = "success" if checkout.get("just_completed", False) else "already_complete"
+        suffix = (
+            "success" if checkout.get("just_completed", False) else "already_complete"
+        )
         return redirect(f"/?checkout={suffix}")
 
     @app.route("/billing/checkout", methods=["GET"])
@@ -258,7 +276,9 @@ def register_routes(app, billing_store):
             return error_response("Missing account identity", 400)
 
         scan_mode = parse_scan_mode(request.args.get("scan_mode", "deep"))
-        payload, checkout_error = _create_checkout(account_id=account_id, scan_mode=scan_mode)
+        payload, checkout_error = _create_checkout(
+            account_id=account_id, scan_mode=scan_mode
+        )
         if checkout_error is not None:
             return checkout_error
         return redirect(payload["checkout_url"])

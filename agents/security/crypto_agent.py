@@ -10,20 +10,23 @@ from utils.logger import get_logger
 
 class CryptoFailureAgent(SpecializedSecurityAgent):
     """Agent specializing in Cryptographic Failures testing."""
-    
+
     def __init__(self, llm_provider: LLMProvider, scanner: Scanner):
-        super().__init__("CryptoFailureAgent", "crypto_specialist", 
-                        "crypto", llm_provider, scanner)
-    
-    def _create_input_data(self, task: Dict[str, Any], page: Page, page_info: Dict[str, Any]) -> Dict[str, str]:
+        super().__init__(
+            "CryptoFailureAgent", "crypto_specialist", "crypto", llm_provider, scanner
+        )
+
+    def _create_input_data(
+        self, task: Dict[str, Any], page: Page, page_info: Dict[str, Any]
+    ) -> Dict[str, str]:
         """Create input data with hostname for TLS checks."""
         parsed_url = urlparse(page.url)
         target_host = parsed_url.netloc
-        
+
         return {
             "content": f"Test for cryptographic failures on: {page.url}\n\nTarget host: {target_host}\n\nTask details: {task}\n\nPage information: {page_info}"
         }
-    
+
     def _get_system_prompt(self) -> str:
         """Get the system prompt for cryptographic testing."""
         return """
@@ -57,27 +60,43 @@ class CryptoFailureAgent(SpecializedSecurityAgent):
         - Weak hashing algorithms for sensitive data
         - Cleartext transmission of sensitive information
         """
-    
-    def _check_for_vulnerabilities(self, tool_name: str, tool_result: Dict[str, Any], 
-                                  result: Dict[str, Any], page: Page, tool_call: Any) -> Dict[str, Any]:
+
+    def _check_for_vulnerabilities(
+        self,
+        tool_name: str,
+        tool_result: Dict[str, Any],
+        result: Dict[str, Any],
+        page: Page,
+        tool_call: Any,
+    ) -> Dict[str, Any]:
         """Check for cryptographic vulnerabilities in tool results."""
         logger = get_logger()
-        
+
         # Check for crypto issues reported by tools
         if tool_result.get("crypto_issue_found", False):
             result["vulnerability_found"] = True
             result["vulnerability_type"] = "Cryptographic Failure"
             result["severity"] = tool_result.get("severity", "high")
             result["details"] = tool_result
-            
-            logger.security(f"Found Cryptographic Failure: {', '.join(tool_result.get('issues', ['Unknown issue']))}")
-        
+
+            logger.security(
+                f"Found Cryptographic Failure: {', '.join(tool_result.get('issues', ['Unknown issue']))}"
+            )
+
         # Check if JavaScript execution revealed sensitive data exposure
         elif tool_name == "execute_js" and tool_result.get("success", False):
             js_result = str(tool_result.get("result", ""))
-            
+
             # Check for crypto-related sensitive data in results
-            crypto_indicators = ["password", "token", "api_key", "apikey", "secret", "private", "key"]
+            crypto_indicators = [
+                "password",
+                "token",
+                "api_key",
+                "apikey",
+                "secret",
+                "private",
+                "key",
+            ]
             if any(indicator in js_result.lower() for indicator in crypto_indicators):
                 result["vulnerability_found"] = True
                 result["vulnerability_type"] = "Sensitive Data Exposure"
@@ -86,9 +105,9 @@ class CryptoFailureAgent(SpecializedSecurityAgent):
                     "issue_type": "Sensitive Data Exposure in Client-Side JavaScript",
                     "url": page.url,
                     "evidence": js_result,
-                    "description": "Sensitive data found in client-side JavaScript"
+                    "description": "Sensitive data found in client-side JavaScript",
                 }
-                
-                logger.security(f"Found Sensitive Data Exposure in JavaScript")
-        
+
+                logger.security("Found Sensitive Data Exposure in JavaScript")
+
         return result

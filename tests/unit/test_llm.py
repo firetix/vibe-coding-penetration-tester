@@ -29,7 +29,6 @@ def mock_anthropic_response():
 
 
 class TestLLMProvider:
-
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
     @patch("core.llm.OpenAI")  # Patch the import in core.llm, not openai directly
     def test_openai_initialization(self, mock_openai):
@@ -116,7 +115,6 @@ class TestLLMProvider:
         assert result.model == "claude-3-5-sonnet"
         mock_client.messages.create.assert_called_once()
 
-
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
     @patch("core.llm.OpenAI")
     def test_openai_chat_completion_with_tools(self, mock_openai, mock_openai_response):
@@ -146,20 +144,37 @@ class TestLLMProvider:
             response.choices[0].message.tool_calls = [tool_call_mock]
             return response
 
-        mock_client.chat.completions.create.return_value = create_tool_call_response(mock_openai_response)
+        mock_client.chat.completions.create.return_value = create_tool_call_response(
+            mock_openai_response
+        )
 
         provider = LLMProvider(provider="openai", model="gpt-4o")
 
         messages = [{"role": "user", "content": "Hello"}]
-        tools = [{"type": "function", "function": {"name": "test_function", "parameters": {}}}]
+        tools = [
+            {
+                "type": "function",
+                "function": {"name": "test_function", "parameters": {}},
+            }
+        ]
 
         # Act
         result = provider.chat_completion(messages, tools=tools)
         tool_calls = result.choices[0].message.tool_calls
         first_call = tool_calls[0]
-        first_id = first_call.get("id") if isinstance(first_call, dict) else first_call.id
-        first_function = first_call.get("function") if isinstance(first_call, dict) else first_call.function
-        first_name = first_function.get("name") if isinstance(first_function, dict) else first_function.name
+        first_id = (
+            first_call.get("id") if isinstance(first_call, dict) else first_call.id
+        )
+        first_function = (
+            first_call.get("function")
+            if isinstance(first_call, dict)
+            else first_call.function
+        )
+        first_name = (
+            first_function.get("name")
+            if isinstance(first_function, dict)
+            else first_function.name
+        )
 
         # Assert
         assert result.choices[0].message.content is None
@@ -169,7 +184,6 @@ class TestLLMProvider:
         assert first_id == "call_123"
         assert first_name == "test_function"
         mock_client.chat.completions.create.assert_called_once()
-
 
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
     @patch("core.llm.OpenAI")
@@ -192,19 +206,19 @@ class TestLLMProvider:
         # Assert
         assert result == [0.1, 0.2, 0.3]
         mock_client.embeddings.create.assert_called_once_with(
-            model="text-embedding-3-small",
-            input="Test text"
+            model="text-embedding-3-small", input="Test text"
         )
+
     # --- Gemini Tests ---
 
-    @patch('core.llm.genai')
-    @patch('core.llm.os.getenv', return_value=None) # Ensure env var is not used
+    @patch("core.llm.genai")
+    @patch("core.llm.os.getenv", return_value=None)  # Ensure env var is not used
     def test_gemini_initialization_with_key(self, mock_getenv, mock_genai):
         # Arrange
         mock_model = MagicMock()
         mock_genai.GenerativeModel.return_value = mock_model
         test_api_key = "explicit_gemini_key"
-        expected_model_name = "gemini-2.0-flash-thinking-exp-01-21" # Hardcoded for now
+        expected_model_name = "gemini-2.0-flash"
 
         # Act
         provider = LLMProvider(provider="gemini", google_api_key=test_api_key)
@@ -220,16 +234,16 @@ class TestLLMProvider:
         # We only need to ensure the other keys might have been checked via getenv.
         # No specific assertion needed here for the GOOGLE_API_KEY getenv call in this test case.
 
-    @patch('core.llm.genai')
+    @patch("core.llm.genai")
     @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_env_key"})
     def test_gemini_initialization_with_env_var(self, mock_genai):
         # Arrange
         mock_model = MagicMock()
         mock_genai.GenerativeModel.return_value = mock_model
-        expected_model_name = "gemini-2.0-flash-thinking-exp-01-21"
+        expected_model_name = "gemini-2.0-flash"
 
         # Act
-        provider = LLMProvider(provider="gemini") # No explicit key
+        provider = LLMProvider(provider="gemini")  # No explicit key
 
         # Assert
         assert provider.provider == "gemini"
@@ -239,8 +253,8 @@ class TestLLMProvider:
         mock_genai.configure.assert_called_once_with(api_key="test_env_key")
         mock_genai.GenerativeModel.assert_called_once_with(expected_model_name)
 
-    @patch('core.llm.genai')
-    @patch('core.llm.os.getenv', return_value=None) # Mock getenv to return None
+    @patch("core.llm.genai")
+    @patch("core.llm.os.getenv", return_value=None)  # Mock getenv to return None
     def test_gemini_initialization_no_key(self, mock_getenv, mock_genai):
         # Arrange (No key provided explicitly or via env)
 
@@ -252,11 +266,12 @@ class TestLLMProvider:
         mock_genai.GenerativeModel.assert_not_called()
         # Check that getenv was called for GOOGLE_API_KEY among others
         from unittest.mock import call
+
         assert call("GOOGLE_API_KEY") in mock_getenv.call_args_list
 
-    @patch('core.llm.genai')
-    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"}) # Need key for init
-    @patch('core.llm.LLMProvider._gemini_completion') # Patch the target method
+    @patch("core.llm.genai")
+    @patch.dict(os.environ, {"GOOGLE_API_KEY": "test_key"})  # Need key for init
+    @patch("core.llm.LLMProvider._gemini_completion")  # Patch the target method
     def test_gemini_chat_completion_routes(self, mock_gemini_completion, mock_genai):
         # Arrange
         # Mock genai configure and model init to avoid errors during LLMProvider instantiation
@@ -265,7 +280,10 @@ class TestLLMProvider:
 
         provider = LLMProvider(provider="gemini")
         # Define return value for the mocked method to match expected structure
-        mock_gemini_completion.return_value = {"content": "mocked gemini response", "tool_calls": []}
+        mock_gemini_completion.return_value = {
+            "content": "mocked gemini response",
+            "tool_calls": [],
+        }
 
         messages = [{"role": "user", "content": "Hello Gemini"}]
         temperature = 0.5
@@ -276,7 +294,9 @@ class TestLLMProvider:
         result = provider.chat_completion(messages, temperature, tools, json_mode)
 
         # Assert
-        mock_gemini_completion.assert_called_once_with(messages, temperature, tools, json_mode)
+        mock_gemini_completion.assert_called_once_with(
+            messages, temperature, tools, json_mode
+        )
         # Check the structure returned by the mocked method
         assert result["content"] == "mocked gemini response"
         assert result["tool_calls"] == []

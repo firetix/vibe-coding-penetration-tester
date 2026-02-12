@@ -7,19 +7,19 @@ from web_api.helpers.response_formatter import success_response, scan_status_res
 from web_api.middleware.error_handler import handle_errors
 from utils.entitlements import is_hosted_mode
 
-logger = logging.getLogger('web_api')
+logger = logging.getLogger("web_api")
 
 
 def register_routes(app, session_manager, activity_tracker, billing_store=None):
     """Register status routes with the Flask app."""
 
-    bp = Blueprint('status', __name__)
+    bp = Blueprint("status", __name__)
 
-    @bp.route('/status', methods=['GET'])
+    @bp.route("/status", methods=["GET"])
     @handle_errors
     def status_check():
         """Check the current status of the application or a specific session."""
-        session_id = request.args.get('session_id')
+        session_id = request.args.get("session_id")
         account_id = getattr(g, "account_id", None)
 
         entitlements = None
@@ -28,7 +28,10 @@ def register_routes(app, session_manager, activity_tracker, billing_store=None):
             entitlements = billing_store.get_entitlements(account_id)
             paywall_state = {
                 "is_hosted": True,
-                "requires_payment_for_next_scan": entitlements.get("free_scans_remaining", 0) <= 0
+                "requires_payment_for_next_scan": entitlements.get(
+                    "free_scans_remaining", 0
+                )
+                <= 0
                 and not entitlements.get("pro_active")
                 and entitlements.get("deep_scan_credits", 0) <= 0,
             }
@@ -44,15 +47,17 @@ def register_routes(app, session_manager, activity_tracker, billing_store=None):
         valid = session_manager.check_session(session_id)
 
         if not valid:
-            return success_response(data={
-                'status': 'error',
-                'message': 'Invalid session',
-                'progress': 0,
-                'current_task': 'Session expired',
-                'is_running': False,
-                'entitlements': entitlements,
-                'paywall_state': paywall_state,
-            })
+            return success_response(
+                data={
+                    "status": "error",
+                    "message": "Invalid session",
+                    "progress": 0,
+                    "current_task": "Session expired",
+                    "is_running": False,
+                    "entitlements": entitlements,
+                    "paywall_state": paywall_state,
+                }
+            )
 
         # Get any active scans for this session
         active_scans = session_manager.get_active_scans(session_id)
@@ -98,13 +103,13 @@ def register_routes(app, session_manager, activity_tracker, billing_store=None):
         )
 
     # Log routes
-    @bp.route('/api/logs', methods=['GET'])
+    @bp.route("/api/logs", methods=["GET"])
     @handle_errors
     def get_logs():
         """Get UI logs."""
         from utils.logging_manager import LoggingManager
 
         logs = LoggingManager().get_ui_logs()
-        return success_response(data={'logs': logs})
+        return success_response(data={"logs": logs})
 
     app.register_blueprint(bp)

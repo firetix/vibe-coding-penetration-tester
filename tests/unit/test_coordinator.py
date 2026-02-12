@@ -1,32 +1,29 @@
 import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 from core.coordinator import SwarmCoordinator
 
 
 class TestSwarmCoordinator:
-
     @pytest.fixture
     def mock_config(self):
         return {
             "llm": {
                 "openai": {
                     "api_key": "test_key",
-                    "models": {"gpt-4o": {"temperature": 0.7}}
+                    "models": {"gpt-4o": {"temperature": 0.7}},
                 }
             },
-            "scan": {
-                "max_urls": 10,
-                "timeout": 30
-            }
+            "scan": {"max_urls": 10, "timeout": 30},
         }
 
     def test_initialization(self, mock_config):
         # Arrange & Act
-        with patch("core.coordinator.LLMProvider") as mock_llm, \
-             patch("core.coordinator.Scanner") as mock_scanner, \
-             patch("core.coordinator.Reporter") as mock_reporter:
-
+        with (
+            patch("core.coordinator.LLMProvider") as mock_llm,
+            patch("core.coordinator.Scanner") as mock_scanner,
+            patch("core.coordinator.Reporter") as mock_reporter,
+        ):
             # Setup mocks
             mock_llm_instance = MagicMock()
             mock_scanner_instance = MagicMock()
@@ -44,13 +41,13 @@ class TestSwarmCoordinator:
                 scope="url",
                 output_dir="/tmp/reports",
                 config=mock_config,
-                google_api_key="test_google_key" # Added google key
+                google_api_key="test_google_key",  # Added google key
             )
 
             # Assert
             assert coordinator.url == "https://example.com"
             assert coordinator.model == "gpt-4o"
-            assert coordinator.provider == "gemini" # Changed provider
+            assert coordinator.provider == "gemini"  # Changed provider
             assert coordinator.scope == "url"
             assert coordinator.output_dir == "/tmp/reports"
             assert coordinator.config == mock_config
@@ -59,21 +56,22 @@ class TestSwarmCoordinator:
             assert coordinator.reporter == mock_reporter_instance
 
             mock_llm.assert_called_once_with(
-                provider="gemini", # Changed provider
+                provider="gemini",  # Changed provider
                 model="gpt-4o",
                 openai_api_key=None,
                 anthropic_api_key=None,
-                google_api_key="test_google_key" # Added google key check
+                google_api_key="test_google_key",  # Added google key check
             )
             mock_scanner.assert_called_once()
             mock_reporter.assert_called_once_with("/tmp/reports")
 
     def test_initialization_no_google_key(self, mock_config):
         # Arrange & Act (Test case for when google_api_key is not provided)
-        with patch("core.coordinator.LLMProvider") as mock_llm, \
-             patch("core.coordinator.Scanner") as mock_scanner, \
-             patch("core.coordinator.Reporter") as mock_reporter:
-
+        with (
+            patch("core.coordinator.LLMProvider") as mock_llm,
+            patch("core.coordinator.Scanner") as mock_scanner,
+            patch("core.coordinator.Reporter") as mock_reporter,
+        ):
             # Setup mocks
             mock_llm_instance = MagicMock()
             mock_scanner_instance = MagicMock()
@@ -87,10 +85,10 @@ class TestSwarmCoordinator:
             coordinator = SwarmCoordinator(
                 url="https://example.com",
                 model="gpt-4o",
-                provider="openai", # Using openai here, key should still be None
+                provider="openai",  # Using openai here, key should still be None
                 scope="url",
                 output_dir="/tmp/reports",
-                config=mock_config
+                config=mock_config,
                 # google_api_key is omitted, should default to None
             )
 
@@ -104,18 +102,19 @@ class TestSwarmCoordinator:
                 model="gpt-4o",
                 openai_api_key=None,
                 anthropic_api_key=None,
-                google_api_key=None # Assert it defaults to None
+                google_api_key=None,  # Assert it defaults to None
             )
             mock_scanner.assert_called_once()
             mock_reporter.assert_called_once_with("/tmp/reports")
 
     def test_run_simple_scope(self, mock_config):
         # Arrange
-        with patch("core.coordinator.LLMProvider") as mock_llm, \
-             patch("core.coordinator.Scanner") as mock_scanner, \
-             patch("core.coordinator.Reporter") as mock_reporter, \
-             patch("core.coordinator.create_agent_swarm") as mock_create_swarm:
-
+        with (
+            patch("core.coordinator.LLMProvider") as mock_llm,
+            patch("core.coordinator.Scanner") as mock_scanner,
+            patch("core.coordinator.Reporter") as mock_reporter,
+            patch("core.coordinator.create_agent_swarm") as mock_create_swarm,
+        ):
             # Setup mocks
             mock_llm_instance = MagicMock()
             mock_scanner_instance = MagicMock()
@@ -130,7 +129,10 @@ class TestSwarmCoordinator:
             # Mock page loading
             mock_page = MagicMock()
             mock_scanner_instance.load_page.return_value = mock_page
-            mock_scanner_instance.extract_page_info.return_value = {"url": "https://example.com", "title": "Example"}
+            mock_scanner_instance.extract_page_info.return_value = {
+                "url": "https://example.com",
+                "title": "Example",
+            }
 
             # Mock security testing
             mock_security_swarm.run.return_value = [
@@ -138,7 +140,9 @@ class TestSwarmCoordinator:
             ]
 
             # Mock report generation
-            mock_reporter_instance.generate_report.return_value = "/tmp/reports/report.md"
+            mock_reporter_instance.generate_report.return_value = (
+                "/tmp/reports/report.md"
+            )
 
             # Create the coordinator
             coordinator = SwarmCoordinator(
@@ -147,7 +151,7 @@ class TestSwarmCoordinator:
                 provider="openai",
                 scope="url",
                 output_dir="/tmp/reports",
-                config=mock_config
+                config=mock_config,
             )
 
             # Act
@@ -161,27 +165,32 @@ class TestSwarmCoordinator:
 
             # Verify method calls
             mock_scanner_instance.start.assert_called_once()
-            mock_scanner_instance.load_page.assert_called_once_with("https://example.com")
+            mock_scanner_instance.load_page.assert_called_once_with(
+                "https://example.com"
+            )
             mock_scanner_instance.extract_page_info.assert_called_once_with(mock_page)
             mock_create_swarm.assert_called_once_with(
                 agent_type="security",
                 llm_provider=mock_llm_instance,
                 scanner=mock_scanner_instance,
-                config=mock_config
+                config=mock_config,
             )
             mock_security_swarm.run.assert_called_once_with(
-                "https://example.com", mock_page, {"url": "https://example.com", "title": "Example"}
+                "https://example.com",
+                mock_page,
+                {"url": "https://example.com", "title": "Example"},
             )
             mock_reporter_instance.generate_report.assert_called_once()
             mock_scanner_instance.stop.assert_called_once()
 
     def test_run_expanded_scope(self, mock_config):
         # Arrange
-        with patch("core.coordinator.LLMProvider") as mock_llm, \
-             patch("core.coordinator.Scanner") as mock_scanner, \
-             patch("core.coordinator.Reporter") as mock_reporter, \
-             patch("core.coordinator.create_agent_swarm") as mock_create_swarm:
-
+        with (
+            patch("core.coordinator.LLMProvider") as mock_llm,
+            patch("core.coordinator.Scanner") as mock_scanner,
+            patch("core.coordinator.Reporter") as mock_reporter,
+            patch("core.coordinator.create_agent_swarm") as mock_create_swarm,
+        ):
             # Setup mocks
             mock_llm_instance = MagicMock()
             mock_scanner_instance = MagicMock()
@@ -209,7 +218,10 @@ class TestSwarmCoordinator:
             # Mock page loading
             mock_page = MagicMock()
             mock_scanner_instance.load_page.return_value = mock_page
-            mock_scanner_instance.extract_page_info.return_value = {"url": "https://example.com", "title": "Example"}
+            mock_scanner_instance.extract_page_info.return_value = {
+                "url": "https://example.com",
+                "title": "Example",
+            }
 
             # Mock security testing
             mock_security_swarm.run.return_value = [
@@ -217,7 +229,9 @@ class TestSwarmCoordinator:
             ]
 
             # Mock report generation
-            mock_reporter_instance.generate_report.return_value = "/tmp/reports/report.md"
+            mock_reporter_instance.generate_report.return_value = (
+                "/tmp/reports/report.md"
+            )
 
             # Create the coordinator
             coordinator = SwarmCoordinator(
@@ -226,7 +240,7 @@ class TestSwarmCoordinator:
                 provider="openai",
                 scope="domain",  # Expanded scope
                 output_dir="/tmp/reports",
-                config=mock_config
+                config=mock_config,
             )
 
             # Act
@@ -242,12 +256,10 @@ class TestSwarmCoordinator:
                 agent_type="discovery",
                 llm_provider=mock_llm_instance,
                 scanner=mock_scanner_instance,
-                config=mock_config
+                config=mock_config,
             )
             mock_discovery_swarm.discover_urls.assert_called_once_with(
-                base_url="https://example.com",
-                scope="domain",
-                subdomains=False
+                base_url="https://example.com", scope="domain", subdomains=False
             )
 
             # Verify each URL was processed
@@ -256,11 +268,12 @@ class TestSwarmCoordinator:
 
     def test_load_page_failure(self, mock_config):
         # Arrange
-        with patch("core.coordinator.LLMProvider") as mock_llm, \
-             patch("core.coordinator.Scanner") as mock_scanner, \
-             patch("core.coordinator.Reporter") as mock_reporter, \
-             patch("core.coordinator.create_agent_swarm") as mock_create_swarm:
-
+        with (
+            patch("core.coordinator.LLMProvider") as mock_llm,
+            patch("core.coordinator.Scanner") as mock_scanner,
+            patch("core.coordinator.Reporter") as mock_reporter,
+            patch("core.coordinator.create_agent_swarm") as mock_create_swarm,
+        ):
             # Setup mocks
             mock_llm_instance = MagicMock()
             mock_scanner_instance = MagicMock()
@@ -274,7 +287,9 @@ class TestSwarmCoordinator:
             mock_scanner_instance.load_page.return_value = None
 
             # Mock report generation
-            mock_reporter_instance.generate_report.return_value = "/tmp/reports/report.md"
+            mock_reporter_instance.generate_report.return_value = (
+                "/tmp/reports/report.md"
+            )
 
             # Create the coordinator
             coordinator = SwarmCoordinator(
@@ -283,7 +298,7 @@ class TestSwarmCoordinator:
                 provider="openai",
                 scope="url",
                 output_dir="/tmp/reports",
-                config=mock_config
+                config=mock_config,
             )
 
             # Act
@@ -292,11 +307,15 @@ class TestSwarmCoordinator:
             # Assert
             assert result["urls_discovered"] == 1
             assert result["urls_scanned"] == 1
-            assert result["vulnerabilities_found"] == 0  # No vulnerabilities found due to page load failure
+            assert (
+                result["vulnerabilities_found"] == 0
+            )  # No vulnerabilities found due to page load failure
 
             # Verify method calls
             mock_scanner_instance.start.assert_called_once()
-            mock_scanner_instance.load_page.assert_called_once_with("https://example.com")
+            mock_scanner_instance.load_page.assert_called_once_with(
+                "https://example.com"
+            )
             mock_scanner_instance.extract_page_info.assert_not_called()
             mock_create_swarm.assert_not_called()
             mock_reporter_instance.generate_report.assert_called_once_with([])
