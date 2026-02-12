@@ -2,6 +2,7 @@ from typing import Dict, List, Any, Optional, Union
 import os
 import json
 import requests
+import re
 
 # Import LLM providers
 import openai
@@ -25,8 +26,8 @@ class LLMProvider:
         # Initialize appropriate client
         if self.provider == "openai":
             self.client = OpenAI(api_key=self.openai_api_key)
-            if not self.model.startswith("gpt-"):
-                self.model = "gpt-4o"  # Default to GPT-4o if not specified correctly
+            if not self._is_supported_openai_model(self.model):
+                self.model = "gpt-4o"  # Default fallback for unknown OpenAI model names
         elif self.provider == "anthropic":
             try:
                 # Try with the modern Anthropic API client structure
@@ -73,6 +74,16 @@ class LLMProvider:
             raise ValueError(f"Unsupported provider: {provider}. Use 'openai', 'anthropic', or 'ollama'.")
         
         self.logger.info(f"Initialized LLM provider: {self.provider} with model: {self.model}")
+
+    @staticmethod
+    def _is_supported_openai_model(model_name: str) -> bool:
+        """Accept OpenAI GPT, Codex, ChatGPT, and O-series model naming patterns."""
+        if not model_name:
+            return False
+        normalized = model_name.strip().lower()
+        if normalized.startswith(("gpt-", "codex-", "chatgpt-")):
+            return True
+        return re.match(r"^o\d", normalized) is not None
     
     def chat_completion(self, messages: List[Dict[str, str]], temperature: float = 0.7, tools: Optional[List[Dict]] = None, json_mode: bool = False) -> Dict[str, Any]:
         """Generate a chat completion using the configured provider."""
