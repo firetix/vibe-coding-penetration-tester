@@ -223,7 +223,7 @@ Reports are generated in both text and markdown formats, containing:
 - [x] Add better execution strategies and error handling for Ollama models
 - [ ] Add collaborative testing capabilities
 - [ ] Improve subdomain enumeration techniques
-- [ ] Add API security testing capabilities
+- [x] Add API security testing capabilities (REST/GraphQL endpoint discovery, BOLA/IDOR, auth bypass, rate limiting, mass assignment, data exposure)
 - [x] Add basic documentation and examples
 
 ## 🛡️ OWASP Top 10 Coverage

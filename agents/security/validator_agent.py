@@ -13,7 +13,7 @@ from tools.browser_tools_impl import get_browser_interaction_tools
 
 class ValidationAgent(BaseAgent):
     """Agent responsible for validating security findings and confirming vulnerabilities."""
-    
+
     def __init__(self, llm_provider: LLMProvider, scanner: Scanner):
         # Use specialized validation tools and browser interaction tools
         validation_tools = [
@@ -27,103 +27,128 @@ class ValidationAgent(BaseAgent):
                         "properties": {
                             "vulnerability_type": {
                                 "type": "string",
-                                "description": "Type of vulnerability (e.g., XSS, CSRF, SQLi)"
+                                "description": "Type of vulnerability (e.g., XSS, CSRF, SQLi)",
                             },
                             "evidence": {
                                 "type": "string",
-                                "description": "Evidence supporting the finding"
+                                "description": "Evidence supporting the finding",
                             },
                             "validated": {
                                 "type": "boolean",
-                                "description": "Whether the vulnerability is validated"
+                                "description": "Whether the vulnerability is validated",
                             },
                             "verification_steps": {
                                 "type": "array",
-                                "items": {
-                                    "type": "string"
-                                },
-                                "description": "Steps taken to verify the vulnerability"
+                                "items": {"type": "string"},
+                                "description": "Steps taken to verify the vulnerability",
                             },
                             "details": {
                                 "type": "object",
-                                "description": "Additional details about the validation"
-                            }
+                                "description": "Additional details about the validation",
+                            },
                         },
-                        "required": ["vulnerability_type", "validated"]
-                    }
-                }
+                        "required": ["vulnerability_type", "validated"],
+                    },
+                },
             }
         ]
-        
+
         # Add browser tools for validation actions
         browser_tools = get_browser_interaction_tools()
         tools = validation_tools + browser_tools
-        
+
         super().__init__("ValidationAgent", "security_validator", llm_provider, tools)
         self.scanner = scanner
         self.browser_tools = BrowserTools(debug=True)
-    
-    def validate_finding(self, finding: Dict[str, Any], page: Page, page_info: Dict[str, Any]) -> Dict[str, Any]:
+
+    def validate_finding(
+        self, finding: Dict[str, Any], page: Page, page_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Validate a security finding to confirm if it's a real vulnerability."""
         logger = get_logger()
-        logger.info(f"Validating {finding.get('vulnerability_type', 'unknown')} vulnerability")
-        
+        logger.info(
+            f"Validating {finding.get('vulnerability_type', 'unknown')} vulnerability"
+        )
+
         # Create system prompt based on the type of vulnerability
         system_prompt = self._get_validation_prompt(finding)
-        
+
         # Create input data with the finding details
         input_data = {
             "content": f"Validate the following security finding:\n\n{self._format_finding(finding)}\n\nPage information: {page_info}"
         }
-        
+
         # Use the LLM to analyze the finding
         response = self.think(input_data, system_prompt)
-        
+
         # Initialize validation result
         validation_result = {
             "validated": False,
             "details": {
                 "validation_method": "expert_analysis",
                 "notes": "Validation pending",
-                "confidence_level": "low"
-            }
+                "confidence_level": "low",
+            },
         }
-        
+
         # Check if any tool was called
         if response.get("tool_calls"):
             # Process validation from tool calls
             for tool_call in response["tool_calls"]:
                 tool_name = self._get_tool_name(tool_call)
                 logger.info(f"ValidationAgent using tool: {tool_name}", color="cyan")
-                
+
                 # Execute the tool
                 tool_result = self.execute_tool(tool_call)
-                
+
                 # If it's the validate_finding tool, use its result
                 if tool_name == "validate_finding" and isinstance(tool_result, dict):
                     validation_result["validated"] = tool_result.get("validated", False)
                     validation_result["details"] = tool_result.get("details", {})
-                    
+
                     # Log the validation outcome
                     if validation_result["validated"]:
-                        logger.success(f"Validated {finding.get('vulnerability_type', 'unknown')} vulnerability")
+                        logger.success(
+                            f"Validated {finding.get('vulnerability_type', 'unknown')} vulnerability"
+                        )
                     else:
-                        logger.warning(f"Could not validate {finding.get('vulnerability_type', 'unknown')} vulnerability")
+                        logger.warning(
+                            f"Could not validate {finding.get('vulnerability_type', 'unknown')} vulnerability"
+                        )
         else:
             # Use the followup response to determine validation
             content = response.get("content", "").lower()
             if (
-                ("validated" in content and ("confirmed" in content or "verified" in content))
-                or ("confirmed" in content and "false positive" not in content and "cannot validate" not in content)
+                (
+                    "validated" in content
+                    and ("confirmed" in content or "verified" in content)
+                )
+                or (
+                    "confirmed" in content
+                    and "false positive" not in content
+                    and "cannot validate" not in content
+                )
                 or ("real xss vulnerability" in content)
             ):
                 validation_result["validated"] = True
-                validation_result["details"]["notes"] = "Validated through expert analysis"
+                validation_result["details"]["notes"] = (
+                    "Validated through expert analysis"
+                )
                 validation_result["details"]["confidence_level"] = "medium"
-                logger.success(f"Validated {finding.get('vulnerability_type', 'unknown')} through expert analysis")
-            elif "cannot validate" in content or "not validated" in content or "false positive" in content:
-                validation_result["details"]["notes"] = "Could not validate through expert analysis"
-                logger.warning(f"Could not validate {finding.get('vulnerability_type', 'unknown')} - likely a false positive")
+                logger.success(
+                    f"Validated {finding.get('vulnerability_type', 'unknown')} through expert analysis"
+                )
+            elif (
+                "cannot validate" in content
+                or "not validated" in content
+                or "false positive" in content
+            ):
+                validation_result["details"]["notes"] = (
+                    "Could not validate through expert analysis"
+                )
+                logger.warning(
+                    f"Could not validate {finding.get('vulnerability_type', 'unknown')} - likely a false positive"
+                )
 
         # Apply deterministic runtime-assisted validation for XSS findings.
         vuln_type = finding.get("vulnerability_type", "").lower()
@@ -135,15 +160,22 @@ class ValidationAgent(BaseAgent):
                 validation_result = xss_validation
             elif not validation_result.get("validated"):
                 validation_result = xss_validation
-            elif validation_result.get("details", {}).get("validation_method") == "expert_analysis":
+            elif (
+                validation_result.get("details", {}).get("validation_method")
+                == "expert_analysis"
+            ):
                 validation_result = xss_validation
             else:
                 validation_result.setdefault("details", {})
-                validation_result["details"]["runtime_xss_validation"] = xss_validation.get("details", {})
+                validation_result["details"]["runtime_xss_validation"] = (
+                    xss_validation.get("details", {})
+                )
 
         return validation_result
 
-    def _validate_xss_finding(self, finding: Dict[str, Any], page: Page) -> Dict[str, Any]:
+    def _validate_xss_finding(
+        self, finding: Dict[str, Any], page: Page
+    ) -> Dict[str, Any]:
         """Perform deterministic XSS validation using browser instrumentation and reflection checks."""
         payload = str(finding.get("details", {}).get("payload", "") or "")
         page_content = page.content() or ""
@@ -154,15 +186,13 @@ class ValidationAgent(BaseAgent):
             "details": {
                 "validation_method": "XSS analysis",
                 "validation_evidence": "No executable or reflected payload evidence found",
-                "confidence_level": "low"
-            }
+                "confidence_level": "low",
+            },
         }
 
         # 1) Browser-assisted detector (preferred when available)
         try:
-            self.browser_tools.execute_js(
-                "window.__vpt_xss_probe = true;"
-            )
+            self.browser_tools.execute_js("window.__vpt_xss_probe = true;")
             detector_result = self.browser_tools.execute_js(
                 "return window.__xss_triggered || window.xssDetected || false;"
             )
@@ -171,7 +201,7 @@ class ValidationAgent(BaseAgent):
                 result["details"] = {
                     "validation_method": "XSS detection via browser instrumentation",
                     "validation_evidence": detector_result.get("method", "detected"),
-                    "confidence_level": "high"
+                    "confidence_level": "high",
                 }
                 return result
             if detector_result is True:
@@ -179,7 +209,7 @@ class ValidationAgent(BaseAgent):
                 result["details"] = {
                     "validation_method": "XSS detection via browser instrumentation",
                     "validation_evidence": "detected",
-                    "confidence_level": "high"
+                    "confidence_level": "high",
                 }
                 return result
         except Exception:
@@ -188,11 +218,16 @@ class ValidationAgent(BaseAgent):
 
         # 2) Reflection checks across common encoded forms
         variants = self._payload_variants(payload)
-        matched_variant = next((v for v in variants if v and v.lower() in page_content_lower), None)
+        matched_variant = next(
+            (v for v in variants if v and v.lower() in page_content_lower), None
+        )
         if matched_variant:
             method = "Content reflection analysis"
             lowered = matched_variant.lower()
-            if any(token in lowered for token in ["onerror", "onload", "onclick", "onmouseover"]):
+            if any(
+                token in lowered
+                for token in ["onerror", "onload", "onclick", "onmouseover"]
+            ):
                 method = "Event handler reflection analysis"
             elif "javascript:" in lowered:
                 method = "JavaScript URI reflection analysis"
@@ -201,7 +236,7 @@ class ValidationAgent(BaseAgent):
             result["details"] = {
                 "validation_method": method,
                 "validation_evidence": matched_variant,
-                "confidence_level": "medium"
+                "confidence_level": "medium",
             }
             return result
 
@@ -236,42 +271,48 @@ class ValidationAgent(BaseAgent):
                 seen.add(value)
                 unique_variants.append(value)
         return unique_variants
-    
+
     def _get_tool_name(self, tool_call: Any) -> str:
         """Extract the tool name from a tool call."""
-        if hasattr(tool_call, 'function') and hasattr(tool_call.function, 'name'):
+        if hasattr(tool_call, "function") and hasattr(tool_call.function, "name"):
             return tool_call.function.name
-        return tool_call.get('function', {}).get('name', 'unknown_tool')
-    
+        return tool_call.get("function", {}).get("name", "unknown_tool")
+
     def _format_finding(self, finding: Dict[str, Any]) -> str:
         """Format a finding for the validation prompt."""
-        formatted = f"Vulnerability Type: {finding.get('vulnerability_type', 'Unknown')}\n"
+        formatted = (
+            f"Vulnerability Type: {finding.get('vulnerability_type', 'Unknown')}\n"
+        )
         formatted += f"Severity: {finding.get('severity', 'medium')}\n"
         formatted += f"Target: {finding.get('target', 'Unknown')}\n"
-        
+
         # Add details if available
         if finding.get("details"):
             formatted += "Details:\n"
             for key, value in finding.get("details", {}).items():
                 formatted += f"- {key}: {value}\n"
-        
+
         # Add any evidence
-        if finding.get("evidence") or (finding.get("details") and finding.get("details").get("evidence")):
-            evidence = finding.get("evidence", finding.get("details", {}).get("evidence", ""))
+        if finding.get("evidence") or (
+            finding.get("details") and finding.get("details").get("evidence")
+        ):
+            evidence = finding.get(
+                "evidence", finding.get("details", {}).get("evidence", "")
+            )
             formatted += f"Evidence: {evidence}\n"
-            
+
         # Add actions performed
         if finding.get("actions_performed"):
             formatted += "Actions Performed:\n"
             for action in finding.get("actions_performed", []):
                 formatted += f"- {action.get('tool', 'unknown')}: {action.get('success', False)}\n"
-                
+
         return formatted
-    
+
     def _get_validation_prompt(self, finding: Dict[str, Any]) -> str:
         """Get a specific validation prompt based on the vulnerability type."""
         vuln_type = finding.get("vulnerability_type", "").lower()
-        
+
         # Base prompt for all validations
         base_prompt = """
         You are a Security Validation Expert. Your role is to confirm or reject security findings.
@@ -294,7 +335,7 @@ class ValidationAgent(BaseAgent):
         - submit: Submit a form
         - execute_js: Execute JavaScript on the page
         """
-        
+
         # Add specialized validation guidance based on vulnerability type
         if "xss" in vuln_type:
             base_prompt += """
@@ -374,5 +415,5 @@ class ValidationAgent(BaseAgent):
             - Test for information leakage from internal services
             - Check if the server could be used as a proxy for further attacks
             """
-        
+
         return base_prompt

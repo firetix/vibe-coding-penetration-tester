@@ -47,7 +47,7 @@ def _parse_ip_candidate(value: Optional[str]) -> Optional[str]:
         return None
 
     if candidate.startswith("[") and "]" in candidate:
-        candidate = candidate[1:candidate.index("]")]
+        candidate = candidate[1 : candidate.index("]")]
     if "%" in candidate:
         candidate = candidate.split("%", 1)[0]
 
@@ -73,7 +73,11 @@ def extract_client_ip(
     x_forwarded_for: Optional[str],
     trust_proxy_headers: Optional[bool] = None,
 ) -> str:
-    trust_proxy = should_trust_proxy_headers() if trust_proxy_headers is None else trust_proxy_headers
+    trust_proxy = (
+        should_trust_proxy_headers()
+        if trust_proxy_headers is None
+        else trust_proxy_headers
+    )
 
     if trust_proxy and x_forwarded_for:
         first_hop = x_forwarded_for.split(",", 1)[0].strip()
@@ -104,7 +108,10 @@ def _hostname_resolves_to_blocked_ip(hostname: str) -> Tuple[bool, Optional[str]
 
     for ip in resolved_ips:
         if _is_blocked_ip(ip):
-            return True, "Target resolves to a private/internal IP address in hosted mode"
+            return (
+                True,
+                "Target resolves to a private/internal IP address in hosted mode",
+            )
 
     return False, None
 
@@ -138,7 +145,9 @@ def is_pro_active(pro_until: Optional[str]) -> bool:
     if not pro_until:
         return False
     try:
-        return datetime.fromisoformat(pro_until).replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
+        return datetime.fromisoformat(pro_until).replace(
+            tzinfo=timezone.utc
+        ) > datetime.now(timezone.utc)
     except Exception:
         return False
 
@@ -163,7 +172,12 @@ def evaluate_entitlement_for_scan(
         return {"allowed": True, "reason": None, "consume": "free", "entitlements": ent}
 
     if ent["deep_scan_credits"] > 0:
-        return {"allowed": True, "reason": None, "consume": "credit", "entitlements": ent}
+        return {
+            "allowed": True,
+            "reason": None,
+            "consume": "credit",
+            "entitlements": ent,
+        }
 
     return {
         "allowed": False,
@@ -173,7 +187,9 @@ def evaluate_entitlement_for_scan(
     }
 
 
-def consume_entitlement(store: BillingStore, account_id: str, consume: Optional[str]) -> Dict[str, Any]:
+def consume_entitlement(
+    store: BillingStore, account_id: str, consume: Optional[str]
+) -> Dict[str, Any]:
     if consume == "free":
         store.decrement_free_scan(account_id)
     elif consume == "credit":
@@ -181,9 +197,13 @@ def consume_entitlement(store: BillingStore, account_id: str, consume: Optional[
     return store.get_entitlements(account_id)
 
 
-def check_scan_rate_limits(store: BillingStore, account_id: str, ip: str) -> Tuple[bool, Optional[str]]:
+def check_scan_rate_limits(
+    store: BillingStore, account_id: str, ip: str
+) -> Tuple[bool, Optional[str]]:
     # Conservative defaults for hosted mode.
-    account_events = store.count_recent_events_by_account(account_id, "scan_start", window_seconds=60)
+    account_events = store.count_recent_events_by_account(
+        account_id, "scan_start", window_seconds=60
+    )
     ip_events = store.count_recent_events_by_ip(ip, "scan_start", window_seconds=60)
 
     if account_events >= 5:
@@ -193,7 +213,9 @@ def check_scan_rate_limits(store: BillingStore, account_id: str, ip: str) -> Tup
     return True, None
 
 
-def payment_required_payload(entitlements: Dict[str, Any], checkout_url: str) -> Dict[str, Any]:
+def payment_required_payload(
+    entitlements: Dict[str, Any], checkout_url: str
+) -> Dict[str, Any]:
     return {
         "status": "payment_required",
         "paywall_required": True,

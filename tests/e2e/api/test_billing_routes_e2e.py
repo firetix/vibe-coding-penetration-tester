@@ -53,9 +53,13 @@ def test_billing_checkout(web_api_server, http_client):
 
 
 @pytest.mark.e2e_api_full
-def test_mock_checkout_route_is_reachable_and_completes_checkout(web_api_server, http_client):
+def test_mock_checkout_route_is_reachable_and_completes_checkout(
+    web_api_server, http_client
+):
     http_client.get(f"{web_api_server}/status", timeout=10)
-    before = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()["entitlements"]
+    before = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()[
+        "entitlements"
+    ]
 
     checkout = http_client.post(
         f"{web_api_server}/api/billing/checkout",
@@ -63,11 +67,15 @@ def test_mock_checkout_route_is_reachable_and_completes_checkout(web_api_server,
         timeout=10,
     ).json()
 
-    redirect_response = http_client.get(checkout["checkout_url"], allow_redirects=False, timeout=10)
+    redirect_response = http_client.get(
+        checkout["checkout_url"], allow_redirects=False, timeout=10
+    )
     assert redirect_response.status_code in (301, 302, 303, 307, 308)
     assert redirect_response.headers.get("Location", "").startswith("/?checkout=")
 
-    after = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()["entitlements"]
+    after = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()[
+        "entitlements"
+    ]
     assert after["deep_scan_credits"] == before["deep_scan_credits"] + 5
 
 
@@ -87,7 +95,9 @@ def test_browser_checkout_route_redirects_to_checkout_url(web_api_server, http_c
 @pytest.mark.e2e_api_critical
 def test_billing_webhook_idempotent(web_api_server, http_client):
     http_client.get(f"{web_api_server}/status", timeout=10)
-    before = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()["entitlements"]
+    before = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()[
+        "entitlements"
+    ]
     checkout = http_client.post(
         f"{web_api_server}/api/billing/checkout",
         json={"scan_mode": "deep"},
@@ -98,16 +108,27 @@ def test_billing_webhook_idempotent(web_api_server, http_client):
         "type": "checkout.session.completed",
         "data": {"object": {"id": checkout["checkout_session_id"]}},
     }
-    first = http_client.post(f"{web_api_server}/api/billing/webhook", json=event, timeout=10)
-    after_first = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()["entitlements"]
-    second = http_client.post(f"{web_api_server}/api/billing/webhook", json=event, timeout=10)
-    after_second = http_client.get(f"{web_api_server}/api/entitlements", timeout=10).json()["entitlements"]
+    first = http_client.post(
+        f"{web_api_server}/api/billing/webhook", json=event, timeout=10
+    )
+    after_first = http_client.get(
+        f"{web_api_server}/api/entitlements", timeout=10
+    ).json()["entitlements"]
+    second = http_client.post(
+        f"{web_api_server}/api/billing/webhook", json=event, timeout=10
+    )
+    after_second = http_client.get(
+        f"{web_api_server}/api/entitlements", timeout=10
+    ).json()["entitlements"]
 
     assert first.status_code == 200
     assert second.status_code == 200
     assert after_first["deep_scan_credits"] == before["deep_scan_credits"] + 5
     assert after_second["deep_scan_credits"] == after_first["deep_scan_credits"]
-    assert second.json().get("message") in {"Webhook already processed", "Webhook processed"}
+    assert second.json().get("message") in {
+        "Webhook already processed",
+        "Webhook processed",
+    }
 
 
 @pytest.mark.e2e_api_critical
@@ -155,7 +176,9 @@ def test_billing_webhook_rejects_unsigned_without_test_mode():
             "type": "checkout.session.completed",
             "data": {"object": {"id": checkout["checkout_session_id"]}},
         }
-        response = client.post(f"{base_url}/api/billing/webhook", json=event, timeout=10)
+        response = client.post(
+            f"{base_url}/api/billing/webhook", json=event, timeout=10
+        )
         assert response.status_code == 400
         assert response.json().get("status") == "error"
     finally:

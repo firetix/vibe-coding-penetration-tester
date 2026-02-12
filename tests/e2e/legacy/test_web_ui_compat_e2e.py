@@ -7,7 +7,11 @@ import requests
 def test_web_ui_compat_core_endpoints(legacy_server):
     client = requests.Session()
     try:
-        init = client.post(f"{legacy_server}/api/session/init", json={"client_id": "legacy"}, timeout=10)
+        init = client.post(
+            f"{legacy_server}/api/session/init",
+            json={"client_id": "legacy"},
+            timeout=10,
+        )
         assert init.status_code == 200
         session_id = init.json().get("session_id")
         assert session_id
@@ -24,16 +28,24 @@ def test_web_ui_compat_core_endpoints(legacy_server):
         )
         assert scan.status_code in (200, 402)
 
-        status = client.get(f"{legacy_server}/status", params={"session_id": session_id}, timeout=10)
+        status = client.get(
+            f"{legacy_server}/status", params={"session_id": session_id}, timeout=10
+        )
         assert status.status_code == 200
 
-        report = client.get(f"{legacy_server}/report", params={"session_id": session_id}, timeout=10)
+        report = client.get(
+            f"{legacy_server}/report", params={"session_id": session_id}, timeout=10
+        )
         assert report.status_code in (200, 202, 404)
 
-        reset = client.post(f"{legacy_server}/reset", data={"session_id": session_id}, timeout=10)
+        reset = client.post(
+            f"{legacy_server}/reset", data={"session_id": session_id}, timeout=10
+        )
         assert reset.status_code == 200
 
-        state = client.get(f"{legacy_server}/api/state", params={"session_id": session_id}, timeout=10)
+        state = client.get(
+            f"{legacy_server}/api/state", params={"session_id": session_id}, timeout=10
+        )
         assert state.status_code == 200
     finally:
         client.close()
@@ -44,7 +56,11 @@ def test_web_ui_compat_core_endpoints(legacy_server):
 def test_web_ui_api_scan_start_rejects_false_authorization_string(legacy_server):
     client = requests.Session()
     try:
-        init = client.post(f"{legacy_server}/api/session/init", json={"client_id": "legacy-auth"}, timeout=10)
+        init = client.post(
+            f"{legacy_server}/api/session/init",
+            json={"client_id": "legacy-auth"},
+            timeout=10,
+        )
         assert init.status_code == 200
         session_id = init.json().get("session_id")
         assert session_id
@@ -69,7 +85,11 @@ def test_web_ui_api_scan_start_rejects_false_authorization_string(legacy_server)
 def test_web_ui_paywalled_attempts_return_402_not_429(legacy_server):
     client = requests.Session()
     try:
-        init = client.post(f"{legacy_server}/api/session/init", json={"client_id": "legacy-paywall"}, timeout=10)
+        init = client.post(
+            f"{legacy_server}/api/session/init",
+            json={"client_id": "legacy-paywall"},
+            timeout=10,
+        )
         assert init.status_code == 200
         session_id = init.json().get("session_id")
         assert session_id
