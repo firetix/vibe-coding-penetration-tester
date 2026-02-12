@@ -200,11 +200,11 @@ class LLMProvider:
 
     @classmethod
     def _is_supported_openai_model(cls, model_name: str) -> bool:
-        """Accept OpenAI GPT, Codex, ChatGPT, and O-series model naming patterns."""
+        """Accept OpenAI GPT, ChatGPT, and O-series model naming patterns."""
         normalized = cls._normalize_model_name(model_name)
         if not normalized:
             return False
-        if normalized.startswith(("gpt-", "codex-", "chatgpt-")):
+        if normalized.startswith(("gpt-", "chatgpt-")):
             return True
         return re.match(r"^o\d", normalized) is not None
 

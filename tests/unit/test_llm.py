@@ -53,11 +53,11 @@ class TestLLMProvider:
         mock_openai.return_value = mock_client
 
         # Act
-        provider = LLMProvider(provider="openai", model=" CoDeX-5.3 ")
+        provider = LLMProvider(provider="openai", model=" GPT-5.3-CODEX ")
 
         # Assert
         assert provider.provider == "openai"
-        assert provider.model == "codex-5.3"
+        assert provider.model == "gpt-5.3-codex"
         assert provider.client == mock_client
         mock_openai.assert_called_once_with(api_key="test_key")
 
@@ -86,6 +86,22 @@ class TestLLMProvider:
 
         # Act
         provider = LLMProvider(provider="openai", model="random-model-name")
+
+        # Assert
+        assert provider.provider == "openai"
+        assert provider.model == "gpt-4o"
+        assert provider.client == mock_client
+        mock_openai.assert_called_once_with(api_key="test_key")
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
+    @patch("core.llm.OpenAI")
+    def test_openai_legacy_codex_alias_falls_back_to_default(self, mock_openai):
+        # Arrange
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Act
+        provider = LLMProvider(provider="openai", model="codex-5.3")
 
         # Assert
         assert provider.provider == "openai"

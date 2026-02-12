@@ -88,7 +88,7 @@ python main.py --url https://example.com
 python main.py --url https://example.com --scope domain --provider openai --model gpt-4o
 
 # OpenAI Codex model
-python main.py --url https://example.com --provider openai --model codex-5.3
+python main.py --url https://example.com --provider openai --model gpt-5.3-codex
 
 # Subdomain scan with Anthropic
 python main.py --url https://example.com --scope subdomain --provider anthropic --model claude-3-7-sonnet-20250219
@@ -111,7 +111,7 @@ Use any provider model ID accepted by your account/runtime. Common options:
   - `gpt-4o`
   - `gpt-4.1`
   - `gpt-5`
-  - `codex-5.3`
+  - `gpt-5.3-codex`
   - `o3`
 - Anthropic:
   - `claude-3-7-sonnet-20250219`
