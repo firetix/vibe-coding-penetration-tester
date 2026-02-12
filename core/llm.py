@@ -821,6 +821,7 @@ class LLMProvider:
         gemini_messages = []
         system_prompt = None
         first_system_prompt_processed = False
+        tool_call_name_by_id: Dict[str, str] = {}
 
         for msg in messages:
             role = msg.get("role")
@@ -862,7 +863,10 @@ class LLMProvider:
                             func = tool_call.get("function", {})
                             func_name = func.get("name")
                             func_args_str = func.get("arguments")
+                            tool_call_id = tool_call.get("id")
                             if func_name and func_args_str:
+                                if tool_call_id:
+                                    tool_call_name_by_id[tool_call_id] = func_name
                                 try:
                                     arguments = json.loads(func_args_str)
                                     # Ensure arguments is a dict for Gemini
@@ -916,7 +920,9 @@ class LLMProvider:
                     )
 
             elif role == "tool":
-                if name and content:
+                tool_call_id = msg.get("tool_call_id")
+                resolved_name = name or tool_call_name_by_id.get(tool_call_id)
+                if resolved_name and content:
                     try:
                         # Assumption: content is the result string. Wrap it in a dict.
                         # Adapt this if VibePenTester provides results differently.
@@ -930,21 +936,34 @@ class LLMProvider:
                         #      response_data = {'result': content} # Fallback if not JSON
 
                         function_response = genai_types.FunctionResponse(
-                            name=name, response=response_data
+                            name=resolved_name, response=response_data
                         )
                         part = genai_types.Part(function_response=function_response)
                         # Tool responses are added as 'user' role messages in Gemini
                         gemini_messages.append({"role": "user", "parts": [part]})
                         self.logger.debug(
-                            f"Added FunctionResponse part for tool: {name}"
+                            f"Added FunctionResponse part for tool: {resolved_name}"
                         )
                     except Exception as e:
                         self.logger.error(
-                            f"Error processing tool result for {name}: {e}"
+                            f"Error processing tool result for {resolved_name}: {e}"
                         )
+                elif content:
+                    fallback_id = tool_call_id or "unknown_tool_call"
+                    gemini_messages.append(
+                        {
+                            "role": "user",
+                            "parts": [
+                                {"text": f"Tool result ({fallback_id}): {content}"}
+                            ],
+                        }
+                    )
+                    self.logger.warning(
+                        f"Tool message missing name; added text fallback for {fallback_id}"
+                    )
                 else:
                     self.logger.warning(
-                        f"Skipping tool message due to missing name or content: {msg}"
+                        f"Skipping tool message due to missing content: {msg}"
                     )
 
             else:

@@ -314,15 +314,12 @@ def resolve_dns(hostname: str, timeout: float = 2.0) -> bool:
     Returns:
         True if hostname resolves, False otherwise
     """
-    previous_timeout = socket.getdefaulttimeout()
+    _ = timeout
     try:
-        socket.setdefaulttimeout(timeout)
         socket.gethostbyname(hostname)
         return True
     except (socket.gaierror, socket.timeout, OSError):
         return False
-    finally:
-        socket.setdefaulttimeout(previous_timeout)
 
 
 def dns_bruteforce_concurrent(

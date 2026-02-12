@@ -34,7 +34,6 @@ class APISecurityAgent(SpecializedSecurityAgent):
             "APISecurityAgent", "api_security_specialist", "api", llm_provider, scanner
         )
         self.discovered_endpoints: List[Dict[str, Any]] = []
-        self.tested_endpoints: List[str] = []
 
     def _create_input_data(
         self, task: Dict[str, Any], page: Page, page_info: Dict[str, Any]
@@ -316,4 +315,3 @@ TESTING APPROACH:
     def reset_discovered_endpoints(self) -> None:
         """Reset the discovered endpoints list."""
         self.discovered_endpoints = []
-        self.tested_endpoints = []
