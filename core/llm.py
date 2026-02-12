@@ -6,10 +6,20 @@ import uuid  # Added for potential future use with Gemini IDs
 
 # Import LLM providers
 from openai import OpenAI
-import anthropic
-import google.generativeai as genai
-from google.generativeai import types as genai_types  # Use alias
-import google.api_core.exceptions  # Added for specific Gemini API error handling
+
+try:
+    import anthropic
+except Exception:
+    anthropic = None
+
+try:
+    import google.generativeai as genai
+    from google.generativeai import types as genai_types  # Use alias
+    from google.api_core import exceptions as google_api_exceptions
+except Exception:
+    genai = None
+    genai_types = None
+    google_api_exceptions = None
 
 from utils.logger import get_logger
 from utils.config import load_config  # Added for config loading
@@ -44,6 +54,10 @@ class LLMProvider:
             if not self.model.startswith("gpt-"):
                 self.model = "gpt-4o"  # Default to GPT-4o if not specified correctly
         elif self.provider == "anthropic":
+            if anthropic is None:
+                raise ValueError(
+                    "Anthropic SDK is not installed. Install dependency: anthropic."
+                )
             try:
                 # Try with the modern Anthropic API client structure
                 self.client = anthropic.Anthropic(api_key=self.anthropic_api_key)
@@ -104,6 +118,10 @@ class LLMProvider:
                     f"Make sure Ollama is running and accessible. Error: {str(e)}"
                 )
         elif self.provider == "gemini":  # Added Gemini initialization
+            if genai is None or genai_types is None:
+                raise ValueError(
+                    "Google Gemini SDK is not installed. Install dependency: google-generativeai."
+                )
             if not self.google_api_key:
                 self.logger.error("Google API Key not found for Gemini provider.")
                 raise ValueError(
@@ -773,16 +791,17 @@ class LLMProvider:
                         "Invalid response structure from Gemini embeddings"
                     )  # Trigger fallback
 
-            except google.api_core.exceptions.GoogleAPIError as e:
-                self.logger.error(
-                    f"Gemini embedding API error: {e}. Falling back to OpenAI."
-                )
-                # Fallback handled below
             except Exception as e:
-                self.logger.error(
-                    f"Unexpected error during Gemini embedding: {e}. Falling back to OpenAI."
-                )
-                # Fallback handled below
+                if google_api_exceptions and isinstance(
+                    e, google_api_exceptions.GoogleAPIError
+                ):
+                    self.logger.error(
+                        f"Gemini embedding API error: {e}. Falling back to OpenAI."
+                    )
+                else:
+                    self.logger.error(
+                        f"Unexpected error during Gemini embedding: {e}. Falling back to OpenAI."
+                    )
 
             # Fallback to OpenAI if Gemini fails or isn't configured properly
             self.logger.info(
@@ -1300,13 +1319,14 @@ class LLMProvider:
             )  # Log truncated content
             return output
 
-        except google.api_core.exceptions.GoogleAPIError as e:
-            self.logger.error(f"Gemini API call failed: {e}", exc_info=True)
-            # Re-raise the exception for the coordinator to handle
-            raise
         except Exception as e:
-            # Catch any other unexpected errors during the process
-            self.logger.error(
-                f"Gemini processing failed unexpectedly: {e}", exc_info=True
-            )
+            if google_api_exceptions and isinstance(
+                e, google_api_exceptions.GoogleAPIError
+            ):
+                self.logger.error(f"Gemini API call failed: {e}", exc_info=True)
+            else:
+                # Catch any other unexpected errors during the process
+                self.logger.error(
+                    f"Gemini processing failed unexpectedly: {e}", exc_info=True
+                )
             raise  # Re-raise the caught exception
