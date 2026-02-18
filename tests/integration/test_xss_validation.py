@@ -148,11 +148,24 @@ class TestXSSValidationIntegration:
             ],
         }
 
-        # Test XSS agent execution
+        # Simulate a tool-call driven XSS finding (current agent behavior).
+        mock_tool_call = MagicMock()
+        mock_tool_call.function = MagicMock()
+        mock_tool_call.function.name = "test_xss_payload"
+        mock_tool_call.function.arguments = json.dumps(
+            {"payload": "<script>alert(1)</script>", "target": "search_form"}
+        )
+
         with patch.object(
+            xss_agent, "think", return_value={"content": "", "tool_calls": [mock_tool_call]}
+        ), patch.object(
             xss_agent,
             "execute_tool",
-            return_value={"result": "XSS payload was reflected in page"},
+            return_value={
+                "xss_found": True,
+                "payload": "<script>alert(1)</script>",
+                "severity": "high",
+            },
         ):
             xss_result = xss_agent.execute_task(
                 {
@@ -182,10 +195,10 @@ class TestXSSValidationIntegration:
                 in validation_result["details"]["validation_evidence"]
             )
 
-    def test_full_xss_workflow(self, mock_config, llm_provider, scanner, mock_page):
+    def test_full_xss_workflow(self, mock_config, llm_provider, scanner, mock_page, tmp_path):
         """Test the full XSS workflow from planning to validation."""
         # Create agents
-        planner = PlannerAgent(llm_provider, scanner)
+        planner = PlannerAgent(llm_provider)
         xss_agent = XSSAgent(llm_provider, scanner)
         validation_agent = ValidationAgent(llm_provider, scanner)
 
@@ -212,11 +225,10 @@ class TestXSSValidationIntegration:
             ],
         }
 
-        # Mock planner
-        response_obj = MagicMock()
-        response_obj.choices = [MagicMock()]
-        response_obj.choices[0].message = MagicMock()
-        response_obj.choices[0].message.content = json.dumps(
+        mock_plan_tool_call = MagicMock()
+        mock_plan_tool_call.function = MagicMock()
+        mock_plan_tool_call.function.name = "create_security_plan"
+        mock_plan_tool_call.function.arguments = json.dumps(
             {
                 "tasks": [
                     {
@@ -228,23 +240,38 @@ class TestXSSValidationIntegration:
                 ]
             }
         )
-        response_obj.choices[0].message.tool_calls = []
 
         with patch.object(
-            planner.llm_provider, "chat_completion", return_value=response_obj
+            planner,
+            "think",
+            return_value={"content": "", "tool_calls": [mock_plan_tool_call]},
         ):
-            # Get the plan
-            plan = planner.create_plan(page_info)
+            # Get the plan (PlannerAgent.create_plan expects url + page_info).
+            plan = planner.create_plan(page_info["url"], page_info)
 
             # Verify plan includes XSS task
             assert len(plan["tasks"]) == 1
             assert plan["tasks"][0]["type"] == "xss"
 
-            # Execute XSS task
+            mock_xss_tool_call = MagicMock()
+            mock_xss_tool_call.function = MagicMock()
+            mock_xss_tool_call.function.name = "test_xss_payload"
+            mock_xss_tool_call.function.arguments = json.dumps(
+                {"payload": "<script>alert(1)</script>", "target": "search_form"}
+            )
+
             with patch.object(
                 xss_agent,
+                "think",
+                return_value={"content": "", "tool_calls": [mock_xss_tool_call]},
+            ), patch.object(
+                xss_agent,
                 "execute_tool",
-                return_value={"result": "XSS payload was reflected in page"},
+                return_value={
+                    "xss_found": True,
+                    "payload": "<script>alert(1)</script>",
+                    "severity": "high",
+                },
             ):
                 xss_result = xss_agent.execute_task(
                     plan["tasks"][0], mock_page, page_info
@@ -266,14 +293,17 @@ class TestXSSValidationIntegration:
                 )
 
                 # Create a report with the finding
-                reporter = Reporter("/tmp")
-                with patch.object(
-                    reporter, "_create_report_dir", return_value="/tmp/example"
-                ):
-                    report_path = reporter.generate_report(
-                        [{**xss_result, "validation": validation_result}]
-                    )
+                reporter = Reporter(str(tmp_path))
+                report_path = reporter.generate_report(
+                    [
+                        {
+                            **xss_result,
+                            "validated": validation_result["validated"],
+                            "validation_details": validation_result["details"],
+                        }
+                    ]
+                )
 
-                    # Assert something about the report path
-                    assert isinstance(report_path, str)
-                    assert "example" in report_path
+                # Assert something about the report path
+                assert isinstance(report_path, str)
+                assert report_path.endswith("report.md")
