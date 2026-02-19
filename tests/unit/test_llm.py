@@ -45,6 +45,86 @@ class TestLLMProvider:
         assert provider.client == mock_client
         mock_openai.assert_called_once_with(api_key="test_key")
 
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
+    @patch("core.llm.OpenAI")
+    def test_openai_codex_model_initialization(self, mock_openai):
+        # Arrange
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Act
+        provider = LLMProvider(provider="openai", model=" CoDeX-5.3 ")
+
+        # Assert
+        assert provider.provider == "openai"
+        assert provider.model == "gpt-5.3-codex"
+        assert provider.client == mock_client
+        mock_openai.assert_called_once_with(api_key="test_key")
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
+    @patch("core.llm.OpenAI")
+    def test_openai_o_series_model_initialization(self, mock_openai):
+        # Arrange
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Act
+        provider = LLMProvider(provider="openai", model="o3")
+
+        # Assert
+        assert provider.provider == "openai"
+        assert provider.model == "o3"
+        assert provider.client == mock_client
+        mock_openai.assert_called_once_with(api_key="test_key")
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
+    @patch("core.llm.OpenAI")
+    def test_openai_unknown_model_falls_back_to_default(self, mock_openai):
+        # Arrange
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Act
+        provider = LLMProvider(provider="openai", model="random-model-name")
+
+        # Assert
+        assert provider.provider == "openai"
+        assert provider.model == "gpt-4o"
+        assert provider.client == mock_client
+        mock_openai.assert_called_once_with(api_key="test_key")
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
+    @patch("core.llm.OpenAI")
+    def test_openai_invalid_codex_alias_falls_back_to_default(self, mock_openai):
+        # Arrange
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Act
+        provider = LLMProvider(provider="openai", model="codex-latest")
+
+        # Assert
+        assert provider.provider == "openai"
+        assert provider.model == "gpt-4o"
+        assert provider.client == mock_client
+        mock_openai.assert_called_once_with(api_key="test_key")
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
+    @patch("core.llm.OpenAI")
+    def test_openai_whitespace_model_is_normalized(self, mock_openai):
+        # Arrange
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Act
+        provider = LLMProvider(provider="openai", model=" GPT-4O ")
+
+        # Assert
+        assert provider.provider == "openai"
+        assert provider.model == "gpt-4o"
+        assert provider.client == mock_client
+        mock_openai.assert_called_once_with(api_key="test_key")
+
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test_key"})
     @patch("core.llm.anthropic.Anthropic")  # Patch the import in core.llm
     def test_anthropic_initialization(self, mock_anthropic):
