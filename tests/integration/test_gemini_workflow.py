@@ -88,14 +88,12 @@ class TestGeminiWorkflow(unittest.TestCase):
     @patch("core.coordinator.create_agent_swarm")
     @patch("core.coordinator.Reporter")
     @patch("core.coordinator.Scanner")
-    @patch("core.llm.genai.configure")  # Patch configure within llm module
-    @patch("core.llm.genai.GenerativeModel")  # Patch Model class within llm module
+    @patch("core.llm.genai")  # Patch the optional SDK module (may be None)
     @patch("utils.config.load_config")  # Patch config loading used in LLMProvider init
     def test_gemini_end_to_end_flow(
         self,
         mock_load_config,
-        mock_genai_model_cls,
-        mock_genai_configure,
+        mock_genai,
         mock_scanner_cls,
         mock_reporter_cls,
         mock_create_agent_swarm,
@@ -139,7 +137,7 @@ class TestGeminiWorkflow(unittest.TestCase):
         mock_create_agent_swarm.return_value = mock_swarm_instance
 
         # Mock GenerativeModel instance and generate_content
-        mock_genai_model_instance = mock_genai_model_cls.return_value
+        mock_genai_model_instance = mock_genai.GenerativeModel.return_value
 
         # --- Define Mock API Responses using helpers ---
         # Response 1: Planner suggests a tool
@@ -258,6 +256,7 @@ class TestGeminiWorkflowRevised(unittest.TestCase):
 
 class TestGeminiWorkflowFinal(unittest.TestCase):
     # Patch only the necessary external dependencies and the LLM call point
+    @patch("core.llm.genai")  # Patch the optional SDK module (may be None)
     @patch(
         "core.llm.LLMProvider.chat_completion"
     )  # Target the unified completion method
@@ -276,6 +275,7 @@ class TestGeminiWorkflowFinal(unittest.TestCase):
         mock_reporter_cls,
         mock_swarm_run,  # Patched SecuritySwarm.run
         mock_chat_completion,
+        mock_genai,
     ):  # Patched LLMProvider.chat_completion
 
         # --- Mock Configuration ---

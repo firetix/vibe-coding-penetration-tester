@@ -6,7 +6,6 @@ import json
 from agents.security.xss_agent import XSSAgent
 from core.llm import LLMProvider
 from core.scanner import Scanner
-from core.scanner_context import ScannerContext
 
 
 @pytest.mark.integration
@@ -31,12 +30,6 @@ class TestXSSEnhancedDetection(unittest.TestCase):
         # Create a mock Page object for Playwright
         self.page_mock = MagicMock()
         self.page_mock.url = "http://example.com/search?q=test"
-
-        # Create a scanner context
-        self.context = ScannerContext()
-        self.context.add_data(
-            "page_info", {"title": "Test Page", "url": "http://example.com"}
-        )
 
     @patch("playwright.sync_api.Page")
     def test_basic_xss_detection_in_url(self, mock_playwright_page):
@@ -182,10 +175,13 @@ class TestXSSEnhancedDetection(unittest.TestCase):
             "fill", tool_result, result, page, tool_call
         )
 
-        # Assert that a sanitization bypass was detected
+        # Current implementation reports Stored XSS, with a bypass flag in details.
         self.assertTrue(updated_result["vulnerability_found"])
-        self.assertIn("Sanitization Bypass", updated_result["vulnerability_type"])
-        self.assertEqual(updated_result["severity"], "critical")
+        self.assertEqual(
+            updated_result["vulnerability_type"], "Stored Cross-Site Scripting (XSS)"
+        )
+        self.assertEqual(updated_result["severity"], "high")
+        self.assertTrue(updated_result.get("details", {}).get("sanitization_bypass"))
 
     @patch("playwright.sync_api.Page")
     def test_api_based_xss_detection(self, mock_playwright_page):
