@@ -14,6 +14,8 @@ from utils.config import load_config
 # Load environment variables from .env file
 load_dotenv()
 
+DEFAULT_OPENAI_MODEL = "gpt-5.2"
+
 
 def parse_arguments():
     available_providers = ["openai", "anthropic", "ollama"]
@@ -27,8 +29,8 @@ def parse_arguments():
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-4o",
-        help="LLM model to use (e.g., gpt-4o, claude-3-5-sonnet, ollama/llama3, gemini-1.5-pro)",
+        default=DEFAULT_OPENAI_MODEL,
+        help="LLM model to use (e.g., gpt-5.2, gpt-5.2-codex, claude-opus-4-6, ollama/llama3, gemini-2.0-flash)",
     )
     parser.add_argument(
         "--provider",
@@ -87,7 +89,7 @@ def main():
 
         # If no specific model is provided, use the default from config
         if (
-            args.model == "gpt-4o"
+            args.model == DEFAULT_OPENAI_MODEL
         ):  # This is the default model, so user didn't specify one
             default_ollama_model = (
                 config.get("llm", {}).get("ollama", {}).get("default_model", "llama3")
