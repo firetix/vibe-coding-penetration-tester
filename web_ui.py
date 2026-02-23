@@ -36,6 +36,7 @@ from utils.report_manager import ReportManager
 from utils.session_manager import SessionManager
 from utils.scan_controller import ScanController
 from utils.billing_store import BillingStore
+from utils.supabase_auth import maybe_get_supabase_user
 from utils.entitlements import (
     check_scan_rate_limits,
     extract_client_ip,
@@ -96,9 +97,24 @@ else:
     )
 
 # Initialize utilities
-activity_tracker = ActivityTracker()
-report_manager = ReportManager(app.config["UPLOAD_FOLDER"])
-session_manager = SessionManager()
+_app_db_url = (
+    os.environ.get("VPT_APP_DB_URL")
+    or os.environ.get("SUPABASE_DATABASE_URL")
+    or os.environ.get("VPT_BILLING_DB_URL")
+)
+if _app_db_url and _app_db_url.startswith(("postgres://", "postgresql://")):
+    from utils.activity_tracker_postgres import PostgresActivityTracker
+    from utils.report_manager_postgres import PostgresReportManager
+    from utils.session_manager_postgres import PostgresSessionManager
+
+    activity_tracker = PostgresActivityTracker(_app_db_url)
+    report_manager = PostgresReportManager(_app_db_url, app.config["UPLOAD_FOLDER"])
+    session_manager = PostgresSessionManager(_app_db_url)
+else:
+    activity_tracker = ActivityTracker()
+    report_manager = ReportManager(app.config["UPLOAD_FOLDER"])
+    session_manager = SessionManager()
+
 scan_controller = ScanController(session_manager, report_manager)
 if is_vercel:
     _default_billing_db_path = "/tmp/vpt.db"
@@ -106,21 +122,36 @@ else:
     _default_billing_db_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "data", "vpt.db"
     )
-billing_store = BillingStore(
-    os.environ.get("VPT_BILLING_DB_PATH", _default_billing_db_path)
+_billing_db_url = (
+    os.environ.get("VPT_BILLING_DB_URL")
+    or os.environ.get("VPT_APP_DB_URL")
+    or os.environ.get("SUPABASE_DATABASE_URL")
 )
+if _billing_db_url and _billing_db_url.startswith(("postgres://", "postgresql://")):
+    from utils.billing_store_postgres import PostgresBillingStore
+
+    billing_store = PostgresBillingStore(db_url=_billing_db_url)
+else:
+    billing_store = BillingStore(
+        os.environ.get("VPT_BILLING_DB_PATH", _default_billing_db_path)
+    )
 
 
 @app.before_request
 def attach_account_identity():
-    account_id = request.cookies.get("vpt_account_id")
-    if not account_id:
-        account_id = str(uuid.uuid4())
-        request._vpt_new_account_cookie = True
-    else:
+    supabase_user = maybe_get_supabase_user(request.headers.get("Authorization"))
+    if supabase_user:
+        account_id = str(supabase_user.get("sub"))
         request._vpt_new_account_cookie = False
+        request._vpt_supabase_user = supabase_user
+    else:
+        account_id = request.cookies.get("vpt_account_id")
+        if not account_id:
+            account_id = str(uuid.uuid4())
+            request._vpt_new_account_cookie = True
+        else:
+            request._vpt_new_account_cookie = False
     request._vpt_account_id = account_id
-    billing_store.ensure_account(account_id)
 
 
 @app.after_request
@@ -925,7 +956,16 @@ def get_report(report_id):
 
 @app.route("/reports/<path:filename>")
 def download_report(filename):
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+    full_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    if os.path.exists(full_path):
+        return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+
+    if hasattr(report_manager, "get_report_artifact_bytes"):
+        data, content_type = report_manager.get_report_artifact_bytes(filename)
+        if data is not None and content_type:
+            return data, 200, {"Content-Type": content_type}
+
+    return jsonify({"status": "error", "message": "Report not found"}), 404
 
 
 # Status endpoint for simple client checks
@@ -1044,11 +1084,17 @@ def status_check():
                     f"No activities found for session {session_id} - this might indicate a problem"
                 )
 
-                # Try to check if there are activities for other sessions
-                all_session_ids = list(activity_tracker.activities.keys())
-                logger.info(
-                    f"Activity tracker has activities for these sessions: {all_session_ids}"
-                )
+                # Try to check if there are activities for other sessions (in-memory tracker only).
+                tracker_sessions = getattr(activity_tracker, "activities", None)
+                if isinstance(tracker_sessions, dict):
+                    all_session_ids = list(tracker_sessions.keys())
+                    logger.info(
+                        f"Activity tracker has activities for these sessions: {all_session_ids}"
+                    )
+                else:
+                    logger.info(
+                        "Activity tracker backend does not expose in-memory session cache"
+                    )
 
                 # Add a test activity to see if the activity tracker is working
                 try:
@@ -1451,10 +1497,14 @@ def start_scan_compat():
         active_sessions_after = session_manager.get_all_sessions()
         logger.debug(f"Active sessions after validation: {active_sessions_after}")
 
-        # Debug the activity tracker state
-        logger.debug(
-            f"Activity tracker sessions: {list(activity_tracker.activities.keys())}"
-        )
+        # Debug the activity tracker state.
+        tracker_sessions = getattr(activity_tracker, "activities", None)
+        if isinstance(tracker_sessions, dict):
+            logger.debug(f"Activity tracker sessions: {list(tracker_sessions.keys())}")
+        else:
+            logger.debug(
+                "Activity tracker backend does not expose in-memory session cache"
+            )
 
         # Start the scan
         logger.info(

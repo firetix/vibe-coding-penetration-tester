@@ -1,5 +1,6 @@
 """Report generation and retrieval routes."""
 
+import os
 from flask import Blueprint, send_from_directory, g
 import logging
 
@@ -178,6 +179,16 @@ def register_routes(app, session_manager, report_manager):
     @app.route("/reports/<path:filename>")
     def download_report(filename):
         """Download a report file."""
-        return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+        full_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        if os.path.exists(full_path):
+            return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+
+        # Postgres/Supabase mode: serve known artifacts directly from the DB.
+        if hasattr(report_manager, "get_report_artifact_bytes"):
+            data, content_type = report_manager.get_report_artifact_bytes(filename)
+            if data is not None and content_type:
+                return data, 200, {"Content-Type": content_type}
+
+        return error_response("Report not found", 404)
 
     app.register_blueprint(bp)

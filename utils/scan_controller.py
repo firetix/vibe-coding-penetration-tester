@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import sys
 import subprocess
 import threading
 import logging
@@ -305,6 +306,11 @@ class ScanController:
         )
         if save_result.get("status") != "success":
             raise RuntimeError(f"Failed to save deterministic report: {save_result}")
+        if hasattr(self.report_manager, "ingest_report"):
+            try:
+                self.report_manager.ingest_report(report_dir, url=url)
+            except Exception as err:  # pragma: no cover - best effort persistence
+                self.logger.warning(f"Failed to ingest deterministic report: {err}")
 
         self.session_manager.update_scan_status(
             session_id,
@@ -434,7 +440,7 @@ class ScanController:
 
             # Setup command to run the scanner
             cmd = [
-                "python",
+                sys.executable,
                 "main.py",
                 "--url",
                 url,
@@ -790,11 +796,20 @@ class ScanController:
             else:
                 self.logger.warning(f"report.md still not found at: {markdown_path}")
 
+            # Persist report artifacts into durable storage when supported (e.g., Postgres/Supabase).
+            scan = self.session_manager.get_active_scan(session_id, scan_id)
+            if hasattr(self.report_manager, "ingest_report"):
+                try:
+                    self.report_manager.ingest_report(
+                        report_dir, url=(scan or {}).get("url")
+                    )
+                except Exception as err:  # pragma: no cover - best effort persistence
+                    self.logger.warning(f"Failed to ingest report artifacts: {err}")
+
             # Create a final action plan with completed status for all tasks
             final_action_plan = []
 
             # Get the current action plan from the scan
-            scan = self.session_manager.get_active_scan(session_id, scan_id)
             if scan and "action_plan" in scan:
                 current_plan = scan.get("action_plan", [])
                 self.logger.info(f"Current action plan has {len(current_plan)} items")
