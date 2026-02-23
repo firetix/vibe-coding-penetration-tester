@@ -625,7 +625,7 @@
             }
             
             // Check for existing scan on page load and restore state
-            function restoreScanStateIfExists() {
+            function restoreScanStateIfExists(retryAttempt = 0) {
                 const savedState = loadScanState();
                 
                 // Always check the server for the session's current state
@@ -637,6 +637,22 @@
                     
                     // If there's no active scan on the server, reset local state and don't display anything
                     if (!serverState.is_running && !serverState.url) {
+                        const hadRecentLocalState = !!(
+                            savedState &&
+                            savedState.sessionId === sessionId &&
+                            (
+                                savedState.isRunning ||
+                                savedState.isComplete ||
+                                (typeof savedState.progress === 'number' && savedState.progress > 0)
+                            )
+                        );
+
+                        if (hadRecentLocalState && retryAttempt < 1) {
+                            console.log('No active scan found on first restore check; retrying once before clearing local state');
+                            setTimeout(() => restoreScanStateIfExists(retryAttempt + 1), 1500);
+                            return;
+                        }
+
                         console.log('No active scan on server, clearing local state');
                         clearScanState();
                         
@@ -770,8 +786,8 @@
                             // Show error state
                             showError(serverState.error || savedState.error);
                         }
-                    } else if (serverState.is_running || serverState.url) {
-                        // No local state but server has an active scan
+                    } else if (serverState.is_running || serverState.url || serverState.report_available) {
+                        // No local state but server has active or recently completed scan data.
                         console.log('Using server state, no local state found');
                         
                         // Save server state to local
@@ -819,6 +835,32 @@
                             // Start polling for updates
                             checkStatus();
                             statusCheckInterval = setInterval(checkStatus, 2000);
+                        } else if (!serverState.error) {
+                            const completedProgress = serverState.progress !== undefined ? serverState.progress : 100;
+                            statusUrlEl.textContent = serverState.url || '-';
+                            currentTaskEl.textContent = serverState.current_task || 'completed';
+                            progressBar.style.width = completedProgress + '%';
+                            progressBar.textContent = completedProgress + '%';
+                            progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                            progressBar.classList.add('bg-success');
+                            scanStatusPanel.classList.remove('d-none');
+                            startScanBtn.disabled = false;
+                            startScanBtn.innerHTML = '<i class="bi bi-robot"></i> Deploy Agent Swarm';
+                            scanInProgress = false;
+                            document.getElementById('statusPanelTitle').innerHTML =
+                                '<i class="bi bi-check-circle-fill text-success"></i> Scan Complete - Agent Activity Log';
+
+                            if (serverState.report_available) {
+                                loadReport();
+                            } else {
+                                reportContainer.classList.remove('d-none');
+                                reportContentEl.innerHTML = `
+                                    <div class="alert alert-info">
+                                        <h4><i class="bi bi-hourglass-split"></i> Generating Report...</h4>
+                                        <p>The scan has completed and we're generating your report. This should only take a few moments.</p>
+                                    </div>
+                                `;
+                            }
                         }
                     }
                 })

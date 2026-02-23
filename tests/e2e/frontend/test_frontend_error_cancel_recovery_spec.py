@@ -17,11 +17,14 @@ def test_frontend_cancel_and_retry_flow(web_api_server):
             page.select_option("#scan_mode", "quick")
             page.check("#authorization_confirmed")
             page.click("#start-scan-btn")
-            page.wait_for_timeout(1000)
+            page.wait_for_selector("#scan-status-panel:not(.d-none)", timeout=30000)
 
             page.on("dialog", lambda d: d.accept())
             page.click("#cancel-btn")
-            page.wait_for_timeout(1000)
+            page.wait_for_function(
+                "() => !document.querySelector('#start-scan-btn').disabled",
+                timeout=30000,
+            )
 
             # Start button should be enabled again after reset.
             assert not page.is_disabled("#start-scan-btn")
@@ -34,7 +37,7 @@ def test_frontend_cancel_and_retry_flow(web_api_server):
 
             page.check("#authorization_confirmed")
             page.click("#start-scan-btn")
-            page.wait_for_timeout(1500)
+            page.wait_for_selector("#scan-status-panel:not(.d-none)", timeout=30000)
             assert page.locator("#scan-status-panel").count() == 1
         finally:
             browser.close()
@@ -53,7 +56,7 @@ def test_frontend_paywall_after_first_free_scan(web_api_server):
             page.select_option("#scan_mode", "quick")
             page.check("#authorization_confirmed")
             page.click("#start-scan-btn")
-            page.wait_for_timeout(3500)
+            page.wait_for_selector("#report-container:not(.d-none)", timeout=60000)
 
             # Start a second quick scan in same account/session to trigger paywall.
             page.click("#new-scan-btn")
@@ -62,7 +65,7 @@ def test_frontend_paywall_after_first_free_scan(web_api_server):
             page.select_option("#scan_mode", "quick")
             page.check("#authorization_confirmed")
             page.click("#start-scan-btn")
-            page.wait_for_timeout(1200)
+            page.wait_for_selector("#paywall-alert:not(.d-none)", timeout=30000)
 
             classes = page.get_attribute("#paywall-alert", "class") or ""
             assert "d-none" not in classes

@@ -22,10 +22,20 @@ from utils.report_manager import ReportManager
 from utils.session_manager import SessionManager
 from utils.scan_controller import ScanController
 from utils.billing_store import BillingStore
+from utils.supabase_auth import maybe_get_supabase_user
 from utils.entitlements import is_hosted_mode
 
 from web_api.middleware.error_handler import register_error_handlers
-from web_api.routes import session, scan, activity, report, status, static, billing
+from web_api.routes import (
+    session,
+    scan,
+    activity,
+    report,
+    status,
+    static,
+    billing,
+    v1_scans,
+)
 
 
 def create_app():
@@ -68,9 +78,29 @@ def create_app():
     register_error_handlers(app)
 
     # Initialize utilities
-    activity_tracker = ActivityTracker()
-    report_manager = ReportManager(app.config["UPLOAD_FOLDER"])
-    session_manager = SessionManager()
+    app_db_url = (
+        os.environ.get("VPT_APP_DB_URL")
+        or os.environ.get("SUPABASE_DATABASE_URL")
+        or os.environ.get("VPT_BILLING_DB_URL")
+    )
+    if app_db_url and app_db_url.startswith(("postgres://", "postgresql://")):
+        from utils.activity_tracker_postgres import PostgresActivityTracker
+        from utils.report_manager_postgres import PostgresReportManager
+        from utils.saas_store import PostgresSaaSStore
+        from utils.session_manager_postgres import PostgresSessionManager
+
+        activity_tracker = PostgresActivityTracker(app_db_url)
+        report_manager = PostgresReportManager(app_db_url, app.config["UPLOAD_FOLDER"])
+        session_manager = PostgresSessionManager(app_db_url)
+        saas_store = PostgresSaaSStore(app_db_url)
+    else:
+        from utils.saas_store import InMemorySaaSStore
+
+        activity_tracker = ActivityTracker()
+        report_manager = ReportManager(app.config["UPLOAD_FOLDER"])
+        session_manager = SessionManager()
+        saas_store = InMemorySaaSStore()
+
     scan_controller = ScanController(session_manager, report_manager)
     if is_vercel:
         default_db_path = "/tmp/vpt.db"
@@ -81,18 +111,41 @@ def create_app():
             "vpt.db",
         )
     db_path = os.environ.get("VPT_BILLING_DB_PATH", default_db_path)
-    billing_store = BillingStore(db_path=db_path)
+    # Prefer explicit billing DB configuration to avoid surprising behavior when
+    # developers have unrelated DATABASE_URL env vars set.
+    billing_db_url = (
+        os.environ.get("VPT_BILLING_DB_URL")
+        or os.environ.get("VPT_APP_DB_URL")
+        or os.environ.get("SUPABASE_DATABASE_URL")
+    )
+    if billing_db_url and billing_db_url.startswith(("postgres://", "postgresql://")):
+        from utils.billing_store_postgres import PostgresBillingStore
+
+        billing_store = PostgresBillingStore(db_url=billing_db_url)
+    else:
+        billing_store = BillingStore(db_path=db_path)
 
     @app.before_request
     def attach_account_identity():
-        account_id = request.cookies.get("vpt_account_id")
-        if not account_id:
-            account_id = str(uuid.uuid4())
-            g._set_account_cookie = True
-        else:
+        supabase_user = maybe_get_supabase_user(request.headers.get("Authorization"))
+        if supabase_user:
+            account_id = str(supabase_user.get("sub"))
+            g.supabase_user = supabase_user
             g._set_account_cookie = False
+        else:
+            account_id = request.cookies.get("vpt_account_id")
+            if not account_id:
+                account_id = str(uuid.uuid4())
+                g._set_account_cookie = True
+            else:
+                g._set_account_cookie = False
         g.account_id = account_id
-        billing_store.ensure_account(account_id)
+        # Ensure entitlement rows exist for both SQLite and Postgres stores before
+        # checkout completion paths attempt credit/pro updates.
+        try:
+            billing_store.ensure_account(account_id)
+        except Exception as exc:
+            logger.warning(f"Failed to ensure billing account {account_id}: {exc}")
 
     @app.after_request
     def persist_account_identity(response):
@@ -117,6 +170,15 @@ def create_app():
     )
     activity.register_routes(app, session_manager, activity_tracker)
     report.register_routes(app, session_manager, report_manager)
+    v1_scans.register_routes(
+        app,
+        saas_store,
+        session_manager,
+        scan_controller,
+        activity_tracker,
+        report_manager,
+        billing_store=billing_store,
+    )
     status.register_routes(
         app, session_manager, activity_tracker, billing_store=billing_store
     )

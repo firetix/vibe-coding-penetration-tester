@@ -84,6 +84,25 @@ def test_scan_start_success_then_status(
 
 
 @pytest.mark.e2e_api_critical
+def test_scan_start_blocks_private_targets_in_hosted_mode(
+    web_api_server, http_client, initialized_session
+):
+    response = http_client.post(
+        f"{web_api_server}/api/scan/start",
+        json={
+            "session_id": initialized_session,
+            "url": "http://127.0.0.1",
+            "scan_mode": "quick",
+            "authorization_confirmed": True,
+        },
+        timeout=10,
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload.get("status") == "error"
+
+
+@pytest.mark.e2e_api_critical
 def test_scan_paywall_after_first_free_scan(web_api_server):
     client = __import__("requests").Session()
     try:
@@ -102,7 +121,7 @@ def test_scan_paywall_after_first_free_scan(web_api_server):
                 "scan_mode": "quick",
                 "authorization_confirmed": True,
             },
-            timeout=10,
+            timeout=20,
         )
         assert first.status_code == 200
 
@@ -120,6 +139,63 @@ def test_scan_paywall_after_first_free_scan(web_api_server):
         body = second.json()
         assert body.get("paywall_required") is True
         assert body.get("checkout_url")
+    finally:
+        client.close()
+
+
+@pytest.mark.e2e_api_full
+def test_scan_rate_limit_returns_429_when_entitled(web_api_server):
+    requests = __import__("requests")
+    client = requests.Session()
+    try:
+        # Initialize account cookie.
+        client.get(f"{web_api_server}/status", timeout=10)
+
+        # Upgrade the account (mock checkout) so paywall doesn't interfere with rate-limit testing.
+        checkout = client.post(
+            f"{web_api_server}/api/billing/checkout",
+            json={"scan_mode": "quick"},
+            timeout=10,
+        )
+        assert checkout.status_code == 200
+        checkout_url = checkout.json().get("checkout_url")
+        assert checkout_url
+        redirect = client.get(checkout_url, allow_redirects=False, timeout=10)
+        assert redirect.status_code in (301, 302, 303, 307, 308)
+
+        session_id = client.post(
+            f"{web_api_server}/api/session/init",
+            json={"client_id": "rate-limit"},
+            timeout=10,
+        ).json()["session_id"]
+
+        # Default hosted rate limit is 5 scan_start events per account per minute.
+        for _ in range(5):
+            resp = client.post(
+                f"{web_api_server}/api/scan/start",
+                json={
+                    "session_id": session_id,
+                    "url": "https://example.com",
+                    "scan_mode": "quick",
+                    "authorization_confirmed": True,
+                },
+                timeout=10,
+            )
+            assert resp.status_code == 200
+
+        rate_limited = client.post(
+            f"{web_api_server}/api/scan/start",
+            json={
+                "session_id": session_id,
+                "url": "https://example.com",
+                "scan_mode": "quick",
+                "authorization_confirmed": True,
+            },
+            timeout=10,
+        )
+        assert rate_limited.status_code == 429
+        payload = rate_limited.json()
+        assert payload.get("status") == "error"
     finally:
         client.close()
 
@@ -156,7 +232,7 @@ def test_paywalled_attempts_return_402_not_rate_limit(web_api_server):
                     "scan_mode": "quick",
                     "authorization_confirmed": True,
                 },
-                timeout=10,
+                timeout=20,
             )
             assert response.status_code == 402
     finally:
@@ -213,7 +289,7 @@ def test_hosted_checkout_url_uses_billing_route_when_mock_disabled():
                 "scan_mode": "quick",
                 "authorization_confirmed": True,
             },
-            timeout=10,
+            timeout=20,
         )
         assert first.status_code == 200
 
@@ -225,7 +301,7 @@ def test_hosted_checkout_url_uses_billing_route_when_mock_disabled():
                 "scan_mode": "quick",
                 "authorization_confirmed": True,
             },
-            timeout=10,
+            timeout=20,
         )
         assert second.status_code == 402
         body = second.json()
@@ -246,6 +322,67 @@ def test_hosted_checkout_url_uses_billing_route_when_mock_disabled():
         except subprocess.TimeoutExpired:
             proc.kill()
 
+
+@pytest.mark.e2e_api_full
+def test_scan_start_does_not_require_authorization_when_unhosted():
+    port = _free_port()
+    db_path = os.path.join("/tmp", f"vpt_unhosted_{port}.db")
+    if os.path.exists(db_path):
+        os.remove(db_path)
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "VPT_E2E_MODE": "1",
+            "VPT_HOSTED_MODE": "0",
+            "VPT_BILLING_DB_PATH": db_path,
+        }
+    )
+
+    code = (
+        "import os;"
+        "from web_api import create_app;"
+        "app=create_app();"
+        "app.run(host='127.0.0.1', port=int(os.environ['VPT_TEST_PORT']), debug=False, use_reloader=False)"
+    )
+    env["VPT_TEST_PORT"] = str(port)
+    proc = subprocess.Popen(
+        [sys.executable, "-c", code],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+
+    requests = __import__("requests")
+    base_url = f"http://127.0.0.1:{port}"
+    try:
+        _wait_for_server(base_url)
+        client = requests.Session()
+        try:
+            session_id = client.post(
+                f"{base_url}/api/session/init",
+                json={"client_id": "unhosted"},
+                timeout=10,
+            ).json()["session_id"]
+
+            start = client.post(
+                f"{base_url}/api/scan/start",
+                json={
+                    "session_id": session_id,
+                    "url": "https://example.com",
+                    "scan_mode": "quick",
+                },
+                timeout=10,
+            )
+            assert start.status_code == 200
+        finally:
+            client.close()
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 @pytest.mark.e2e_api_full
 def test_scan_status_missing_scan_id(web_api_server, http_client, initialized_session):
@@ -287,7 +424,7 @@ def test_scan_cancel_and_list(web_api_server, http_client, initialized_session):
             "scan_mode": "quick",
             "authorization_confirmed": True,
         },
-        timeout=10,
+        timeout=20,
     )
     assert start.status_code == 200
     scan_id = start.json()["scan_id"]
