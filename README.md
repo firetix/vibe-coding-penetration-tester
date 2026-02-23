@@ -85,16 +85,19 @@ cp .env.example .env
 python main.py --url https://example.com
 
 # Domain-level scan with OpenAI
-python main.py --url https://example.com --scope domain --provider openai --model gpt-4o
+python main.py --url https://example.com --scope domain --provider openai --model gpt-5.2
 
-# OpenAI Codex model
-python main.py --url https://example.com --provider openai --model gpt-5.3-codex
+# OpenAI GPT-5.2 Codex model
+python main.py --url https://example.com --provider openai --model gpt-5.2-codex
+
+# OpenAI GPT-5.2 Thinking model
+python main.py --url https://example.com --provider openai --model gpt-5.2-pro
 
 # Subdomain scan with Anthropic
-python main.py --url https://example.com --scope subdomain --provider anthropic --model claude-3-7-sonnet-20250219
+python main.py --url https://example.com --scope subdomain --provider anthropic --model claude-opus-4-6
 
 # Anthropic Opus model
-python main.py --url https://example.com --provider anthropic --model claude-opus-4.6
+python main.py --url https://example.com --provider anthropic --model claude-opus-4-6-20260120
 
 # Local scan with Ollama
 python main.py --url https://example.com --provider ollama --model llama3
@@ -108,15 +111,17 @@ python main.py --url https://example.com --provider ollama --model mixtral --oll
 Use any provider model ID accepted by your account/runtime. Common options:
 
 - OpenAI:
-  - `gpt-4o`
-  - `gpt-4.1`
-  - `gpt-5`
-  - `gpt-5.3-codex`
-  - `o3`
+  - `gpt-5.2`
+  - `gpt-5.2-pro` (thinking)
+  - `gpt-5.2-codex`
+  - `gpt-5.2-mini`
+  - `gpt-5.2-nano`
+  - `gpt-4o` (legacy)
 - Anthropic:
-  - `claude-3-7-sonnet-20250219`
-  - `claude-opus-4.6`
-  - `claude-3-5-haiku-20241022`
+  - `claude-opus-4-6`
+  - `claude-opus-4-6-20260120`
+  - `claude-sonnet-4-6`
+  - `claude-haiku-4-5`
 - Ollama (example local tags):
   - `llama3`
   - `mixtral`
@@ -129,7 +134,7 @@ Use any provider model ID accepted by your account/runtime. Common options:
 | Option | Description |
 | --- | --- |
 | `--url` | Target URL to test (required) |
-| `--model` | LLM model identifier (default `gpt-4o`) |
+| `--model` | LLM model identifier (default `gpt-5.2`) |
 | `--provider` | LLM provider: `openai`, `anthropic`, `ollama` |
 | `--scope` | Scan scope: `url`, `domain`, `subdomain` |
 | `--output` | Output directory root (default `reports`) |

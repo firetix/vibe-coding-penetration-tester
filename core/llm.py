@@ -4,6 +4,7 @@ import json
 import requests
 import re
 import uuid
+from types import SimpleNamespace
 
 # Import LLM providers
 from openai import OpenAI
@@ -25,6 +26,14 @@ except Exception:
 from utils.logger import get_logger
 from utils.config import load_config  # Added for config loading
 
+DEFAULT_OPENAI_MODEL = "gpt-5.2"
+DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-6"
+OPENAI_RESPONSES_ONLY_MODELS = {
+    "codex-mini-latest",
+    "gpt-5.2-codex",
+    "gpt-5.2-pro",
+}
+
 
 class LLMProvider:
     """Provides a unified interface to different LLM providers."""
@@ -32,7 +41,7 @@ class LLMProvider:
     def __init__(
         self,
         provider: str = "openai",
-        model: str = "gpt-4o",
+        model: str = DEFAULT_OPENAI_MODEL,
         openai_api_key: str = None,
         anthropic_api_key: str = None,
         google_api_key: str = None,
@@ -59,7 +68,9 @@ class LLMProvider:
             if self._is_supported_openai_model(canonical_openai_model):
                 self.model = canonical_openai_model
             else:
-                self.model = "gpt-4o"  # Default fallback for unknown OpenAI model names
+                self.model = (
+                    DEFAULT_OPENAI_MODEL
+                )  # Default fallback for unknown OpenAI model names
         elif self.provider == "anthropic":
             if anthropic is None:
                 raise ValueError(
@@ -82,7 +93,7 @@ class LLMProvider:
                     raise
 
             if not self.model.startswith("claude-"):
-                self.model = "claude-3-5-sonnet"  # Default Claude model
+                self.model = DEFAULT_ANTHROPIC_MODEL  # Default Claude model
         elif self.provider == "ollama":
             # Ollama doesn't need a client initialization since we'll use direct API calls
             # Just validate that we can connect to the Ollama server
@@ -220,9 +231,226 @@ class LLMProvider:
         normalized = cls._normalize_model_name(model_name)
         if not normalized:
             return False
-        if normalized.startswith(("gpt-", "chatgpt-")):
+        if normalized.startswith(("gpt-", "chatgpt-", "codex-")):
             return True
         return re.match(r"^o\d", normalized) is not None
+
+    def _should_use_openai_responses_api(self) -> bool:
+        model_name = self._normalize_model_name(self.model)
+        if model_name in OPENAI_RESPONSES_ONLY_MODELS:
+            return True
+        return model_name.startswith("codex-")
+
+    @staticmethod
+    def _is_openai_chat_completions_unsupported_error(error: Exception) -> bool:
+        message = str(error).lower()
+        return (
+            "chat.completions" in message and "responses" in message
+        ) or "not supported in the v1/chat/completions" in message
+
+    @staticmethod
+    def _flatten_openai_tools_for_responses(
+        tools: Optional[List[Dict[str, Any]]],
+    ) -> Optional[List[Dict[str, Any]]]:
+        if not tools:
+            return None
+
+        flattened = []
+        for tool in tools:
+            if not isinstance(tool, dict):
+                continue
+            if tool.get("type") != "function":
+                flattened.append(tool)
+                continue
+
+            function_spec = tool.get("function")
+            if isinstance(function_spec, dict):
+                flattened.append(
+                    {
+                        "type": "function",
+                        "name": function_spec.get("name"),
+                        "description": function_spec.get("description", ""),
+                        "parameters": function_spec.get("parameters", {}),
+                    }
+                )
+            else:
+                flattened.append(tool)
+
+        return flattened
+
+    @staticmethod
+    def _normalize_tool_call(tool_call: Any) -> Dict[str, Any]:
+        if hasattr(tool_call, "id") and hasattr(tool_call, "function"):
+            function = getattr(tool_call, "function")
+            return {
+                "id": getattr(tool_call, "id", ""),
+                "name": getattr(function, "name", ""),
+                "arguments": getattr(function, "arguments", "{}"),
+            }
+
+        if isinstance(tool_call, dict):
+            function = tool_call.get("function", {})
+            if hasattr(function, "name") and hasattr(function, "arguments"):
+                name = function.name
+                arguments = function.arguments
+            elif isinstance(function, dict):
+                name = function.get("name", "")
+                arguments = function.get("arguments", "{}")
+            else:
+                name = ""
+                arguments = "{}"
+
+            return {
+                "id": tool_call.get("id", ""),
+                "name": name,
+                "arguments": arguments,
+            }
+
+        return {"id": "", "name": "", "arguments": "{}"}
+
+    def _convert_chat_messages_to_responses_input(
+        self, messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        response_input = []
+
+        for msg in messages:
+            role = msg.get("role")
+
+            if role in {"system", "user", "assistant"}:
+                content = msg.get("content")
+                if content:
+                    response_input.append({"role": role, "content": content})
+
+                if role == "assistant":
+                    for tool_call in msg.get("tool_calls", []) or []:
+                        normalized = self._normalize_tool_call(tool_call)
+                        call_id = normalized.get("id") or f"call_{uuid.uuid4().hex[:8]}"
+                        response_input.append(
+                            {
+                                "type": "function_call",
+                                "call_id": call_id,
+                                "name": normalized.get("name", ""),
+                                "arguments": normalized.get("arguments", "{}"),
+                            }
+                        )
+
+            elif role == "tool":
+                call_id = msg.get("tool_call_id")
+                if call_id:
+                    response_input.append(
+                        {
+                            "type": "function_call_output",
+                            "call_id": call_id,
+                            "output": str(msg.get("content", "")),
+                        }
+                    )
+                else:
+                    content = msg.get("content")
+                    if content:
+                        response_input.append({"role": "assistant", "content": content})
+            else:
+                content = msg.get("content")
+                if content:
+                    response_input.append({"role": "user", "content": str(content)})
+
+        return response_input
+
+    @staticmethod
+    def _extract_text_from_response_message_parts(parts: Any) -> str:
+        if not parts:
+            return ""
+
+        text_chunks = []
+        for part in parts:
+            part_type = getattr(part, "type", None)
+            if part_type is None and isinstance(part, dict):
+                part_type = part.get("type")
+
+            if part_type in {"output_text", "text"}:
+                text_value = getattr(part, "text", None)
+                if text_value is None and isinstance(part, dict):
+                    text_value = part.get("text")
+                if text_value:
+                    text_chunks.append(text_value)
+
+        return "".join(text_chunks)
+
+    def _openai_responses_completion(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        tools: Optional[List[Dict]],
+        json_mode: bool,
+    ) -> Any:
+        if not hasattr(self.client, "responses"):
+            raise ValueError(
+                "The installed OpenAI SDK does not support Responses API. "
+                "Upgrade the openai package to use this model."
+            )
+
+        kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "input": self._convert_chat_messages_to_responses_input(messages),
+            "temperature": temperature,
+        }
+
+        response_tools = self._flatten_openai_tools_for_responses(tools)
+        if response_tools:
+            kwargs["tools"] = response_tools
+
+        if json_mode:
+            self.logger.warning(
+                "json_mode is not explicitly configured for Responses API calls; continuing without response_format."
+            )
+
+        response = self.client.responses.create(**kwargs)
+
+        tool_calls = []
+        content = getattr(response, "output_text", "") or ""
+        output_items = getattr(response, "output", None) or []
+
+        for item in output_items:
+            item_type = getattr(item, "type", None)
+            if item_type is None and isinstance(item, dict):
+                item_type = item.get("type")
+
+            if item_type == "function_call":
+                call_id = getattr(item, "call_id", None)
+                if call_id is None and isinstance(item, dict):
+                    call_id = item.get("call_id")
+
+                name = getattr(item, "name", None)
+                if name is None and isinstance(item, dict):
+                    name = item.get("name")
+
+                arguments = getattr(item, "arguments", None)
+                if arguments is None and isinstance(item, dict):
+                    arguments = item.get("arguments")
+
+                tool_calls.append(
+                    {
+                        "id": call_id or f"call_{uuid.uuid4().hex[:8]}",
+                        "type": "function",
+                        "function": {
+                            "name": name or "",
+                            "arguments": arguments or "{}",
+                        },
+                    }
+                )
+
+            if not content and item_type == "message":
+                message_parts = getattr(item, "content", None)
+                if message_parts is None and isinstance(item, dict):
+                    message_parts = item.get("content")
+                content = self._extract_text_from_response_message_parts(message_parts)
+
+        message = SimpleNamespace(content=content or "", tool_calls=tool_calls or None)
+        choice = SimpleNamespace(
+            message=message, finish_reason="tool_calls" if tool_calls else "stop"
+        )
+        return SimpleNamespace(
+            choices=[choice], model=getattr(response, "model", self.model)
+        )
 
     def chat_completion(
         self,
@@ -257,6 +485,11 @@ class LLMProvider:
         json_mode: bool,
     ) -> Union[Dict[str, Any], Any]:
         """Generate a completion using OpenAI."""
+        if self._should_use_openai_responses_api():
+            return self._openai_responses_completion(
+                messages, temperature, tools, json_mode
+            )
+
         kwargs = {
             "model": self.model,
             "messages": messages,
@@ -269,7 +502,17 @@ class LLMProvider:
         if tools:
             kwargs["tools"] = tools
 
-        response = self.client.chat.completions.create(**kwargs)
+        try:
+            response = self.client.chat.completions.create(**kwargs)
+        except Exception as e:
+            if self._is_openai_chat_completions_unsupported_error(e):
+                self.logger.warning(
+                    f"Model '{self.model}' does not support Chat Completions. Falling back to Responses API."
+                )
+                return self._openai_responses_completion(
+                    messages, temperature, tools, json_mode
+                )
+            raise
 
         # Return the raw response object to better handle OpenAI's client structure
         return response
