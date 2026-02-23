@@ -152,6 +152,12 @@ def attach_account_identity():
         else:
             request._vpt_new_account_cookie = False
     request._vpt_account_id = account_id
+    # Keep billing identity materialized so SQLite update-only paths do not
+    # silently drop credits/pro upgrades when no entitlement row exists yet.
+    try:
+        billing_store.ensure_account(account_id)
+    except Exception as exc:
+        logger.warning(f"Failed to ensure billing account {account_id}: {exc}")
 
 
 @app.after_request

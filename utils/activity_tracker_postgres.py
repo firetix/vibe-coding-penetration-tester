@@ -5,6 +5,8 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
+from utils.postgres_json import coerce_json_value
+
 
 class PostgresActivityTracker:
     """Postgres-backed ActivityTracker (Supabase-compatible)."""
@@ -65,23 +67,6 @@ class PostgresActivityTracker:
         )
         return description
 
-    def _coerce_json(self, value: Any, default: Any) -> Any:
-        if value is None:
-            return default
-        if isinstance(value, (dict, list)):
-            return value
-        if isinstance(value, (bytes, bytearray)):
-            try:
-                value = value.decode("utf-8", errors="ignore")
-            except Exception:
-                return default
-        if isinstance(value, str):
-            try:
-                return json.loads(value)
-            except Exception:
-                return default
-        return default
-
     def _is_duplicate_activity(
         self,
         conn,
@@ -119,7 +104,7 @@ class PostgresActivityTracker:
             )
             if existing_fingerprint == description_fingerprint and row.get("agent") == agent_name:
                 payload = dict(row)
-                payload["details"] = self._coerce_json(payload.get("details"), {})
+                payload["details"] = coerce_json_value(payload.get("details"), {})
                 return payload
         return None
 
@@ -219,7 +204,7 @@ class PostgresActivityTracker:
                 "description": row.get("description"),
                 "agent": row.get("agent"),
             }
-            details = self._coerce_json(row.get("details"), None)
+            details = coerce_json_value(row.get("details"), None)
             if details is not None:
                 payload["details"] = details
             activities.append(payload)

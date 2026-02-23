@@ -290,6 +290,7 @@ class BillingStore:
         now = time.time()
         with self._lock:
             with self._connect() as conn:
+                self._ensure_account_locked(conn, account_id)
                 conn.execute(
                     """
                     UPDATE entitlements
@@ -306,6 +307,7 @@ class BillingStore:
         pro_until = (now + timedelta(days=days)).isoformat()
         with self._lock:
             with self._connect() as conn:
+                self._ensure_account_locked(conn, account_id)
                 conn.execute(
                     "UPDATE entitlements SET pro_until = ?, updated_at = ? WHERE account_id = ?",
                     (pro_until, time.time(), account_id),

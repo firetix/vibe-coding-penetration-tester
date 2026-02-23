@@ -5,6 +5,8 @@ import uuid
 import logging
 from typing import Any, Dict, List, Optional
 
+from utils.postgres_json import coerce_json_value
+
 
 class PostgresSessionManager:
     """Postgres-backed session + scan state storage (Supabase-compatible)."""
@@ -74,23 +76,6 @@ class PostgresSessionManager:
             """,
             (session_id, now, now),
         )
-
-    def _coerce_json(self, value: Any, default: Any) -> Any:
-        if value is None:
-            return default
-        if isinstance(value, (dict, list)):
-            return value
-        if isinstance(value, (bytes, bytearray)):
-            try:
-                value = value.decode("utf-8", errors="ignore")
-            except Exception:
-                return default
-        if isinstance(value, str):
-            try:
-                return json.loads(value)
-            except Exception:
-                return default
-        return default
 
     def create_session(self) -> str:
         session_id = str(uuid.uuid4())
@@ -172,9 +157,9 @@ class PostgresSessionManager:
         payload = dict(row)
         payload["id"] = scan_id
         # Normalize JSON fields to python objects.
-        payload["config"] = self._coerce_json(payload.get("config"), {})
-        payload["vulnerabilities"] = self._coerce_json(payload.get("vulnerabilities"), [])
-        payload["action_plan"] = self._coerce_json(payload.get("action_plan"), [])
+        payload["config"] = coerce_json_value(payload.get("config"), {})
+        payload["vulnerabilities"] = coerce_json_value(payload.get("vulnerabilities"), [])
+        payload["action_plan"] = coerce_json_value(payload.get("action_plan"), [])
         # Match legacy keys.
         if "started_at" in payload and "started" not in payload:
             payload["started"] = payload.get("started_at")
@@ -305,4 +290,3 @@ class PostgresSessionManager:
                     (cutoff,),
                 )
                 conn.commit()
-

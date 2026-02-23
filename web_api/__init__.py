@@ -140,6 +140,12 @@ def create_app():
             else:
                 g._set_account_cookie = False
         g.account_id = account_id
+        # Ensure entitlement rows exist for both SQLite and Postgres stores before
+        # checkout completion paths attempt credit/pro updates.
+        try:
+            billing_store.ensure_account(account_id)
+        except Exception as exc:
+            logger.warning(f"Failed to ensure billing account {account_id}: {exc}")
 
     @app.after_request
     def persist_account_identity(response):

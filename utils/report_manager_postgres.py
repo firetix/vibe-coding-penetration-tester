@@ -5,6 +5,8 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils.postgres_json import coerce_json_value
+
 
 class PostgresReportManager:
     """Hybrid report manager: filesystem staging + Postgres persistence (Supabase-compatible)."""
@@ -44,23 +46,6 @@ class PostgresReportManager:
                 "CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC)"
             )
             conn.commit()
-
-    def _coerce_json(self, value: Any, default: Any) -> Any:
-        if value is None:
-            return default
-        if isinstance(value, (dict, list)):
-            return value
-        if isinstance(value, (bytes, bytearray)):
-            try:
-                value = value.decode("utf-8", errors="ignore")
-            except Exception:
-                return default
-        if isinstance(value, str):
-            try:
-                return json.loads(value)
-            except Exception:
-                return default
-        return default
 
     def ensure_report_directory(self) -> None:
         try:
@@ -168,7 +153,7 @@ class PostgresReportManager:
 
         for row in rows:
             report_id = row.get("report_id")
-            report_json = self._coerce_json(row.get("report_json"), {}) or {}
+            report_json = coerce_json_value(row.get("report_json"), {}) or {}
             findings = report_json.get("findings") if isinstance(report_json, dict) else None
             vuln_count = len(findings) if isinstance(findings, list) else 0
 
@@ -207,7 +192,7 @@ class PostgresReportManager:
             row = None
 
         if row:
-            report_json = self._coerce_json(row.get("report_json"), {}) or {}
+            report_json = coerce_json_value(row.get("report_json"), {}) or {}
             if not isinstance(report_json, dict):
                 report_json = {"content": report_json}
             report_md = row.get("report_md")
@@ -321,4 +306,3 @@ class PostgresReportManager:
         payload = dict(report)
         payload.pop("markdown", None)
         return json.dumps(payload, indent=2).encode("utf-8"), "application/json; charset=utf-8"
-
