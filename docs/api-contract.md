@@ -164,3 +164,27 @@ All errors follow a consistent shape:
 | SUPABASE_JWT_AUDIENCE | no       | Expected `aud` claim (default: `authenticated`) |
 
 \* At least one of `SUPABASE_URL` or `SUPABASE_JWT_SECRET` must be set for auth to work.
+
+---
+
+## Local Backend Run Notes
+
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Configure environment (example):
+   ```bash
+   export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/vpt"
+   export SUPABASE_URL="https://<your-project-ref>.supabase.co"
+   export SUPABASE_JWT_AUDIENCE="authenticated"
+   # Optional local fallback for HS256 tokens:
+   # export SUPABASE_JWT_SECRET="your-local-dev-secret"
+   ```
+3. Start the API:
+   ```bash
+   python3 web_api/main.py
+   ```
+
+Migrations for `users`, `scans`, `scan_events`, and `findings` run automatically on app startup via `web_api.store.migrator.run_migrations()`.
+
