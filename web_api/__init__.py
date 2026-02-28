@@ -25,7 +25,7 @@ from utils.billing_store import BillingStore
 from utils.entitlements import is_hosted_mode
 
 from web_api.middleware.error_handler import register_error_handlers
-from web_api.routes import session, scan, activity, report, status, static, billing
+from web_api.routes import session, scan, activity, report, status, static, billing, scans
 
 
 def create_app():
@@ -121,7 +121,16 @@ def create_app():
         app, session_manager, activity_tracker, billing_store=billing_store
     )
     billing.register_routes(app, billing_store)
+    scans.register_routes(app)
     static.register_routes(app)
+
+    # Run database migrations for the new app store (non-blocking on failure)
+    try:
+        from web_api.store.migrator import run_migrations
+
+        run_migrations()
+    except Exception as _mig_err:
+        logger.warning("App DB migration skipped: %s", _mig_err)
 
     # Start session cleanup in the background
     import threading
