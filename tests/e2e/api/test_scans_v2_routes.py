@@ -4,7 +4,6 @@ Uses Flask test client with monkeypatched auth to avoid needing real
 Supabase credentials.
 """
 
-import json
 import os
 import sys
 import time
@@ -46,6 +45,7 @@ def app(tmp_path):
         "DATABASE_URL": f"sqlite:///{db_path}",
         "SUPABASE_JWT_SECRET": "test-secret-at-least-32-chars-long!!",
         "SUPABASE_JWT_AUDIENCE": "authenticated",
+        "VPT_CORS_ALLOW_ORIGINS": "https://preview.vibehack.vercel.app,http://localhost:3000",
     }
     with patch.dict(os.environ, env_overrides):
         # Reset cached engine so each test gets a fresh DB
@@ -67,18 +67,38 @@ def client(app):
     return app.test_client()
 
 
-def _auth_header(payload=None):
-    """Build an Authorization header with a real HS256 JWT signed by the test secret."""
+def _auth_token(payload=None):
+    """Build a real HS256 JWT signed by the test secret."""
     import jwt as pyjwt
 
     payload = payload or _make_fake_payload()
-    token = pyjwt.encode(payload, "test-secret-at-least-32-chars-long!!", algorithm="HS256")
+    return pyjwt.encode(payload, "test-secret-at-least-32-chars-long!!", algorithm="HS256")
+
+
+def _auth_header(payload=None):
+    token = _auth_token(payload)
     return {"Authorization": f"Bearer {token}"}
 
 
 # ---------------------------------------------------------------------------
 # Auth tests
 # ---------------------------------------------------------------------------
+
+
+class TestCors:
+    def test_preflight_allows_configured_origin(self, client):
+        resp = client.options(
+            "/api/scans",
+            headers={
+                "Origin": "https://preview.vibehack.vercel.app",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert resp.status_code == 200
+        assert (
+            resp.headers.get("Access-Control-Allow-Origin")
+            == "https://preview.vibehack.vercel.app"
+        )
 
 
 class TestAuth:
@@ -239,6 +259,99 @@ class TestScanEvents:
             "/api/scans/does-not-exist/events", headers=_auth_header()
         )
         assert resp.status_code == 404
+
+    def test_append_event_success(self, client):
+        create = client.post(
+            "/api/scans",
+            json={"target_url": "https://example.com"},
+            headers=_auth_header(),
+        )
+        scan_id = create.get_json()["scan"]["id"]
+
+        resp = client.post(
+            f"/api/scans/{scan_id}/events",
+            json={
+                "event_type": "progress",
+                "data": {"percent": 50, "message": "Halfway there"},
+            },
+            headers=_auth_header(),
+        )
+        assert resp.status_code == 201
+        payload = resp.get_json()
+        assert payload["event"]["event_type"] == "progress"
+        assert payload["event"]["data"]["percent"] == 50
+
+    def test_append_event_invalid_data_shape(self, client):
+        create = client.post(
+            "/api/scans",
+            json={"target_url": "https://example.com"},
+            headers=_auth_header(),
+        )
+        scan_id = create.get_json()["scan"]["id"]
+
+        resp = client.post(
+            f"/api/scans/{scan_id}/events",
+            json={"event_type": "progress", "data": ["not", "an", "object"]},
+            headers=_auth_header(),
+        )
+        assert resp.status_code == 400
+
+    def test_stream_scan_events_with_authorization_header(self, client):
+        create = client.post(
+            "/api/scans",
+            json={"target_url": "https://example.com", "scan_mode": "deep"},
+            headers=_auth_header(),
+        )
+        scan_id = create.get_json()["scan"]["id"]
+
+        resp = client.get(
+            f"/api/scans/{scan_id}/events/stream",
+            headers=_auth_header(),
+            buffered=False,
+        )
+        assert resp.status_code == 200
+        assert resp.mimetype == "text/event-stream"
+
+        combined = ""
+        for _ in range(30):
+            chunk = next(resp.response).decode("utf-8")
+            combined += chunk
+            if "event: scan_event" in combined:
+                break
+
+        resp.close()
+        assert "event: connected" in combined
+        assert "event: scan_event" in combined
+
+    def test_stream_scan_events_accepts_query_access_token(self, client):
+        create = client.post(
+            "/api/scans",
+            json={"target_url": "https://example.com"},
+            headers=_auth_header(),
+        )
+        scan_id = create.get_json()["scan"]["id"]
+
+        token = _auth_token()
+        resp = client.get(
+            f"/api/scans/{scan_id}/events/stream?access_token={token}",
+            buffered=False,
+        )
+        assert resp.status_code == 200
+
+        first_chunk = next(resp.response).decode("utf-8")
+        resp.close()
+        assert "event: connected" in first_chunk
+
+    def test_stream_scan_events_missing_token_returns_401(self, client):
+        create = client.post(
+            "/api/scans",
+            json={"target_url": "https://example.com"},
+            headers=_auth_header(),
+        )
+        scan_id = create.get_json()["scan"]["id"]
+
+        resp = client.get(f"/api/scans/{scan_id}/events/stream")
+        assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------

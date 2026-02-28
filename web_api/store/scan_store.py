@@ -105,6 +105,34 @@ def list_scan_events(scan_id: str, user_id: int) -> list[dict]:
         return [_event_to_dict(r) for r in rows]
 
 
+def list_scan_events_since(
+    scan_id: str,
+    user_id: int,
+    last_event_id: int = 0,
+    limit: int = 100,
+) -> list[dict]:
+    """Return scan events newer than `last_event_id` for an owned scan."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        # Verify scan belongs to user
+        scan_row = conn.execute(
+            select(scans.c.id).where(scans.c.id == scan_id, scans.c.user_id == user_id)
+        ).first()
+        if scan_row is None:
+            return []
+
+        rows = conn.execute(
+            select(scan_events)
+            .where(
+                scan_events.c.scan_id == scan_id,
+                scan_events.c.id > max(0, int(last_event_id)),
+            )
+            .order_by(scan_events.c.id.asc())
+            .limit(max(1, int(limit)))
+        ).fetchall()
+        return [_event_to_dict(r) for r in rows]
+
+
 # --- helpers ---
 
 

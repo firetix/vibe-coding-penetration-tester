@@ -1,5 +1,6 @@
 """Web API for the Vibe penetration testing tool."""
 
+import fnmatch
 import os
 import logging
 import uuid
@@ -39,6 +40,73 @@ from web_api.routes import (
 )
 
 
+def _normalize_origin(origin: str) -> str:
+    return origin.strip().rstrip("/")
+
+
+def _build_cors_allowlist() -> list[str]:
+    """Build CORS allowlist from environment, including Vercel-hosted origins."""
+    allowlist: list[str] = []
+
+    raw_allowlist = os.environ.get("VPT_CORS_ALLOW_ORIGINS", "")
+    if raw_allowlist:
+        for value in raw_allowlist.split(","):
+            normalized = _normalize_origin(value)
+            if normalized:
+                allowlist.append(normalized)
+
+    for env_key in ("VPT_FRONTEND_ORIGIN", "FRONTEND_URL", "NEXT_PUBLIC_APP_URL"):
+        value = os.environ.get(env_key)
+        if value:
+            allowlist.append(_normalize_origin(value))
+
+    for env_key in (
+        "VERCEL_URL",
+        "VERCEL_BRANCH_URL",
+        "VERCEL_PROJECT_PRODUCTION_URL",
+    ):
+        value = os.environ.get(env_key)
+        if not value:
+            continue
+
+        if value.startswith("https://") or value.startswith("http://"):
+            allowlist.append(_normalize_origin(value))
+        else:
+            allowlist.append(_normalize_origin(f"https://{value}"))
+
+    if not allowlist:
+        # Safe local defaults for development.
+        allowlist.extend([
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ])
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for origin in allowlist:
+        if origin and origin not in seen:
+            deduped.append(origin)
+            seen.add(origin)
+
+    return deduped
+
+
+def _origin_allowed(origin: str, allowlist: list[str]) -> bool:
+    if not origin:
+        return False
+
+    normalized = _normalize_origin(origin)
+    for allowed in allowlist:
+        if allowed == "*":
+            return True
+        if normalized == _normalize_origin(allowed):
+            return True
+        if "*" in allowed and fnmatch.fnmatch(normalized, allowed):
+            return True
+
+    return False
+
+
 def create_app():
     """Create and configure the Flask application."""
     # Initialize logging
@@ -48,20 +116,36 @@ def create_app():
     # Initialize Flask app
     app = Flask(__name__, static_folder="../static", template_folder="../templates")
 
-    # Enable CORS for all routes if available
+    # Configure CORS allowlist.
+    cors_allowlist = _build_cors_allowlist()
+    logger.info("CORS allowlist configured: %s", cors_allowlist)
+
     if has_cors:
-        CORS(app)
+        cors_origins = cors_allowlist if cors_allowlist else "*"
+        CORS(
+            app,
+            resources={
+                r"/api/*": {"origins": cors_origins},
+                r"/status": {"origins": cors_origins},
+            },
+            supports_credentials=True,
+            allow_headers=["Content-Type", "Authorization"],
+            methods=["GET", "PUT", "POST", "PATCH", "DELETE", "OPTIONS"],
+        )
     else:
         # Basic CORS implementation if flask_cors is not available
         @app.after_request
         def add_cors_headers(response):
-            response.headers.add("Access-Control-Allow-Origin", "*")
-            response.headers.add(
-                "Access-Control-Allow-Headers", "Content-Type,Authorization"
+            origin = request.headers.get("Origin", "")
+            if _origin_allowed(origin, cors_allowlist):
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Vary"] = "Origin"
+
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+            response.headers["Access-Control-Allow-Methods"] = (
+                "GET,PUT,POST,PATCH,DELETE,OPTIONS"
             )
-            response.headers.add(
-                "Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS"
-            )
+            response.headers["Access-Control-Allow-Credentials"] = "true"
             return response
 
     # Determine storage paths based on environment (overridable for container platforms)
