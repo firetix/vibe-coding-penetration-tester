@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import {
   createScan,
@@ -121,8 +122,9 @@ export default function ScansPage() {
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Scans</h2>
         <p className="text-sm text-zinc-400">
-          Create a new scan via <code>POST /api/scans</code> and list existing scans via
-          <code> GET /api/scans</code>.
+          Create a new scan via <code>POST /api/scans</code>, list scans via
+          <code> GET /api/scans</code>, then open <code>/app/scans/[id]</code> for live
+          event streaming.
         </p>
       </div>
 
@@ -222,11 +224,20 @@ export default function ScansPage() {
                   : "—";
 
               return (
-                <li key={`${scanId}-${index}`} className="grid gap-1 px-4 py-3 text-sm sm:grid-cols-4 sm:gap-2">
+                <li
+                  key={`${scanId}-${index}`}
+                  className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-5 sm:items-center"
+                >
                   <span className="font-mono text-xs text-zinc-400">{scanId}</span>
                   <span className="truncate sm:col-span-2">{target}</span>
                   <span className="capitalize text-cyan-300">{status}</span>
-                  <span className="text-xs text-zinc-400 sm:col-span-4">Created: {createdAt}</span>
+                  <Link
+                    href={`/app/scans/${encodeURIComponent(scanId)}`}
+                    className="text-xs font-medium text-cyan-400 hover:text-cyan-300"
+                  >
+                    Live updates →
+                  </Link>
+                  <span className="text-xs text-zinc-400 sm:col-span-5">Created: {createdAt}</span>
                 </li>
               );
             })}
