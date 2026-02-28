@@ -2,6 +2,8 @@
 
 This document provides step-by-step instructions for deploying the VibePenTester application to Vercel.
 
+> For split-plane architecture (Vercel frontend + Railway backend), use this together with [`docs/railway-deployment.md`](docs/railway-deployment.md).
+
 ## Prerequisites
 
 1. Create a Vercel account at [vercel.com](https://vercel.com) if you don't have one already
@@ -28,6 +30,15 @@ Your project already contains the necessary files for Vercel deployment:
    OPENAI_API_KEY=sk-your-real-openai-key
    ANTHROPIC_API_KEY=sk-ant-your-real-anthropic-key
    GA_MEASUREMENT_ID=G-YOURACTUALID
+   ```
+
+3. If you're deploying a separate frontend on Vercel with backend on Railway, add these Vercel env vars:
+   ```
+   NEXT_PUBLIC_API_BASE_URL=https://<your-railway-api-domain>
+   API_BASE_URL=https://<your-railway-api-domain>
+   NEXT_PUBLIC_SUPABASE_URL=<your-supabase-url>
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-supabase-anon-key>
+   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=<your-stripe-publishable-key>
    ```
 
 ### 3. Deploy to Vercel
