@@ -63,6 +63,11 @@ cp .env.example .env
 - `PORT`: Web server port (default `5050`)
 - `SECRET_KEY`: Flask session secret
 - `OLLAMA_BASE_URL`: Optional Ollama endpoint (default `http://localhost:11434`)
+- `VPT_CORS_ALLOW_ORIGINS`: Comma-separated frontend origin allowlist
+  (for example `https://app.example.com,https://my-preview.vercel.app`)
+- `VPT_FRONTEND_ORIGIN`: Optional single frontend origin
+- `VPT_SSE_POLL_INTERVAL_SECONDS`: Optional SSE poll cadence (default `1.0`)
+- `VPT_SSE_HEARTBEAT_SECONDS`: Optional SSE heartbeat cadence (default `15`)
 
 ### Hosted/Billing Environment Variables (Optional)
 
@@ -181,6 +186,15 @@ Core:
 - `GET /api/logs`
 - `GET /api/reports`
 - `GET /api/report/<report_id>`
+
+Scans v2 (Supabase JWT):
+
+- `POST /api/scans`
+- `GET /api/scans`
+- `GET /api/scans/<scan_id>`
+- `GET /api/scans/<scan_id>/events`
+- `POST /api/scans/<scan_id>/events`
+- `GET /api/scans/<scan_id>/events/stream` (SSE)
 
 Hosted/billing:
 
