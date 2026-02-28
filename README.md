@@ -68,6 +68,8 @@ cp .env.example .env
 
 - `VPT_HOSTED_MODE`: Enable hosted entitlement enforcement (`1` to enable)
 - `VPT_BILLING_DB_PATH`: SQLite database path for billing/entitlements
+- `VPT_SESSION_FILE`: Session persistence file path (use a mounted volume in containerized deployments)
+- `VPT_UPLOAD_FOLDER`: Report artifact directory path
 - `VPT_TRUST_PROXY_HEADERS`: Trust `X-Forwarded-For` when deployed behind proxies
 - `VPT_ENABLE_MOCK_CHECKOUT`: Allow local mock checkout flows
 - `VPT_ALLOW_UNVERIFIED_WEBHOOKS`: Relax Stripe webhook verification (test-only)
@@ -208,6 +210,7 @@ Additional marker groups are defined in `pytest.ini` for full/nightly E2E covera
 ## Deployment
 
 - Vercel deployment guide: [`VERCEL_DEPLOYMENT.md`](VERCEL_DEPLOYMENT.md)
+- Railway backend runbook: [`docs/railway-deployment.md`](docs/railway-deployment.md)
 - Deployment helper script: [`deploy-to-vercel.sh`](deploy-to-vercel.sh)
 - WSGI entrypoint: `wsgi:app`
 

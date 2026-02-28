@@ -53,16 +53,24 @@ def create_app():
             )
             return response
 
-    # Determine reports directory based on environment
+    # Determine storage paths based on environment (overridable for container platforms)
     is_vercel = (
         os.environ.get("VERCEL") == "1" or os.environ.get("VERCEL_ENV") is not None
     )
-    if is_vercel:
-        app.config["UPLOAD_FOLDER"] = "/tmp/vibe_pen_tester_reports"
-    else:
-        app.config["UPLOAD_FOLDER"] = os.path.join(
+
+    default_upload_folder = (
+        "/tmp/vibe_pen_tester_reports"
+        if is_vercel
+        else os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports"
         )
+    )
+    app.config["UPLOAD_FOLDER"] = os.environ.get(
+        "VPT_UPLOAD_FOLDER", default_upload_folder
+    )
+
+    default_session_file = "/tmp/sessions.json" if is_vercel else "sessions.json"
+    session_file = os.environ.get("VPT_SESSION_FILE", default_session_file)
 
     # Register error handlers
     register_error_handlers(app)
@@ -70,7 +78,7 @@ def create_app():
     # Initialize utilities
     activity_tracker = ActivityTracker()
     report_manager = ReportManager(app.config["UPLOAD_FOLDER"])
-    session_manager = SessionManager()
+    session_manager = SessionManager(session_file=session_file)
     scan_controller = ScanController(session_manager, report_manager)
     if is_vercel:
         default_db_path = "/tmp/vpt.db"
