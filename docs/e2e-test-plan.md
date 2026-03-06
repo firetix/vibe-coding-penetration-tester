@@ -60,6 +60,36 @@ Observed result from run:
 
 ---
 
+## PR #15 Full Browser E2E Evidence (2026-03-06 02:38 UTC)
+
+Run context:
+
+- Backend: `http://localhost:5000` with `DATABASE_URL=sqlite:////tmp/vpt-pr15-e2e.db`
+- Frontend: `http://localhost:3000`
+- Supabase project: `https://acenexeeensyrbepxjam.supabase.co`
+- Signup test user: `e2e+20260306t023821z@example.com`
+- SSE assertion message: `E2E SSE event 20260306T023821Z`
+
+Captured screenshots (PNG):
+
+- `docs/pr-screenshots/20260306T023821Z-01-home.png`
+- `docs/pr-screenshots/20260306T023821Z-02-login.png`
+- `docs/pr-screenshots/20260306T023821Z-03-signup-filled.png`
+- `docs/pr-screenshots/20260306T023821Z-04-after-signup-scans.png`
+- `docs/pr-screenshots/20260306T023821Z-05-scan-created.png`
+- `docs/pr-screenshots/20260306T023821Z-06-scan-detail.png`
+- `docs/pr-screenshots/20260306T023821Z-07-event-visible.png`
+
+Flow verified in this run:
+
+1. Visited `/`, `/login`, and `/signup`
+2. Signed up with deterministic user and redirected to `/app/scans`
+3. Created scan with `target_url=https://example.com`
+4. Opened scan detail and clicked **Send test event**
+5. Verified SSE event text appeared in DOM (`E2E SSE event 20260306T023821Z`)
+
+---
+
 ## Happy Path Test Cases
 
 ## 1) User authentication + app access (real Supabase)

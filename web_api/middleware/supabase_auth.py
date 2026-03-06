@@ -103,7 +103,7 @@ def verify_token(token: str) -> dict | None:
         return None
 
     audience = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
-    algorithms = ["RS256", "HS256"]
+    algorithms = ["RS256", "ES256", "HS256"]
 
     try:
         payload = jwt.decode(
