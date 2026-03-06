@@ -16,9 +16,9 @@ Current backend reality in this repo:
 - Flask API/UI app (`wsgi.py`, `run_web.py`, `web_api/*`)
 - Billing/entitlements persistence is currently SQLite (`utils/billing_store.py`)
 - Session/report persistence is currently filesystem-based
-- No Redis queue/Celery worker implementation is wired yet (worker is a planned M3+ concern)
+- Postgres-backed worker loop is available at `web_api.worker` (simulated processing, no Redis required)
 
-This runbook sets up Railway so M1 can ship with clear infra boundaries, while keeping compatibility with current code and preparing for Postgres/Redis adoption.
+This runbook sets up Railway so M1 can ship with clear infra boundaries, while keeping compatibility with current code and enabling Postgres-backed queue execution.
 
 ---
 
@@ -31,11 +31,10 @@ Create **two Railway projects**:
 In each project, define services:
 
 1. **Postgres** (managed Railway PostgreSQL)
-2. **Redis** (managed Railway Redis) — optional in current code, required once queue worker is enabled
-3. **API service** (`vpt-api`) — deploys this repo
-4. **Worker service** (`vpt-worker`) — same repo, separate start command for queue processing when worker code lands
+2. **API service** (`vpt-api`) — deploys this repo
+3. **Worker service** (`vpt-worker`) — same repo, separate start command (`python -m web_api.worker`)
 
-> Note: Current code can run API now. Worker service should be created now (topology baseline) but only promoted once queue worker module/command is implemented.
+> Optional: add **Redis** only if you later introduce non-Postgres queue patterns.
 
 ---
 
@@ -51,9 +50,9 @@ In each project, define services:
 2. Keep backups enabled.
 3. Copy connection reference for app services as `DATABASE_URL`.
 
-### Step 3 — Provision Redis service (recommended now, required when worker is active)
-1. Add Railway **Redis** service.
-2. Copy connection reference for app services as `REDIS_URL`.
+### Step 3 — (Optional) Provision Redis service
+1. Add Railway **Redis** service only if you need it for future features.
+2. Current worker design does **not** require `REDIS_URL`.
 
 ### Step 4 — Deploy API service (`vpt-api`)
 1. Add service from this GitHub repo.
@@ -63,13 +62,13 @@ In each project, define services:
 5. Attach a persistent volume mounted at `/data` (important for current filesystem-based persistence).
 6. Set API environment variables from the matrix below.
 
-### Step 5 — Prepare worker service (`vpt-worker`)
+### Step 5 — Configure worker service (`vpt-worker`)
 1. Add second service from same repo.
 2. Disable external/public domain for worker.
 3. Set shared env vars + worker env vars from matrix below.
-4. Set worker start command when worker implementation is available (M3 queue contract hardening):
-   - Example target command (future): `celery -A workers.scan_worker worker --loglevel=INFO`
-5. Until worker module exists, keep worker service unpromoted/paused in production.
+4. Set worker start command:
+   - `python -m web_api.worker`
+5. Validate worker logs show scan claiming and progress event inserts.
 
 ---
 
@@ -91,7 +90,6 @@ ANTHROPIC_API_KEY=
 GOOGLE_API_KEY=
 
 DATABASE_URL=${{Postgres.DATABASE_URL}}
-REDIS_URL=${{Redis.REDIS_URL}}
 
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
@@ -118,12 +116,16 @@ VPT_SESSION_FILE=/data/sessions.json
 VPT_UPLOAD_FOLDER=/data/reports
 ```
 
-### 4.3 Worker service vars (planned)
+### 4.3 Worker service vars
 
 ```bash
-# Same shared vars as API, plus worker-specific sizing knobs
-WORKER_CONCURRENCY=2
+# Same shared vars as API, plus worker tuning knobs
+WORKER_POLL_INTERVAL_SECONDS=3
+WORKER_STEP_INTERVAL_SECONDS=1
+WORKER_SIMULATED_STEPS=4
+WORKER_RECONNECT_DELAY_SECONDS=5
 WORKER_LOG_LEVEL=INFO
+WORKER_RUN_ONCE=0
 ```
 
 ---
@@ -177,7 +179,7 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
 Notes:
 - `NEXT_PUBLIC_API_BASE_URL` is the browser-side base URL used by frontend fetch calls.
 - `API_BASE_URL` is server-side (SSR/route handlers) base URL.
-- Keep backend-only secrets **off Vercel** (`STRIPE_SECRET_KEY`, webhook secrets, DB/Redis URLs).
+- Keep backend-only secrets **off Vercel** (`STRIPE_SECRET_KEY`, webhook secrets, DB URLs).
 - Existing CI preview automation secret (`VERCEL_AUTOMATION_BYPASS_SECRET`) remains useful for preview E2E.
 
 ---
@@ -185,5 +187,5 @@ Notes:
 ## 7) Gaps to close in next milestones
 
 - Wire Postgres as the backend system of record in app code (currently SQLite/file based for billing/session/report compatibility paths).
-- Implement Redis-backed queue + worker module and promote `vpt-worker` service.
+- Replace simulated worker execution with real scanner orchestration logic.
 - Add formal migration tooling and pre-deploy migration step.

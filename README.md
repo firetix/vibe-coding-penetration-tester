@@ -169,6 +169,35 @@ python web_ui.py
 
 This path is maintained for backward compatibility with older route behavior.
 
+### Postgres Worker (Supabase/Railway, no Redis)
+
+A lightweight worker loop is available at `web_api.worker` using Postgres row locks:
+
+- claims next `scans.status='pending'` row with `FOR UPDATE SKIP LOCKED`
+- marks it `running`
+- emits progress rows to `scan_events`
+- marks scan `completed` or `failed`
+
+Run locally:
+
+```bash
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/vibe_pentester"
+python -m web_api.worker
+```
+
+Useful worker env vars:
+
+- `WORKER_POLL_INTERVAL_SECONDS` (default: `3`)
+- `WORKER_STEP_INTERVAL_SECONDS` (default: `1`)
+- `WORKER_SIMULATED_STEPS` (default: `4`)
+- `WORKER_RECONNECT_DELAY_SECONDS` (default: `5`)
+- `WORKER_LOG_LEVEL` (default: `INFO`)
+- `WORKER_RUN_ONCE` (default: `0`)
+
+Railway process type is included in `Procfile` as:
+
+- `worker: python -m web_api.worker`
+
 ## Web API Endpoints (Modular App)
 
 Core:
