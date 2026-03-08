@@ -89,13 +89,13 @@ class TestLLMProvider:
 
         # Assert
         assert provider.provider == "openai"
-        assert provider.model == "gpt-4o"
+        assert provider.model == "gpt-5.2"
         assert provider.client == mock_client
         mock_openai.assert_called_once_with(api_key="test_key")
 
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
     @patch("core.llm.OpenAI")
-    def test_openai_invalid_codex_alias_falls_back_to_default(self, mock_openai):
+    def test_openai_codex_latest_model_is_supported(self, mock_openai):
         # Arrange
         mock_client = MagicMock()
         mock_openai.return_value = mock_client
@@ -105,7 +105,7 @@ class TestLLMProvider:
 
         # Assert
         assert provider.provider == "openai"
-        assert provider.model == "gpt-4o"
+        assert provider.model == "codex-latest"
         assert provider.client == mock_client
         mock_openai.assert_called_once_with(api_key="test_key")
 
@@ -264,6 +264,57 @@ class TestLLMProvider:
         assert first_id == "call_123"
         assert first_name == "test_function"
         mock_client.chat.completions.create.assert_called_once()
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
+    @patch("core.llm.OpenAI")
+    def test_openai_responses_api_for_codex_models(self, mock_openai):
+        # Arrange
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        function_call_item = MagicMock()
+        function_call_item.type = "function_call"
+        function_call_item.call_id = "call_abc"
+        function_call_item.name = "test_function"
+        function_call_item.arguments = '{"arg1":"value1"}'
+
+        mock_response = MagicMock()
+        mock_response.output_text = ""
+        mock_response.output = [function_call_item]
+        mock_response.model = "gpt-5.2-codex"
+        mock_client.responses.create.return_value = mock_response
+
+        provider = LLMProvider(provider="openai", model="gpt-5.2-codex")
+
+        messages = [{"role": "user", "content": "Hello"}]
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "test_function",
+                    "description": "Test function",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+
+        # Act
+        result = provider.chat_completion(messages, tools=tools)
+
+        # Assert
+        assert result.model == "gpt-5.2-codex"
+        assert result.choices[0].message.tool_calls is not None
+        assert result.choices[0].message.tool_calls[0]["id"] == "call_abc"
+        assert (
+            result.choices[0].message.tool_calls[0]["function"]["name"]
+            == "test_function"
+        )
+        assert (
+            result.choices[0].message.tool_calls[0]["function"]["arguments"]
+            == '{"arg1":"value1"}'
+        )
+        mock_client.responses.create.assert_called_once()
+        mock_client.chat.completions.create.assert_not_called()
 
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
     @patch("core.llm.OpenAI")
