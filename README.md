@@ -63,11 +63,18 @@ cp .env.example .env
 - `PORT`: Web server port (default `5050`)
 - `SECRET_KEY`: Flask session secret
 - `OLLAMA_BASE_URL`: Optional Ollama endpoint (default `http://localhost:11434`)
+- `VPT_CORS_ALLOW_ORIGINS`: Comma-separated frontend origin allowlist
+  (for example `https://app.example.com,https://my-preview.vercel.app`)
+- `VPT_FRONTEND_ORIGIN`: Optional single frontend origin
+- `VPT_SSE_POLL_INTERVAL_SECONDS`: Optional SSE poll cadence (default `1.0`)
+- `VPT_SSE_HEARTBEAT_SECONDS`: Optional SSE heartbeat cadence (default `15`)
 
 ### Hosted/Billing Environment Variables (Optional)
 
 - `VPT_HOSTED_MODE`: Enable hosted entitlement enforcement (`1` to enable)
 - `VPT_BILLING_DB_PATH`: SQLite database path for billing/entitlements
+- `VPT_SESSION_FILE`: Session persistence file path (use a mounted volume in containerized deployments)
+- `VPT_UPLOAD_FOLDER`: Report artifact directory path
 - `VPT_TRUST_PROXY_HEADERS`: Trust `X-Forwarded-For` when deployed behind proxies
 - `VPT_ENABLE_MOCK_CHECKOUT`: Allow local mock checkout flows
 - `VPT_ALLOW_UNVERIFIED_WEBHOOKS`: Relax Stripe webhook verification (test-only)
@@ -162,6 +169,35 @@ python web_ui.py
 
 This path is maintained for backward compatibility with older route behavior.
 
+### Postgres Worker (Supabase/Railway, no Redis)
+
+A lightweight worker loop is available at `web_api.worker` using Postgres row locks:
+
+- claims next `scans.status='pending'` row with `FOR UPDATE SKIP LOCKED`
+- marks it `running`
+- emits progress rows to `scan_events`
+- marks scan `completed` or `failed`
+
+Run locally:
+
+```bash
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/vibe_pentester"
+python -m web_api.worker
+```
+
+Useful worker env vars:
+
+- `WORKER_POLL_INTERVAL_SECONDS` (default: `3`)
+- `WORKER_STEP_INTERVAL_SECONDS` (default: `1`)
+- `WORKER_SIMULATED_STEPS` (default: `4`)
+- `WORKER_RECONNECT_DELAY_SECONDS` (default: `5`)
+- `WORKER_LOG_LEVEL` (default: `INFO`)
+- `WORKER_RUN_ONCE` (default: `0`)
+
+Railway process type is included in `Procfile` as:
+
+- `worker: python -m web_api.worker`
+
 ## Web API Endpoints (Modular App)
 
 Core:
@@ -179,6 +215,15 @@ Core:
 - `GET /api/logs`
 - `GET /api/reports`
 - `GET /api/report/<report_id>`
+
+Scans v2 (Supabase JWT):
+
+- `POST /api/scans`
+- `GET /api/scans`
+- `GET /api/scans/<scan_id>`
+- `GET /api/scans/<scan_id>/events`
+- `POST /api/scans/<scan_id>/events`
+- `GET /api/scans/<scan_id>/events/stream` (SSE)
 
 Hosted/billing:
 
@@ -213,6 +258,7 @@ Additional marker groups are defined in `pytest.ini` for full/nightly E2E covera
 ## Deployment
 
 - Vercel deployment guide: [`VERCEL_DEPLOYMENT.md`](VERCEL_DEPLOYMENT.md)
+- Railway backend runbook: [`docs/railway-deployment.md`](docs/railway-deployment.md)
 - Deployment helper script: [`deploy-to-vercel.sh`](deploy-to-vercel.sh)
 - WSGI entrypoint: `wsgi:app`
 
