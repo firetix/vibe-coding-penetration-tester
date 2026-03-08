@@ -1,0 +1,641 @@
+# Instincts generated from https://github.com/firetix/vibe-coding-penetration-tester
+# Generated: 2026-03-08T22:35:30.767Z
+# Version: 2.0
+
+---
+id: vibe-coding-penetration-tester-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Commit Length
+
+## Action
+
+Keep commit messages concise (under 50 characters)
+
+## Evidence
+
+- Average commit message length: 48 chars
+- Based on 93 commits
+
+---
+id: vibe-coding-penetration-tester-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: vibe-coding-penetration-tester-import-alias
+trigger: "when importing modules"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Import Alias
+
+## Action
+
+Use path aliases (@/, ~/) instead of relative imports
+
+## Evidence
+
+- Import analysis shows alias pattern
+- Example: import { x } from '@/lib/x'
+
+---
+id: vibe-coding-penetration-tester-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Export Style
+
+## Action
+
+Prefer mixed exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: mixed
+
+---
+id: vibe-coding-penetration-tester-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: vibe-coding-penetration-tester-workflow-feature-development
+trigger: "when implementing a new feature"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Workflow Feature Development
+
+## Action
+
+Follow the feature-development workflow:
+1. Add feature implementation
+2. Add tests for feature
+3. Update documentation
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~10x per month
+- Files: vibehack-web/app/(auth)/login/*, vibehack-web/app/(auth)/signup/*, vibehack-web/app/app/*
+
+---
+id: vibe-coding-penetration-tester-workflow-api-route-development
+trigger: "when doing api route development"
+confidence: 0.75
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Workflow Api Route Development
+
+## Action
+
+Follow the api-route-development workflow:
+1. Create route file in web_api/routes/
+2. Add endpoint to web_api/__init__.py
+3. Write E2E tests in tests/e2e/api/
+4. Update API documentation
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~5x per month
+- Files: web_api/routes/*.py, web_api/__init__.py, tests/e2e/api/test_*_routes_e2e.py
+
+---
+id: vibe-coding-penetration-tester-workflow-llm-model-integration
+trigger: "when doing llm model integration"
+confidence: 0.7
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Workflow Llm Model Integration
+
+## Action
+
+Follow the llm-model-integration workflow:
+1. Update core/llm.py with model definitions
+2. Add model validation logic
+3. Update README.md model catalog
+4. Add/update unit tests in tests/unit/test_llm.py
+5. Update main.py and templates if needed
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~4x per month
+- Files: core/llm.py, README.md, tests/unit/test_llm.py
+
+---
+id: vibe-coding-penetration-tester-workflow-deployment-environment-setup
+trigger: "when doing deployment environment setup"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Workflow Deployment Environment Setup
+
+## Action
+
+Follow the deployment-environment-setup workflow:
+1. Update .env.example with new variables
+2. Create platform-specific config files
+3. Update requirements.txt
+4. Add deployment documentation
+5. Update README.md
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: .env.example, requirements.txt, Procfile
+
+---
+id: vibe-coding-penetration-tester-workflow-test-suite-expansion
+trigger: "when doing test suite expansion"
+confidence: 0.7
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Workflow Test Suite Expansion
+
+## Action
+
+Follow the test-suite-expansion workflow:
+1. Add unit tests in tests/unit/
+2. Add integration tests in tests/integration/
+3. Add E2E tests in tests/e2e/
+4. Update test configuration files
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~4x per month
+- Files: tests/unit/test_*.py, tests/integration/test_*.py, tests/e2e/**/test_*.py
+
+---
+id: vibe-coding-penetration-tester-workflow-documentation-update
+trigger: "when doing documentation update"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Workflow Documentation Update
+
+## Action
+
+Follow the documentation-update workflow:
+1. Create/update docs in docs/ directory
+2. Update README.md if needed
+3. Add planning artifacts in _bmad-output/
+4. Update project context
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: docs/*.md, README.md, _bmad-output/**/*.md
+
+---
+id: vibe-coding-penetration-tester-workflow-database-persistence-layer
+trigger: "when doing database persistence layer"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Workflow Database Persistence Layer
+
+## Action
+
+Follow the database-persistence-layer workflow:
+1. Create migration files for different dialects
+2. Add store classes in web_api/store/
+3. Update schema definitions
+4. Add database configuration
+5. Write tests for database layer
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: web_api/store/migrations/*.sql, web_api/store/*_store.py, web_api/store/schema.py
+
+---
+id: vibe-coding-penetration-tester-snake-case-files
+trigger: "When creating a new Python file"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Snake Case Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- File structure shows snake_case pattern
+- Python language detected with snake_case convention
+
+---
+id: vibe-coding-penetration-tester-camelcase-functions
+trigger: "When defining a function in Python"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Camelcase Functions
+
+## Action
+
+Use camelCase naming for function names
+
+## Evidence
+
+- Function naming convention specified as camelCase
+- Python codebase pattern
+
+---
+id: vibe-coding-penetration-tester-pascalcase-classes
+trigger: "When defining a class in Python"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Pascalcase Classes
+
+## Action
+
+Use PascalCase naming for class names
+
+## Evidence
+
+- Class naming convention specified as PascalCase
+- Standard Python pattern
+
+---
+id: vibe-coding-penetration-tester-screaming-snake-constants
+trigger: "When defining constants in Python"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Screaming Snake Constants
+
+## Action
+
+Use SCREAMING_SNAKE_CASE naming
+
+## Evidence
+
+- Constants naming convention specified
+- Python best practice pattern
+
+---
+id: vibe-coding-penetration-tester-alias-imports
+trigger: "When importing modules in Python"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Alias Imports
+
+## Action
+
+Use alias import style
+
+## Evidence
+
+- Import style specified as alias
+- Python module organization
+
+---
+id: vibe-coding-penetration-tester-try-catch-errors
+trigger: "When handling errors in Python"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Try Catch Errors
+
+## Action
+
+Use try-catch pattern for error handling
+
+## Evidence
+
+- Error handling style specified as try-catch
+- No custom error classes detected
+
+---
+id: vibe-coding-penetration-tester-e2e-test-structure
+trigger: "When writing E2E tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester E2e Test Structure
+
+## Action
+
+Place tests in tests/e2e/ directory with test_*_e2e.py naming
+
+## Evidence
+
+- E2E test files in tests/e2e/api/test_*_routes_e2e.py pattern
+- Separate test location structure
+
+---
+id: vibe-coding-penetration-tester-unit-test-structure
+trigger: "When writing unit tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Unit Test Structure
+
+## Action
+
+Place tests in tests/unit/ directory with test_*.py naming
+
+## Evidence
+
+- Unit test pattern in tests/unit/test_*.py
+- Test suite expansion workflow
+
+---
+id: vibe-coding-penetration-tester-integration-test-structure
+trigger: "When writing integration tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Integration Test Structure
+
+## Action
+
+Place tests in tests/integration/ directory with test_*.py naming
+
+## Evidence
+
+- Integration test pattern in tests/integration/test_*.py
+- Test suite expansion workflow
+
+---
+id: vibe-coding-penetration-tester-commit-prefix
+trigger: "When making a commit"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Commit Prefix
+
+## Action
+
+Use prefixes like feat, fix, docs, test, or ci followed by descriptive message
+
+## Evidence
+
+- Commit examples show feat:, fix:, docs:, test:, ci: prefixes
+- Average commit length of 48 characters
+
+---
+id: vibe-coding-penetration-tester-commit-scope
+trigger: "When making a commit with specific component changes"
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Commit Scope
+
+## Action
+
+Include scope in parentheses like feat(component): description
+
+## Evidence
+
+- Examples: test(e2e):, docs(bmad):, fix(vercel):
+- Scoped commit pattern in examples
+
+---
+id: vibe-coding-penetration-tester-api-route-workflow
+trigger: "When adding a new API endpoint"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Api Route Workflow
+
+## Action
+
+Create route file in web_api/routes/, add to web_api/__init__.py, write E2E tests, update docs
+
+## Evidence
+
+- API route development workflow with 5x/month frequency
+- Clear file pattern for API routes
+
+---
+id: vibe-coding-penetration-tester-llm-model-workflow
+trigger: "When adding support for new LLM models"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Llm Model Workflow
+
+## Action
+
+Update core/llm.py, add validation, update README catalog, add unit tests
+
+## Evidence
+
+- LLM model integration workflow with 4x/month frequency
+- Clear pattern for model additions
+
+---
+id: vibe-coding-penetration-tester-deployment-workflow
+trigger: "When setting up deployment for new platform"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Deployment Workflow
+
+## Action
+
+Update .env.example, create platform configs, update requirements.txt, add deployment docs
+
+## Evidence
+
+- Deployment environment setup workflow with 3x/month frequency
+- Platform-specific configuration pattern
+
+---
+id: vibe-coding-penetration-tester-database-workflow
+trigger: "When adding database persistence or new data models"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Database Workflow
+
+## Action
+
+Create migrations, add store classes in web_api/store/, update schema, add database config
+
+## Evidence
+
+- Database persistence layer workflow with 2x/month frequency
+- Clear store pattern in web_api/store/
+
+---
+id: vibe-coding-penetration-tester-docs-workflow
+trigger: "When documenting features or architecture"
+confidence: 0.8
+domain: workflow
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Docs Workflow
+
+## Action
+
+Create/update files in docs/ directory, update README.md, add planning artifacts in _bmad-output/
+
+## Evidence
+
+- Documentation update workflow with 3x/month frequency
+- Structured docs and planning artifacts pattern
+
+---
+id: vibe-coding-penetration-tester-hybrid-module-organization
+trigger: "When organizing code modules"
+confidence: 0.7
+domain: architecture
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Hybrid Module Organization
+
+## Action
+
+Use hybrid organization with both functional and feature-based grouping
+
+## Evidence
+
+- Module organization specified as hybrid
+- Mixed folder structure with agents, tools, core, web_api
+
+---
+id: vibe-coding-penetration-tester-separate-test-location
+trigger: "When organizing test files"
+confidence: 0.9
+domain: architecture
+source: repo-analysis
+source_repo: firetix/vibe-coding-penetration-tester
+---
+
+# Vibe Coding Penetration Tester Separate Test Location
+
+## Action
+
+Keep tests in separate directory structure, not co-located with source
+
+## Evidence
+
+- Test location specified as separate
+- Clear tests/ directory structure
+
