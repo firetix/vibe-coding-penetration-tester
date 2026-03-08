@@ -186,9 +186,15 @@ class LLMProvider:
                     exc_info=True,
                 )  # Add exc_info for better debugging
                 raise ValueError(f"Failed to initialize Google Gemini client: {str(e)}")
+        elif self.provider == "mock":
+            # Deterministic, offline provider used for tests and local development.
+            # This intentionally avoids network calls and does not require API keys.
+            self.client = None
+            if not self.model or self.model == "gpt-4o":
+                self.model = "mock"
         else:
             raise ValueError(
-                f"Unsupported provider: {self.provider}. Use 'openai', 'anthropic', 'ollama', or 'gemini'."
+                f"Unsupported provider: {self.provider}. Use 'openai', 'anthropic', 'ollama', 'gemini', or 'mock'."
             )
 
         self.logger.info(
@@ -245,9 +251,66 @@ class LLMProvider:
                 # Note: Pass json_mode even if Gemini doesn't directly support it yet,
                 #       for consistency. It might be used for internal logic later.
                 return self._gemini_completion(messages, temperature, tools, json_mode)
+            elif self.provider == "mock":
+                return self._mock_completion(messages, temperature, tools, json_mode)
         except Exception as e:
             self.logger.error(f"Error in LLM completion: {str(e)}")
             raise
+
+    def _mock_completion(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        tools: Optional[List[Dict]],
+        json_mode: bool,
+    ) -> Any:
+        """Generate a deterministic completion without external API calls."""
+
+        # Helper: detect tool availability by name.
+        tool_names = set()
+        for tool in tools or []:
+            if tool.get("type") == "function" and "function" in tool:
+                name = tool["function"].get("name")
+                if name:
+                    tool_names.add(name)
+
+        tool_calls = []
+        # Keep plans minimal for speed in live E2E; the rest of the system has fallbacks.
+        if "create_security_plan" in tool_names:
+            tasks = [
+                {
+                    "type": "scan",
+                    "target": "headers and page structure",
+                    "priority": "high",
+                }
+            ]
+            tool_calls = [
+                {
+                    "id": "call_mock_create_security_plan",
+                    "type": "function",
+                    "function": {
+                        "name": "create_security_plan",
+                        "arguments": json.dumps({"tasks": tasks}),
+                    },
+                }
+            ]
+
+        class _Message:
+            def __init__(self, content: str, tool_calls):
+                self.content = content
+                self.tool_calls = tool_calls
+
+        class _Choice:
+            def __init__(self, message):
+                self.message = message
+                self.finish_reason = "tool_calls" if message.tool_calls else "stop"
+
+        class _Response:
+            def __init__(self, model: str, message):
+                self.choices = [_Choice(message)]
+                self.model = model
+
+        return _Response(self.model, _Message("", tool_calls))
 
     def _openai_completion(
         self,

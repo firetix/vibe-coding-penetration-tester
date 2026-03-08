@@ -16,7 +16,7 @@ load_dotenv()
 
 
 def parse_arguments():
-    available_providers = ["openai", "anthropic", "ollama"]
+    available_providers = ["openai", "anthropic", "ollama", "mock"]
     if importlib.util.find_spec("google.generativeai") is not None:
         available_providers.append("gemini")
 

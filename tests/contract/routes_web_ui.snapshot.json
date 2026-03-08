@@ -1,0 +1,147 @@
+[
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/api/activity"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/api/billing/checkout"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/api/billing/webhook"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/api/entitlements"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/api/logs"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/api/report/<report_id>"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/api/reports"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/api/scan/cancel"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/api/scan/list"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/api/scan/start"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/api/scan/status"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/api/session/check"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/api/session/init"
+  },
+  {
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "rule": "/api/state"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/billing/checkout"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/favicon.ico"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/mock-checkout/<checkout_session_id>"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/report"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/reports/<path:filename>"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/reset"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "rule": "/scan"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/static/<path:filename>"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "rule": "/status"
+  }
+]
