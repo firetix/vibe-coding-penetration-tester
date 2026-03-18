@@ -1,0 +1,21 @@
+name: VibeSafe Security Scan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  vibesafe:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run VibeSafe scan
+        uses: vibesafeio/vibesafe-action@v0
+        with:
+          domain: auto
