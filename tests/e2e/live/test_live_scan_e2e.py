@@ -171,4 +171,3 @@ def test_live_scan_end_to_end():
         except subprocess.TimeoutExpired:  # pragma: no cover - cleanup timing
             proc.kill()
         target_server.shutdown()
-

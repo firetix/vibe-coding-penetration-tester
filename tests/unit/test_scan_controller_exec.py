@@ -42,4 +42,3 @@ def test_scan_controller_uses_sys_executable_for_main_subprocess(monkeypatch, tm
         "--output",
         os.path.join(str(report_root), report_dir),
     ]
-

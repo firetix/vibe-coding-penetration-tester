@@ -81,6 +81,12 @@ def test_scan_start_success_then_status(
 
     completed = poll_until_complete(web_api_server, http_client, initialized_session)
     assert completed.get("progress") == 100
+    assert completed.get("current_task") == "Deterministic scan completed"
+    assert len(completed.get("action_plan", [])) >= 3
+    assert any(
+        "Deterministic E2E scan started" in activity.get("description", "")
+        for activity in completed.get("agent_logs", [])
+    )
 
 
 @pytest.mark.e2e_api_critical

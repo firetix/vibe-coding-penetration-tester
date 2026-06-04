@@ -23,4 +23,3 @@ def test_web_api_routes_match_snapshot():
     snapshot_path = Path(__file__).resolve().parent / "routes_web_api.snapshot.json"
     snapshot = json.loads(snapshot_path.read_text())
     assert snapshot == _extract_routes()
-

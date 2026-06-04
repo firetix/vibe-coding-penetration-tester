@@ -68,4 +68,3 @@ def create_app() -> Flask:
 
 
 app = create_app()
-

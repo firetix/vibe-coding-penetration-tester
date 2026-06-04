@@ -120,6 +120,28 @@ def register_routes(
                 account_id,
             )
 
+    def _record_activity(
+        session_id,
+        activity_or_type="general",
+        description=None,
+        details=None,
+        agent_name=None,
+    ):
+        if isinstance(activity_or_type, dict):
+            activity = activity_or_type
+            activity_type = activity.get("type", "general")
+            description = activity.get("description", "Activity")
+            details = activity.get("details", {})
+            agent_name = activity.get("agent", None)
+        else:
+            activity_type = activity_or_type or "general"
+            description = description or "Activity"
+            details = details or {}
+
+        return activity_tracker.add_activity(
+            session_id, activity_type, description, details, agent_name
+        )
+
     @bp.route("/start", methods=["POST"])
     @handle_errors
     @validate_session(session_manager)
@@ -142,20 +164,10 @@ def register_routes(
         if policy_response is not None:
             return policy_response
 
-        # Create an adapter for the activity tracker callback
-        def activity_adapter(session_id, activity):
-            activity_type = activity.get("type", "general")
-            description = activity.get("description", "Activity")
-            details = activity.get("details", {})
-            agent_name = activity.get("agent", None)
-            return activity_tracker.add_activity(
-                session_id, activity_type, description, details, agent_name
-            )
-
         # Start the scan
         try:
             scan_id = scan_controller.start_scan(
-                session_id, url, config, activity_callback=activity_adapter
+                session_id, url, config, activity_callback=_record_activity
             )
         except Exception:
             _rollback_entitlement_consumption()
@@ -290,19 +302,9 @@ def register_routes(
             f"Starting scan for URL {url} with session {session_id} and config {config}"
         )
 
-        # Create an adapter for the activity tracker callback
-        def activity_adapter(session_id, activity):
-            activity_type = activity.get("type", "general")
-            description = activity.get("description", "Activity")
-            details = activity.get("details", {})
-            agent_name = activity.get("agent", None)
-            return activity_tracker.add_activity(
-                session_id, activity_type, description, details, agent_name
-            )
-
         try:
             scan_id = scan_controller.start_scan(
-                session_id, url, config, activity_callback=activity_adapter
+                session_id, url, config, activity_callback=_record_activity
             )
         except Exception:
             _rollback_entitlement_consumption()

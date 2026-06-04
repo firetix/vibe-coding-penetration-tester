@@ -485,4 +485,3 @@ class PostgresBillingStore:
                 (ip, event_type, since),
             ).fetchone()
         return int(row["c"]) if row else 0
-

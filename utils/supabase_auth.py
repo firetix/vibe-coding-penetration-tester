@@ -94,4 +94,3 @@ def maybe_get_supabase_user(auth_header: Optional[str]) -> Optional[Dict[str, An
         logger.warning("Supabase auth token missing 'sub' claim")
         return None
     return payload
-
