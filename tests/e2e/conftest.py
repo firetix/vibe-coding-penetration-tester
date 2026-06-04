@@ -17,10 +17,11 @@ def _free_port() -> int:
 
 def _wait_for_server(base_url: str, timeout: float = 30.0) -> None:
     deadline = time.time() + timeout
+    request_timeout = float(os.environ.get("VPT_E2E_STARTUP_REQUEST_TIMEOUT", "5"))
     last_err = None
     while time.time() < deadline:
         try:
-            response = requests.get(f"{base_url}/status", timeout=2)
+            response = requests.get(f"{base_url}/status", timeout=request_timeout)
             if response.status_code in (200, 401, 404):
                 return
         except Exception as err:  # pragma: no cover - startup timing

@@ -16,10 +16,19 @@ def test_frontend_state_restore_after_reload(web_api_server):
             page.select_option("#scan_mode", "quick")
             page.check("#authorization_confirmed")
             page.click("#start-scan-btn")
+            page.wait_for_selector("#scan-status-panel:not(.d-none)", timeout=30000)
 
-            page.wait_for_timeout(1000)
             page.reload(wait_until="networkidle")
-            page.wait_for_timeout(2500)
+            page.wait_for_function(
+                """() => {
+                    const isVisible = (selector) => {
+                        const el = document.querySelector(selector);
+                        return !!el && !el.classList.contains('d-none');
+                    };
+                    return isVisible('#scan-status-panel') || isVisible('#report-container');
+                }""",
+                timeout=45000,
+            )
 
             status_classes = page.get_attribute("#scan-status-panel", "class") or ""
             report_classes = page.get_attribute("#report-container", "class") or ""

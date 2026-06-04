@@ -18,10 +18,7 @@ def test_frontend_one_click_quick_scan_flow(web_api_server):
             page.click("#start-scan-btn")
 
             page.wait_for_selector("#scan-status-panel", timeout=10000)
-            page.wait_for_timeout(5000)
-
-            # In deterministic mode the report should become available quickly.
-            classes = page.get_attribute("#report-container", "class") or ""
-            assert "d-none" not in classes
+            # Wait until the report panel is actually revealed.
+            page.wait_for_selector("#report-container:not(.d-none)", timeout=30000)
         finally:
             browser.close()

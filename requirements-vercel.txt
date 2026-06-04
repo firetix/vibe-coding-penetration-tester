@@ -13,3 +13,5 @@ gunicorn>=21.2.0
 python-dotenv>=1.0.0
 # Explicitly specify Flask-CORS rather than using 'flask_cors' format
 Flask-CORS>=4.0.0
+PyJWT>=2.8.0
+psycopg[binary]>=3.1.18
