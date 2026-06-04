@@ -2,6 +2,7 @@ import os
 import json
 import time
 import subprocess
+import sys
 import threading
 import logging
 from typing import Dict, List, Any, Callable, Optional
@@ -434,7 +435,7 @@ class ScanController:
 
             # Setup command to run the scanner
             cmd = [
-                "python",
+                sys.executable,
                 "main.py",
                 "--url",
                 url,
@@ -693,15 +694,13 @@ class ScanController:
             remaining_output, errors = process.communicate()
             exit_code = process.wait()
 
-            # Check for errors in stderr
-            if errors:
-                error_msg = errors.strip()
-                if error_msg:
-                    self.logger.error(f"Scanner stderr: {error_msg}")
-                    last_error = error_msg
-
             # Check exit code
             if exit_code != 0:
+                if errors:
+                    error_msg = errors.strip()
+                    if error_msg:
+                        self.logger.error(f"Scanner stderr: {error_msg}")
+                        last_error = error_msg
                 self.logger.error(f"Scanner process exited with code {exit_code}")
                 error_message = (
                     last_error or f"Process failed with exit code {exit_code}"
@@ -710,6 +709,11 @@ class ScanController:
                     100,
                     "error",
                     activity={"type": "error", "description": error_message},
+                )
+                raise RuntimeError(error_message)
+            elif errors and errors.strip():
+                self.logger.warning(
+                    "Scanner stderr contained warnings: %s", errors.strip()
                 )
 
         except Exception as e:
@@ -722,6 +726,7 @@ class ScanController:
                     "description": f"Monitoring error: {str(e)}",
                 },
             )
+            raise
 
     def _finalize_scan(self, session_id: str, scan_id: str, report_dir: str) -> None:
         try:
@@ -769,7 +774,7 @@ class ScanController:
                                 f"Moved file {filename} from nested directory to main report directory"
                             )
 
-            self.logger.info(f"Scan completed successfully: {scan_id}")
+            self.logger.info(f"Scanner process finished for scan: {scan_id}")
 
             # Verify again that the report files actually exist now
             report_path = os.path.join(
@@ -789,6 +794,22 @@ class ScanController:
                 self.logger.info(f"Verified report.md exists at: {markdown_path}")
             else:
                 self.logger.warning(f"report.md still not found at: {markdown_path}")
+
+            if not os.path.exists(report_path):
+                self.session_manager.update_scan_status(
+                    session_id,
+                    scan_id,
+                    "error",
+                    100,
+                    current_task="Scanner finished but did not generate report.json.",
+                )
+                self.logger.error(
+                    "Cannot finalize scan %s because report.json was not generated",
+                    scan_id,
+                )
+                return
+
+            self.logger.info(f"Scan completed successfully: {scan_id}")
 
             # Create a final action plan with completed status for all tasks
             final_action_plan = []

@@ -88,6 +88,7 @@ def handle_exception(e):
 
 # Determine reports directory based on environment
 is_vercel = os.environ.get("VERCEL") == "1" or os.environ.get("VERCEL_ENV") is not None
+app.config["ENABLE_VERCEL_ANALYTICS"] = is_vercel
 if is_vercel:
     app.config["UPLOAD_FOLDER"] = "/tmp/vibe_pen_tester_reports"
 else:

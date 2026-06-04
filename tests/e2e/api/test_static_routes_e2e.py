@@ -6,6 +6,7 @@ def test_root_page_loads(web_api_server, http_client):
     response = http_client.get(f"{web_api_server}/", timeout=10)
     assert response.status_code == 200
     assert "Start Security Scan" in response.text
+    assert "/_vercel/insights/script.js" not in response.text
 
 
 @pytest.mark.e2e_api_full
