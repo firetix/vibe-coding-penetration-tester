@@ -204,7 +204,7 @@ class TestBasicWorkflow:
 
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
     @patch("core.llm.OpenAI")  # Patch the correct import
-    @patch("playwright.sync_api.sync_playwright")
+    @patch("core.scanner.sync_playwright")
     def test_real_components_with_mock_data(
         self, mock_playwright, mock_openai, sample_config, temp_output_dir
     ):
