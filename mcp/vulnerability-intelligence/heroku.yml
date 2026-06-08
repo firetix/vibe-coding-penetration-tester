@@ -1,0 +1,12 @@
+setup:
+  addons: []  # Empty array instead of null
+
+build:
+  docker:
+    web: Dockerfile
+  config:
+    # Environment variables for build phase if needed
+    PYTHON_VERSION: "3.10.16"
+
+run:
+  web: mcp-simple-tool --transport sse --port $PORT 

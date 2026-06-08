@@ -1,0 +1,35 @@
+{
+  "name": "MCP Vulnerability Checker Server",
+  "description": "A modular MCP server with CVE lookup, Python package vulnerability checking, and website fetching tools",
+  "repository": "git@github.com:firetix/vulnerability-intelligence-mcp-server.git",
+  "keywords": ["python", "mcp", "security", "cve", "vulnerability", "package", "web", "tool"],
+  "env": {
+    "MCP_SERVER_PORT": {
+      "description": "Port to run the server on",
+      "value": "8000",
+      "required": false
+    },
+    "MCP_SERVER_HOST": {
+      "description": "Host to bind the server to",
+      "value": "0.0.0.0",
+      "required": false
+    },
+    "DEBUG": {
+      "description": "Enable debug mode",
+      "value": "false",
+      "required": false
+    },
+    "MCP_USER_AGENT": {
+      "description": "Custom User-Agent for website fetching",
+      "value": "MCP Test Server (github.com/modelcontextprotocol/python-sdk)",
+      "required": false
+    }
+  },
+  "stack": "container",
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  }
+} 

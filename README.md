@@ -4,9 +4,22 @@
 
 # Vibe Coding Penetration Tester
 
-AI-assisted web application security testing with CLI and web interfaces.
+AI-assisted launch-safety testing for vibe-coded products, with web, CLI, and MCP interfaces.
 
 VibePenTester coordinates specialized security agents to discover and validate common web vulnerabilities, then generates reproducible Markdown and JSON reports.
+
+## Product Direction
+
+This repository is the public home for the Launch Safety platform:
+
+- Free URL-first scorecards for entrepreneurs who need a fast pre-launch security check.
+- A hosted web app for repeat scans, saved reports, billing, and workflow automation.
+- A deeper MCP/CLI workflow for repo-aware vulnerability intelligence and remediation guidance.
+- Practical launch-safety content for X and YouTube that points builders back to the free scorecard.
+
+Planning docs:
+
+- Launch Safety Scorecard v1 roadmap: [`docs/launch-safety-scorecard-v1-roadmap.md`](docs/launch-safety-scorecard-v1-roadmap.md)
 
 ## Key Capabilities
 
@@ -17,6 +30,7 @@ VibePenTester coordinates specialized security agents to discover and validate c
 - Report generation in both `report.md` and `report.json`
 - Flask web UI and API for session-based scan orchestration
 - Hosted-mode entitlement and billing hooks for SaaS deployments
+- MCP vulnerability intelligence server for CVE, CVSS, EPSS, exploit, VEX, and package-risk workflows
 
 ## Repository Structure
 
@@ -27,8 +41,11 @@ VibePenTester coordinates specialized security agents to discover and validate c
 - `web_api/`: Refactored modular routes, middleware, and helpers
 - `agents/`: Discovery and security testing agent implementations
 - `tools/`: Browser and security testing tool wrappers
+- `mcp/vulnerability-intelligence/`: Imported MCP server for vulnerability intelligence workflows
 - `reports_samples/`: Example generated reports
 - `tests/`: Unit, integration, API E2E, frontend E2E, and Vercel preview tests
+- `CONTEXT.md`: Product language and domain glossary
+- `docs/adr/`: Architectural decision records for the platform direction
 
 ## Prerequisites
 
