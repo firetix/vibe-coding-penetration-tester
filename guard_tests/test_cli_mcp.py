@@ -11,7 +11,16 @@ from vibe_pentest.demo import fixture, template
 
 def test_demo_subprocess():
     result = subprocess.run(
-        [sys.executable, "-m", "vibe_pentest", "demo", "--format", "json"],
+        [
+            sys.executable,
+            "-c",
+            "import faulthandler, runpy; "
+            "faulthandler.dump_traceback_later(10); "
+            "runpy.run_module('vibe_pentest', run_name='__main__', alter_sys=True)",
+            "demo",
+            "--format",
+            "json",
+        ],
         capture_output=True,
         text=True,
         timeout=15,

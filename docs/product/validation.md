@@ -21,6 +21,12 @@ Package: `vibe-pentest` version `2.0.0a1`.
 | Landing page | Desktop and mobile inspected; tabs and copy fallback worked | Local file preview; no hosting deployment |
 | Static checks | Ruff, actionlint, documentation links, and whitespace checks passed | Remote workflow execution remains separate |
 
+The first remote run passed Linux, Windows, FastAPI, and existing local application tests.
+The macOS demo exceeded its fifteen-second test deadline. A rerun checks whether this repeats.
+The legacy Vercel preview returned HTTP 500 after deployment.
+The new package metadata changed dependency selection; an explicit install script preserves legacy web dependencies.
+Remote verification of that change remains pending.
+
 ## Reproduce
 
 ```sh

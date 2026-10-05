@@ -28,6 +28,9 @@ vpt = "vibe_pentest.cli:main"
 Repository = "https://github.com/firetix/vibe-coding-penetration-tester"
 Issues = "https://github.com/firetix/vibe-coding-penetration-tester/issues"
 
+[tool.vercel.scripts]
+vercel-install = 'uv pip install --python "$VIRTUAL_ENV/bin/python" -r requirements-vercel.txt'
+
 [tool.hatch.build.targets.wheel]
 packages = ["vibe_pentest"]
 
