@@ -2,6 +2,9 @@
 
 Use disposable tenants and fresh credentials on every continuous integration (CI) run.
 The [FastAPI example](../examples/fastapi/README.md) provides a complete local setup.
+The [Supabase example](../examples/supabase/README.md) uses real local database and authentication containers.
+Its `supabase-recipe` workflow checks broken and repaired policies on every pull request.
+It uses disposable local credentials and requires no hosted Supabase secrets.
 
 For an existing application, place these steps after its normal test setup:
 
@@ -11,6 +14,9 @@ For an existing application, place these steps after its normal test setup:
 4. Supply `VPT_ALICE_TOKEN` and `VPT_BOB_TOKEN` through the job environment.
 5. Run the contract and retain its redacted report.
 6. Remove test fixtures and stop the application.
+
+For user isolation, two ordinary users replace the two-tenant fixture requirement.
+Supabase also requires `VPT_SUPABASE_KEY`, containing a publishable or legacy `anon` key.
 
 ```sh
 vpt check vpt-contract.json \

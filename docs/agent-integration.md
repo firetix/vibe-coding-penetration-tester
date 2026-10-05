@@ -15,6 +15,13 @@ Example task:
 
 > Test the changed invoice route on my local app. Create two tenant fixtures, check isolation, fix failures, and retain the test.
 
+For Supabase:
+
+> Test my Supabase notes table with two ordinary test users. Check private reads, repair any leaking policy, and retain the test.
+
+The [Supabase recipe](../examples/supabase/README.md) includes real local verification and contract generation.
+The accounts belong to your application. The coding agent prepares and runs their tests.
+
 The skill instructs the agent to keep credentials out of chat and contract files.
 Client-specific discovery still depends on the client's supported skill directories.
 
@@ -28,6 +35,7 @@ vpt serve --config /absolute/path/vpt-contract.json --allow-origin https://stagi
 ```
 
 Supply dedicated test tokens through the server process environment.
+For Supabase contracts, also supply `VPT_SUPABASE_KEY` with a public application key.
 Do not place real token values in committed client configuration.
 
 Example client configuration:
@@ -52,7 +60,7 @@ Client environment handling varies. Follow your client's secret-management instr
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `describe_contract` | None | Actor labels, case labels, and fixed scope |
+| `describe_contract` | None | Actor labels, case labels, provider, isolation mode, and fixed scope |
 | `run_checks` | None | Structured, redacted evidence report |
 
 The server snapshots the contract and credentials at startup.

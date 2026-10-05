@@ -4,10 +4,12 @@ Status: hypotheses for customer tests. Paid features are not implemented or offe
 
 ## Position
 
-Keep private records inside their tenant after AI-assisted code changes.
-Sell faster setup and repeatable evidence to engineers building multi-tenant applications.
-Start with FastAPI teams that already have bearer authentication and test fixtures.
-Expand to another framework only after repeated use establishes the workflow's value.
+Catch bugs that let one application user read another user's private data.
+Start with Supabase developers who need repeatable checks before deployment.
+The runner now supports real user sessions and RLS empty-array responses.
+The generic API path remains available for teams with existing bearer authentication.
+Public requests support the problem; they do not validate this product or its pricing.
+See the [demand review](../research/developer-demand.md) and its competing tools.
 
 MCP and skills are both useful. Neither is the business by itself.
 The durable asset would be a maintained collection of application-specific authorization contracts.
@@ -32,6 +34,11 @@ Even metadata requires access controls, deletion rules, tenant isolation, and an
 ## Price tests
 
 These numbers are proposals, not validated willingness to pay.
+First test a fixed-scope setup service: help a team retain tests for its own critical private reads.
+Consider a $500 one-time pilot after scope and delivery effort are known.
+Deliver repository-owned tests and handover notes. Do not sell a security certification.
+No such service has been purchased or offered through this work.
+Build hosted coordination only if active teams repeatedly request it and commit to paying.
 
 | Offer | Price hypothesis | Buyer and limit |
 | --- | --- | --- |
@@ -65,7 +72,7 @@ Do not build a broad enterprise dashboard before a repeated workflow supports a 
 | Repeated use | Five teams run contracts in two consecutive weeks | Add requested workflow improvements |
 | Paid demand | Three teams sign paid pilot terms | Build the smallest coordination feature they share |
 | Sustainable delivery | Support and infrastructure fit the cost envelope | Scale acquisition |
-| Broader product | Second framework retains users without bespoke support | Expand content and integrations |
+| Broader product | Users retain the Supabase workflow without bespoke support | Add their most frequent missing workflow |
 
 The targets are operating goals. No such results have been observed yet.
 If users want only a free example they run once, treat that as failed retention.

@@ -1,5 +1,28 @@
 # Alpha validation record
 
+## Current alpha: 2.0.0a2
+
+Observed on 2026-10-05 UTC, 2026-10-04 Pacific.
+
+| Check | Observed result | Limit |
+| --- | --- | --- |
+| Runner suite | 130 passed locally | Includes prior regression tests and new Supabase controls |
+| Real local Supabase | Eight expected outcomes verified | Auth, PostgREST, and PostgreSQL 17; disposable data |
+| Public key compatibility | Legacy anon and publishable keys passed | Local Supabase CLI 2.95.4 |
+| Leak cases | Disabled RLS and an extra permissive policy failed with exit 1 | Configured private row and canary |
+| Invalid controls | Blocked owner, invalid session, and swapped sessions returned exit 2 | No passing result with incomplete evidence |
+| Restored policy | Same contract passed with exit 0 | Reads only |
+| FastAPI regression | Broken failed; fixed passed | Existing generic contract remains supported |
+| Packaging | Wheel and source archive built; clean wheel executed outside checkout | No registry publication |
+| Product page | Desktop and mobile inspected; tabs, copy, overflow, and script checks passed | Replays saved real Supabase results |
+| Static checks | Ruff, workflow syntax, changed Markdown links, and whitespace checks passed | See pull request for remote results |
+
+The Supabase workflow is now included in pull request checks.
+The [demand review](../research/developer-demand.md) records developer requests and competing tools.
+Those sources do not establish retained users or willingness to pay.
+
+## Previous alpha: 2.0.0a1
+
 Date: 2026-10-04 Pacific time, 2026-10-05 UTC.
 Package: `vibe-pentest` version `2.0.0a1`.
 
@@ -34,13 +57,20 @@ See [pull request checks](https://github.com/firetix/vibe-coding-penetration-tes
 
 ```sh
 uv sync --extra dev
-uv run ruff check vibe_pentest guard_tests examples/fastapi scripts/refresh_landing_demo.py
-uv run ruff format --check vibe_pentest guard_tests examples/fastapi scripts/refresh_landing_demo.py
+uv run ruff check vibe_pentest guard_tests examples/fastapi examples/supabase scripts/refresh_landing_demo.py
+uv run ruff format --check vibe_pentest guard_tests examples/fastapi examples/supabase scripts/refresh_landing_demo.py
 uv run pytest guard_tests -q -o addopts='' -o log_cli=false
 uv run --isolated --python 3.11 --extra dev pytest guard_tests -q -o addopts='' -o log_cli=false
 uv run --with fastapi --with uvicorn python examples/fastapi/verify.py
 uv build
 actionlint .github/workflows/guard.yml .github/workflows/guard-release.yml
+```
+
+Follow the [Supabase example](../../examples/supabase/README.md) to start and verify its real local services.
+Refresh the landing evidence after that verifier passes:
+
+```sh
+uv run python scripts/refresh_landing_demo.py --supabase-report .cache/supabase-verification.json
 ```
 
 The legacy tests used a separate Python 3.11 environment with `requirements.txt` installed through uv.

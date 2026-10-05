@@ -5,20 +5,21 @@ A star is a secondary sign of attention. It does not measure that outcome.
 
 ## Message
 
-Primary: **Keep Alice's data out of Bob's response.**
-Supporting: Repeatable authorization tests for the apps you build with AI.
-Proof: Show one broken route, one private canary, one fix, and the unchanged test passing.
+Primary: **Can one customer read another customer's data?**
+Supporting: Test Supabase access rules with real user accounts before deployment.
+Proof: Show a leaking RLS policy, its fix, and the unchanged test passing against real Supabase containers.
+Explain that Alice and Bob are application users. The coding agent operates their tests.
 Avoid claims about replacing security teams or finding every vulnerability.
 
 ## First six weeks
 
 | Week | Ship | Distribution experiment | Evidence and decision |
 | --- | --- | --- | --- |
-| 1 | Reviewed alpha, demo, FastAPI fixture, skill, MCP, release artifacts | Ask ten relevant engineers to complete setup | Record time, failures, and whether they retain a contract |
-| 2 | Fix the three most common setup failures | Publish one complete tenant-isolation tutorial | Eight of ten complete setup within fifteen minutes |
+| 1 | Reviewed Supabase recipe, basic demo, skill, MCP, release artifacts | Invite ten Supabase developers to complete setup | Record time, failures, existing substitutes, and retained tests |
+| 2 | Fix the three most common setup failures | Publish the real broken/fixed RLS example | Eight of ten complete setup within fifteen minutes |
 | 3 | Improve CI setup and credential renewal guidance | Invite retained users to show one teammate | Five teams run checks in two consecutive weeks |
-| 4 | Add the most requested second framework | Publish a broken/fixed example and invite contributions | At least two outside contributors submit reproducible fixtures |
-| 5 | A small coordination prototype, only with paid demand | Offer three paid pilots to active teams | Record signed terms, paid invoices, and support time separately |
+| 4 | Add the most requested missing access test | Publish a broken/fixed example and invite contributions | At least two outside contributors submit reproducible fixtures |
+| 5 | Setup assistance; coordination only with paid demand | Offer a scoped pilot to active teams | Record signed terms, paid invoices, and support time separately |
 | 6 | Improve the feature retained users request most | Launch publicly with observed evidence and a short demo | Compare activation and retention by source |
 
 Owner: project maintainer, supported by contributors after they accept specific work.
@@ -33,13 +34,15 @@ Those actions require the maintainer's publishing choice and actual destination 
 | Agent skill catalogs | Small skill with exact tool and evidence requirements | Agent creates a contract that stays in the repository |
 | MCP catalogs | Fixed-scope server with a documented local demo | User installs it, runs a check, retains the CLI command |
 | GitHub | Clear README, issue templates, good first contributions | Maintainer reviews reproducible fixtures and credits contributors |
-| Technical search | Specific guides about FastAPI tenant isolation and expired-token false passes | Engineer solves one problem and returns during later changes |
+| Technical search | Guides about Supabase empty results, permissive policies, and real-user RLS tests | Engineer solves one problem and returns during later changes |
 | Launch communities | Short broken/fixed recording and measured setup results | Interested users try a demo and become repeat users |
 
 Do not submit the same generic announcement everywhere.
 Lead each community post with the problem its users already discuss.
 Ask contributors for fixtures and useful contracts, not stars.
 Never buy stars, automate engagement, or send unsolicited bulk messages.
+The [source ledger](../research/developer-demand.md) identifies relevant discussions, not a list for promotional replies.
+Publish self-contained examples first. Link from another community only when its rules and context permit it.
 
 ## Measurement
 
@@ -72,3 +75,8 @@ Let retained use choose those additions.
 Milestones: 1,000 stars with reliable onboarding; 5,000 with repeated use; 10,000 with active contributors.
 Treat 25,000 and beyond as outcomes of broader utility, not deadlines.
 Review revenue, active teams, contributor retention, and false reassurance before celebrating star growth.
+
+## Draft alpha links
+
+The unpublished product page links to the reviewed working branch while the alpha remains a draft.
+Replace those links with the release tag when the maintainer publishes the release.

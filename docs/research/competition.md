@@ -76,3 +76,9 @@ The implementation added a separate allowed origin, dedicated token variables, t
 5. Can the same onboarding method work in a second framework without custom consulting?
 
 Do not claim product-market fit, superior accuracy, or a path to 100,000 stars before these results exist.
+
+## Supabase follow-up
+
+The [developer demand review](developer-demand.md) compares public requests with existing Supabase policy tools.
+The current onboarding focus uses real Supabase user sessions and filtered private-row reads.
+Database generators and ordinary integration tests remain direct substitutes.

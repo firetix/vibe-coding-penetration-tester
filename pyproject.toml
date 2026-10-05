@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vibe-pentest"
-version = "2.0.0a1"
+version = "2.0.0a2"
 description = "Repeatable authorization checks for your coding agent and CI"
 readme = "README.md"
 requires-python = ">=3.11"

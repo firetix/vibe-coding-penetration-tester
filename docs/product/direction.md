@@ -1,13 +1,15 @@
-# VibePenTester 2: authorization checks for coding agents
+# VibePenTester 2: test private reads before deployment
 
-Status: alpha implemented; independent review findings addressed. Decision date: 2026-10-04.
+Status: Supabase workflow implemented and locally verified. Decision date: 2026-10-04 Pacific.
+
+The [demand review](../research/developer-demand.md) records the public requests, alternatives, and evidence limits.
 
 ## The problem
 
-An engineer changes an API route with an AI coding agent.
-The route still works for its owner.
-Another tenant can now read the same record.
-The engineer needs a repeatable test that proves both outcomes.
+An engineer changes an application route or database access policy.
+The owner can still read a private record. Another application user can now read it too.
+The engineer needs a repeatable check using the actual application identities.
+Alice and Bob refer to users of that application. The coding agent prepares and runs their tests.
 
 The current project runs a separate model and browser orchestration system.
 Its latest source already includes evidence probes for a specific training application.
@@ -21,8 +23,9 @@ Provide skills for that workflow.
 Provide Model Context Protocol (MCP) access to the same runner.
 The protocol is an interface. Repeatable authorization evidence is the product.
 
-Initial users: engineers building JSON APIs with bearer authentication and multiple tenants.
-Initial task: prove that Alice's private record stays private after a code change.
+Initial users: Supabase developers who need private-row tests before deployment.
+Initial task: verify Alice can read her row while Bob and anonymous requests cannot.
+Keep the generic API path for tenant-owned resources and existing bearer-authenticated applications.
 
 ## Alternatives
 
@@ -30,7 +33,8 @@ Initial task: prove that Alice's private record stays private after a code chang
 | --- | --- | --- | --- |
 | Another autonomous pentester | Broad discovery | Competes directly with established agent systems | Keep legacy mode; do not lead with it |
 | Skills or tool wrappers alone | Easy installation | Easy to copy; weak evidence contract | Include as interfaces |
-| Explicit authorization contracts | Fast reruns; app-specific evidence | Requires fixtures and known identities | Build first |
+| Supabase reads through real users | Concrete provider setup; repeatable evidence | Requires fixtures and real user sessions | Lead with this workflow |
+| Generated database tests | Broad SQL policy coverage | Already offered by pgTAP tools and rlsautotest | Recommend existing tools when appropriate |
 
 This is a product hypothesis, not proven demand or a unique technical invention.
 Normal integration tests can do this work. Our proposed value is faster setup across agents and frameworks.
@@ -60,9 +64,13 @@ The launch command separately pins that origin with `--allow-origin`.
 The MCP server loads its contract at startup. Tools cannot supply URLs, files, tokens, or shell commands.
 Credentials come only from dedicated `VPT_<ACTOR>_TOKEN` variables.
 Reports omit credentials, bodies, canaries, identity values, and URLs.
-The runner validates distinct subject and tenant identifiers before testing records.
+The runner validates distinct subjects before testing records. Tenant mode also requires distinct verified tenant identifiers.
+Supabase mode uses its real Auth identity route and sends a public application key on each request.
+Its default preset tests user ownership, without asserting organization isolation.
 Each record requires an owner control with exact record and private-canary markers.
-Other authenticated actors and an anonymous request must receive configured denial statuses.
+Other users and an anonymous request must receive configured denial statuses.
+An explicit per-case setting also permits HTTP `200` with an exact empty array.
+This setting supports filtered Supabase reads after the owner control succeeds.
 A returned private canary proves a violation. Unexpected responses produce an inconclusive result.
 A record identifier without private evidence remains inconclusive.
 
@@ -155,7 +163,7 @@ Rollback by restoring the previous package version. Existing web deployments nee
 ## Long-term review
 
 First prove repeated use by five teams across two consecutive weeks.
-Next add role matrices, framework examples, and better fixture setup based on observed friction.
+Next improve fixture setup or add role tests only when repeated use identifies that need.
 Then consider a paid coordination layer for teams running checks in their own CI.
 See [business hypotheses](business.md) and the [six-week distribution plan](distribution.md).
 Keep local execution, portable contracts, skills, and report formats open.
@@ -171,7 +179,9 @@ Marketing must separate implemented features from proposed paid features.
 
 ## GSTACK REVIEW REPORT
 
-Applied gstack 1.67.2.0 CEO and engineering review frameworks.
+The initial alpha applied gstack 1.67.2.0 CEO and engineering review frameworks.
+The Supabase revision applies the installed CEO review’s premise challenge and comparison of implementation alternatives.
+See the demand review for that decision and validation.md for current test evidence.
 The user delegated product and implementation choices for this work.
 Routine scope choices use that authorization instead of interactive preference gates.
 
@@ -181,7 +191,7 @@ Routine scope choices use that authorization instead of interactive preference g
 | Engineering: architecture, quality, tests, performance | 1 | Reviewed | Separate base package; strict controls; bounded transport |
 | Independent specification review | 1 | Findings addressed; regression checks pass | Origin pinning, private canaries, tenant controls, token expiry, malformed denial bodies |
 
-VERDICT: Local implementation and package checks pass. All reported release blockers have regression coverage.
+Initial alpha verdict: local implementation and package checks passed. Reported blockers received regression coverage.
 The final denial-body fix passed maintainer checks after the independent review identified it.
 See [validation evidence](validation.md).
 NO UNRESOLVED DECISIONS

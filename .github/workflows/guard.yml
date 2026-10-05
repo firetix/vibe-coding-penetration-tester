@@ -30,8 +30,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: uv sync --frozen --extra dev
-      - run: uv run ruff check vibe_pentest guard_tests examples/fastapi
-      - run: uv run ruff format --check vibe_pentest guard_tests examples/fastapi
+      - run: uv run ruff check vibe_pentest guard_tests examples/fastapi examples/supabase scripts/refresh_landing_demo.py
+      - run: uv run ruff format --check vibe_pentest guard_tests examples/fastapi examples/supabase scripts/refresh_landing_demo.py
       - run: uv run pytest guard_tests -q -o addopts='' -o log_cli=false
       - run: uv build
       - uses: actions/upload-artifact@v4
@@ -47,6 +47,30 @@ jobs:
         with:
           python-version: '3.11'
       - run: uv run --with fastapi --with uvicorn python examples/fastapi/verify.py
+
+  supabase-recipe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.11'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.95.4
+      - name: Start the disposable Supabase fixture
+        run: >-
+          supabase start --workdir examples/supabase
+          --exclude realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - run: uv run python examples/supabase/verify.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: supabase-evidence
+          path: .cache/supabase-verification.json
+      - name: Stop the fixture
+        if: always()
+        run: supabase stop --workdir examples/supabase --no-backup
 
   legacy-install:
     runs-on: ubuntu-latest

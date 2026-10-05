@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'New prerelease tag, for example v2.0.0a1'
+        description: 'New prerelease tag, for example v2.0.0a2'
         required: true
         type: string
 
@@ -35,7 +35,7 @@ jobs:
           assert __version__ == version
           PY
       - run: uv sync --frozen --extra dev
-      - run: uv run ruff check vibe_pentest guard_tests examples/fastapi
+      - run: uv run ruff check vibe_pentest guard_tests examples/fastapi examples/supabase scripts/refresh_landing_demo.py
       - run: uv run pytest guard_tests -q -o addopts='' -o log_cli=false
       - run: uv build
       - name: Install wheel and verify demo

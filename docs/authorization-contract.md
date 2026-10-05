@@ -1,7 +1,8 @@
 # Authorization contract version 1
 
-VibePenTester checks explicit cross-tenant reads on JSON application programming interfaces (APIs).
-It accepts two to eight users in different tenants and one to fifty private records.
+VibePenTester checks explicit private reads on JSON application programming interfaces (APIs).
+It accepts two to eight users and one to fifty private records.
+Tenant isolation requires different tenants. User isolation requires different users, regardless of their organization.
 Each request uses `GET` and optional bearer authentication.
 
 See the complete [example contract](../examples/fastapi/contract.json).
@@ -12,17 +13,20 @@ See the complete [example contract](../examples/fastapi/contract.json).
 | --- | --- |
 | `version` | Integer `1` |
 | `base_url` | One HTTPS origin, or HTTP with an explicit loopback IP |
+| `isolation` | Optional `tenant` or `user`; defaults to `tenant` |
+| `provider` | Optional `generic` or `supabase`; defaults to `generic` |
 | `identity.path` | Route that returns the authenticated user's identity |
 | `identity.pointer` | JSON pointer for the subject identifier |
-| `identity.tenant_pointer` | JSON pointer for the tenant identifier |
+| `identity.tenant_pointer` | Required only for tenant isolation; omit for user isolation |
 | `actors.<name>.id` | Expected subject identifier |
-| `actors.<name>.tenant` | Expected tenant identifier; unique across actors |
+| `actors.<name>.tenant` | Required only for tenant isolation; unique across actors; omit for user isolation |
 | `actors.<name>.token_env` | Dedicated `VPT_<ACTOR>_TOKEN` variable |
 | `cases[].id` | Stable case label for reports |
 | `cases[].path` | Explicit path to a private record |
 | `cases[].owner` | Actor that owns this record |
 | `cases[].resource` | Exact `pointer` and `equals` for the record identifier |
 | `cases[].private` | Exact `pointer` and `equals` for a private fixture canary |
+| `cases[].denial` | Optional `status` or `empty-array`; defaults to `status` |
 | `deny_statuses` | Optional unique subset of `401`, `403`, `404`; defaults to all three |
 | `timeout_seconds` | Optional network timeout from 0.1 to 10 seconds; defaults to 5 |
 
@@ -42,7 +46,7 @@ The runner cannot prove a canary's uniqueness or secrecy. Fixture authors must e
 1. Validate the entire contract and credential environment.
 2. Compare its origin with the separate `--allow-origin` argument.
 3. Request the identity route with each token.
-4. Require HTTP `200` and exact subject and tenant matches.
+4. Require HTTP `200` and exact subject matches, plus tenant matches for tenant isolation.
 5. Request each record as its owner.
 6. Require HTTP `200`, its record marker, and its private canary.
 7. Repeat that read with every other actor and without credentials.
@@ -51,6 +55,11 @@ The runner cannot prove a canary's uniqueness or secrecy. Fixture authors must e
 A private canary proves a violation even inside an error response.
 A record marker without the canary is inconclusive. The response may expose only public fields.
 A configured denial without either marker passes that exact check.
+With `denial: "empty-array"`, HTTP `200` and exactly an empty JSON array also pass.
+This requires the same successful owner control. Empty owner responses remain inconclusive.
+Use this setting for filtered private-row reads, such as Supabase PostgREST queries.
+Never filter the test by the caller's ownership column. That can conceal missing authorization rules.
+Nonempty arrays, objects, `null`, and empty bodies with HTTP `200` remain inconclusive without leak evidence.
 Its body must be empty or valid JSON without duplicate keys or nonfinite numbers.
 Malformed or ambiguous bodies are inconclusive, even with a configured denial status.
 An authenticated actor's `401` is always inconclusive, even after a successful identity control.
@@ -73,6 +82,19 @@ Reports support JSON, Markdown, and Static Analysis Results Interchange Format (
 SARIF marks incomplete runs with `executionSuccessful: false`.
 Its high severity is a triage default for private data exposure, not a calculated vulnerability score.
 Reports omit target URLs, tokens, headers, bodies, identity values, and private canaries.
+JSON reports also state whether the contract tests `user` or `tenant` isolation.
+
+## Supabase provider
+
+The Supabase preset uses user isolation and identity controls at `/auth/v1/user`, with subject pointer `/id`.
+The provider requires this real identity route for both isolation modes.
+Set `VPT_SUPABASE_KEY` to a publishable or legacy `anon` key.
+The transport sends it as `apikey` on every request, including requests without a user token.
+Secret keys and legacy keys declaring other roles fail before networking.
+Local key parsing checks the declared role only. Supabase validates credentials over the network.
+The runner does not mint, refresh, or store tokens.
+Supabase tenant pointers must start with `/app_metadata/`. Editable user metadata is rejected as a tenant control.
+See the [Supabase example](../examples/supabase/README.md) for fixture setup and scope.
 
 ## Boundaries
 

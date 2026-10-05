@@ -1,19 +1,21 @@
 """Record local evidence for the static product page."""
 
+import argparse
 import json
 import re
 from pathlib import Path
 
-from vibe_pentest.contract import Contract
-from vibe_pentest.demo import demo, fixture, template
-from vibe_pentest.runner import run
-
-reports = demo()
-with fixture("fixed") as origin:
-    reports["expired"] = run(
-        Contract.parse(template(origin)),
-        {"VPT_ALICE_TOKEN": "demo-alice", "VPT_BOB_TOKEN": "expired-demo-bob"},
-    )
+parser = argparse.ArgumentParser(description="Embed verified Supabase reports in the product page.")
+parser.add_argument("--supabase-report", required=True, type=Path)
+args = parser.parse_args()
+source = json.loads(args.supabase_report.read_text())
+reports = {
+    "vulnerable": source["permissive-policy"],
+    "fixed": source["fixed-again"],
+    "expired": source["invalid-session"],
+}
+if tuple(report["status"] for report in reports.values()) != ("fail", "pass", "error"):
+    raise RuntimeError("Expected verified leaking, fixed, and invalid-session results.")
 page = Path(__file__).resolve().parents[1] / "site" / "index.html"
 content = page.read_text()
 pattern = r'(<script id="demo-data" type="application/json">).*?(</script>)'
@@ -26,4 +28,4 @@ updated, count = re.subn(
 if count != 1:
     raise RuntimeError("Expected exactly one embedded evidence record.")
 page.write_text(updated)
-print("Recorded broken, fixed, and expired-token runs in site/index.html.")
+print("Embedded leaking, fixed, and invalid-session Supabase runs in site/index.html.")

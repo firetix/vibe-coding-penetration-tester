@@ -1,29 +1,31 @@
 # VibePenTester
 
-**Keep Alice's data out of Bob's response.**
+**Catch bugs that let one customer read another customer’s data.**
 
-Repeatable authorization tests for the apps you build with AI.
+Repeatable access tests for your application’s users.
+Start with Supabase row-level security (RLS), or use the generic JSON API runner.
 Use your existing coding agent to prepare a test, fix the route, and verify the result.
 Run the same contract in your terminal and continuous integration (CI).
 
 **Version 2 alpha. Apache-2.0. No model key, account, Docker, or browser download for the new runner.**
 
-[Try the demo](#try-it) · [Use your agent](docs/agent-integration.md) · [FastAPI example](examples/fastapi/README.md) · [Contract reference](docs/authorization-contract.md)
+[Try the demo](#try-it) · [Supabase example](examples/supabase/README.md) · [Use your agent](docs/agent-integration.md) · [FastAPI example](examples/fastapi/README.md)
 
 ## The check that matters
 
-Your invoice endpoint works for Alice. Does it also work for Bob from another tenant?
+Alice owns a private row in your application. Can Bob read it with his own account?
 
 ```text
-                         Broken app       Fixed app
-Alice reads her invoice  PASS · 200        PASS · 200
-Bob reads Alice's data   FAIL · 200        PASS · 403
-Anonymous reads it       FAIL · 200        PASS · 401
+                         Leaking policy   Fixed Supabase policy
+Alice reads her row      PASS · 200        PASS · 200 · expected row
+Bob reads Alice's data   FAIL · 200        PASS · 200 · empty array
+Anonymous reads it       FAIL · 200        PASS · 200 · empty array
 
 Same contract. The private fixture canary proves the leak.
 ```
 
-The runner first proves each user's identity and tenant.
+The runner first verifies each user's identity.
+Tenant contracts also verify each user's tenant.
 Then it confirms the owner can read the expected private record.
 Expired tokens, missing fixtures, and login pages produce an inconclusive result.
 They cannot produce a passing run.
@@ -42,7 +44,25 @@ It uses synthetic data and never contacts an external target.
 The fixture binds directly to its numeric address without a hostname lookup.
 The source build works now. Registry publication is a separate release step.
 
-## Test your app
+## Test Supabase
+
+```sh
+uv run vpt init --preset supabase --base-url https://YOUR_TEST_PROJECT.supabase.co
+```
+
+Set the two user IDs, row ID, table, and private canary to match your test fixtures.
+Supply `VPT_SUPABASE_KEY`, `VPT_ALICE_TOKEN`, and `VPT_BOB_TOKEN` through your environment.
+Use a publishable or legacy anon key. The runner rejects secret and service-role keys.
+
+```sh
+uv run vpt check vpt-contract.json --allow-origin https://YOUR_TEST_PROJECT.supabase.co
+```
+
+The [complete Supabase example](examples/supabase/README.md) runs real Auth, PostgREST, and PostgreSQL locally.
+It checks disabled RLS, an overly permissive policy, blocked owners, invalid sessions, and the repaired policy.
+That example requires Docker and the Supabase CLI. The basic `vpt demo` does not.
+
+## Test another JSON API
 
 ```sh
 uv run vpt init --base-url http://127.0.0.1:8000
@@ -99,9 +119,10 @@ They omit tokens, response bodies, target URLs, identity values, and private can
 
 ## What this release covers
 
-Cross-tenant `GET` requests on JSON APIs using bearer tokens.
+User-owned or tenant-owned `GET` requests on JSON APIs using bearer tokens.
 Two to eight users. One to fifty configured records. Anonymous access checks.
 Private canary detection also catches leaks inside denial responses.
+Supabase contracts support its public application key and explicit empty-array denials.
 
 It does not test writes, browser sessions, same-tenant roles, or every possible data leak.
 A passing contract does not certify an application as secure.
@@ -123,6 +144,7 @@ The local runner, contracts, agent skill, and report formats remain open source.
 
 - [Why this direction](docs/product/direction.md)
 - [Competition and evidence](docs/research/competition.md)
+- [Developer requests and the Supabase decision](docs/research/developer-demand.md)
 - [Product and business proposal](docs/product/business.md)
 - [Distribution experiments](docs/product/distribution.md)
 
