@@ -1,0 +1,5 @@
+id,hypothesis,audience,artifact,status,success_metric,observed_result,next_action
+EXP-001,Engineers can see a useful failure without setup,Maintainer,Local demo,technical_validation_complete,Broken fails and fixed passes,Verified locally,Publish reviewed alpha
+EXP-002,FastAPI engineers can adapt one contract within fifteen minutes,Ten design partners,FastAPI recipe,not_started,Eight of ten complete setup,No observations,Recruit only after outreach authorization
+EXP-003,Teams retain and rerun contracts,Activated design partners,CI integration,not_started,Five teams run in two consecutive weeks,No observations,Measure volunteered repeat-use evidence
+EXP-004,Teams will pay for coordination,Retained teams,Paid pilot proposal,not_started,Three signed and paid pilot agreements,No observations,Validate the shared coordination need

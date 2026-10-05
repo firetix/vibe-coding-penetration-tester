@@ -1,236 +1,129 @@
-<p align="center">
-  <img src="logo.webp" alt="VibePenTester logo" width="270"/>
-</p>
+# VibePenTester
 
-# Vibe Coding Penetration Tester
+**Keep Alice's data out of Bob's response.**
 
-AI-assisted web application security testing with CLI and web interfaces.
+Repeatable authorization tests for the apps you build with AI.
+Use your existing coding agent to prepare a test, fix the route, and verify the result.
+Run the same contract in your terminal and continuous integration (CI).
 
-VibePenTester coordinates specialized security agents to discover and validate common web vulnerabilities, then generates reproducible Markdown and JSON reports.
+**Version 2 alpha. Apache-2.0. No model key, account, Docker, or browser download for the new runner.**
 
-## Key Capabilities
+[Try the demo](#try-it) · [Use your agent](docs/agent-integration.md) · [FastAPI example](examples/fastapi/README.md) · [Contract reference](docs/authorization-contract.md)
 
-- Multi-agent scan workflow for discovery, planning, and vulnerability testing
-- LLM provider support: OpenAI, Anthropic, and local/remote Ollama
-- Playwright-powered browser automation for realistic interaction testing
-- Scope-aware scanning (`url`, `domain`, `subdomain`)
-- Report generation in both `report.md` and `report.json`
-- Flask web UI and API for session-based scan orchestration
-- Hosted-mode entitlement and billing hooks for SaaS deployments
+## The check that matters
 
-## Repository Structure
+Your invoice endpoint works for Alice. Does it also work for Bob from another tenant?
 
-- `main.py`: CLI scanner entrypoint
-- `run_web.py`: Modular Flask web API entrypoint (recommended for local web runs)
-- `wsgi.py`: WSGI app entrypoint for production servers
-- `web_ui.py`: Legacy all-in-one web server kept for compatibility
-- `web_api/`: Refactored modular routes, middleware, and helpers
-- `agents/`: Discovery and security testing agent implementations
-- `tools/`: Browser and security testing tool wrappers
-- `reports_samples/`: Example generated reports
-- `tests/`: Unit, integration, API E2E, frontend E2E, and Vercel preview tests
+```text
+                         Broken app       Fixed app
+Alice reads her invoice  PASS · 200        PASS · 200
+Bob reads Alice's data   FAIL · 200        PASS · 403
+Anonymous reads it       FAIL · 200        PASS · 401
 
-## Prerequisites
-
-- Python 3.8+
-- Playwright browser binaries
-- At least one LLM provider:
-  - OpenAI API key (`OPENAI_API_KEY`)
-  - Anthropic API key (`ANTHROPIC_API_KEY`)
-  - Ollama server (`OLLAMA_BASE_URL`, default `http://localhost:11434`)
-
-## Installation
-
-```bash
-git clone https://github.com/firetix/vibe-coding-penetration-tester.git
-cd vibe-coding-penetration-tester
-
-python -m venv .venv
-source .venv/bin/activate
-
-pip install -r requirements.txt
-playwright install
-
-cp .env.example .env
+Same contract. The private fixture canary proves the leak.
 ```
 
-## Configuration
+The runner first proves each user's identity and tenant.
+Then it confirms the owner can read the expected private record.
+Expired tokens, missing fixtures, and login pages produce an inconclusive result.
+They cannot produce a passing run.
 
-### Core Environment Variables
+## Try it
 
-- `OPENAI_API_KEY`: Required for `--provider openai`
-- `ANTHROPIC_API_KEY`: Required for `--provider anthropic`
-- `PORT`: Web server port (default `5050`)
-- `SECRET_KEY`: Flask session secret
-- `OLLAMA_BASE_URL`: Optional Ollama endpoint (default `http://localhost:11434`)
+Requires Python 3.11 or later and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Run from a checkout containing this alpha:
 
-### Hosted/Billing Environment Variables (Optional)
-
-- `VPT_HOSTED_MODE`: Enable hosted entitlement enforcement (`1` to enable)
-- `VPT_BILLING_DB_PATH`: SQLite database path for billing/entitlements
-- `VPT_TRUST_PROXY_HEADERS`: Trust `X-Forwarded-For` when deployed behind proxies
-- `VPT_ENABLE_MOCK_CHECKOUT`: Allow local mock checkout flows
-- `VPT_ALLOW_UNVERIFIED_WEBHOOKS`: Relax Stripe webhook verification (test-only)
-- `STRIPE_SECRET_KEY`: Stripe API key
-- `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret
-- `STRIPE_PRICE_PRO_MONTHLY`: Stripe price ID for subscription mode
-- `STRIPE_PRICE_CREDIT_PACK`: Stripe price ID for credit pack purchases
-
-## Usage
-
-### CLI Scanning
-
-```bash
-# Default OpenAI model
-python main.py --url https://example.com
-
-# Domain-level scan with OpenAI
-python main.py --url https://example.com --scope domain --provider openai --model gpt-5.2
-
-# OpenAI GPT-5.2 Codex model
-python main.py --url https://example.com --provider openai --model gpt-5.2-codex
-
-# OpenAI GPT-5.2 Thinking model
-python main.py --url https://example.com --provider openai --model gpt-5.2-pro
-
-# Subdomain scan with Anthropic
-python main.py --url https://example.com --scope subdomain --provider anthropic --model claude-opus-4-6
-
-# Anthropic Opus model
-python main.py --url https://example.com --provider anthropic --model claude-opus-4-6-20260120
-
-# Local scan with Ollama
-python main.py --url https://example.com --provider ollama --model llama3
-
-# Ollama with custom endpoint
-python main.py --url https://example.com --provider ollama --model mixtral --ollama-url http://localhost:11434
+```sh
+uv run vpt demo
 ```
 
-### Model Catalog
+The demo starts a disposable application on loopback, checks its broken and fixed versions, then stops it.
+It uses synthetic data and never contacts an external target.
+The source build works now. Registry publication is a separate release step.
 
-Use any provider model ID accepted by your account/runtime. Common options:
+## Test your app
 
-- OpenAI:
-  - `gpt-5.2`
-  - `gpt-5.2-pro` (thinking)
-  - `gpt-5.2-codex`
-  - `gpt-5.2-mini`
-  - `gpt-5.2-nano`
-  - `gpt-4o` (legacy)
-- Anthropic:
-  - `claude-opus-4-6`
-  - `claude-opus-4-6-20260120`
-  - `claude-sonnet-4-6`
-  - `claude-haiku-4-5`
-- Ollama (example local tags):
-  - `llama3`
-  - `mixtral`
-  - `deepseek-r1`
-  - `mistral`
-  - `gemma`
-
-### CLI Options
-
-| Option | Description |
-| --- | --- |
-| `--url` | Target URL to test (required) |
-| `--model` | LLM model identifier (default `gpt-5.2`) |
-| `--provider` | LLM provider: `openai`, `anthropic`, `ollama` |
-| `--scope` | Scan scope: `url`, `domain`, `subdomain` |
-| `--output` | Output directory root (default `reports`) |
-| `--verbose` | Enable verbose logging |
-| `--ollama-url` | Ollama server URL override |
-
-Reports are written to:
-
-- `reports/<normalized_target>_<timestamp>/report.json`
-- `reports/<normalized_target>_<timestamp>/report.md`
-
-### Web Application (Recommended Modular App)
-
-```bash
-python run_web.py
+```sh
+uv run vpt init --base-url http://127.0.0.1:8000
 ```
 
-Open [http://localhost:5050](http://localhost:5050).
+Edit `vpt-contract.json` with your identity route, two tenant fixtures, and a private record.
+Seed a unique canary in a private field of that record.
+Use your test login helper to supply `VPT_ALICE_TOKEN` and `VPT_BOB_TOKEN` through environment variables.
 
-### Legacy Web Application (Compatibility)
-
-```bash
-python web_ui.py
+```sh
+uv run vpt validate vpt-contract.json
+uv run vpt check vpt-contract.json --allow-origin http://127.0.0.1:8000
 ```
 
-This path is maintained for backward compatibility with older route behavior.
+Start with the [complete FastAPI example](examples/fastapi/README.md) if you need a working fixture.
 
-## Web API Endpoints (Modular App)
+| Outcome | Meaning | Exit code |
+| --- | --- | --- |
+| Pass | Every configured control and denial passed | `0` |
+| Fail | A forbidden actor received the private fixture canary | `1` |
+| Inconclusive | Input, identity, fixture, or response evidence is incomplete | `2` |
 
-Core:
+Both `1` and `2` should fail CI. Errors take precedence when a run also contains violations.
 
-- `POST /api/session/init`
-- `POST /api/session/check`
-- `POST /api/session/reset`
-- `GET|POST /api/session/state`
-- `POST /api/scan/start`
-- `POST /api/scan/status`
-- `POST /api/scan/cancel`
-- `POST /api/scan/list`
-- `POST /api/activity`
-- `GET /status`
-- `GET /api/logs`
-- `GET /api/reports`
-- `GET /api/report/<report_id>`
+## Bring your coding agent
 
-Hosted/billing:
+Use the [portable skill](skills/vpt-authz/SKILL.md) with Codex, Claude Code, or another compatible agent.
+It guides fixture setup, contract creation, server-side fixes, and repeat checks.
 
-- `GET /api/entitlements`
-- `POST /api/billing/checkout`
-- `POST /api/billing/webhook`
-- `GET /billing/checkout`
-- `GET /mock-checkout/<checkout_session_id>` (mock flow in local/test setups)
+Prefer tools? Install the optional Model Context Protocol (MCP) adapter:
 
-Compatibility routes are also registered for older clients (for example: `/scan`, `/report`, `/reset`, `/api/state`).
-
-## Testing
-
-Run all standard suites:
-
-```bash
-./run_tests.sh
+```sh
+uv run --extra mcp vpt serve \
+  --config vpt-contract.json \
+  --allow-origin http://127.0.0.1:8000
 ```
 
-Run focused suites:
+The server exposes `describe_contract` and `run_checks`.
+Both tools use the contract fixed at startup.
+[Client configuration and credential setup →](docs/agent-integration.md)
 
-```bash
-pytest tests/unit -v
-pytest tests/integration -v
-pytest tests/e2e/api -m e2e_api_critical -v
-pytest tests/e2e/frontend -m e2e_frontend_smoke -v
-pytest tests/e2e/vercel -m e2e_vercel_preview -v
+## Keep the evidence
+
+```sh
+uv run vpt check vpt-contract.json \
+  --allow-origin http://127.0.0.1:8000 \
+  --format json --output authorization.json
 ```
 
-Additional marker groups are defined in `pytest.ini` for full/nightly E2E coverage.
+Use `--format markdown` for review or `--format sarif` for compatible code-scanning tools.
+Reports contain check outcomes and HTTP status codes.
+They omit tokens, response bodies, target URLs, identity values, and private canaries.
+[Add checks to CI →](docs/ci.md)
 
-## Deployment
+## What this release covers
 
-- Vercel deployment guide: [`VERCEL_DEPLOYMENT.md`](VERCEL_DEPLOYMENT.md)
-- Deployment helper script: [`deploy-to-vercel.sh`](deploy-to-vercel.sh)
-- WSGI entrypoint: `wsgi:app`
+Cross-tenant `GET` requests on JSON APIs using bearer tokens.
+Two to eight users. One to fifty configured records. Anonymous access checks.
+Private canary detection also catches leaks inside denial responses.
 
-## Sample Reports
+It does not test writes, browser sessions, same-tenant roles, or every possible data leak.
+A passing contract does not certify an application as secure.
+Use broader testing tools for discovery and manual testing for complex business rules.
+Read the [evidence boundaries](docs/authorization-contract.md#boundaries).
 
-See generated examples in:
+## The original scanner
 
-- `reports_samples/http_testhtml5.vulnweb.com__20250319_004520/report.md`
-- `reports_samples/http_testhtml5.vulnweb.com__20250319_004520/report.json`
+The browser-based scanner and web application remain available.
+Use their existing entrypoints: `main.py`, `run_web.py`, and `web_ui.py`.
+Their model and browser dependencies are separate from the new runner.
+[Legacy setup and usage →](docs/legacy-scanner.md)
 
-## Security and Legal Notice
+## Build with us
 
-Use this tool only against targets you own or have explicit authorization to test. Unauthorized scanning may violate law and policy.
+We want useful contracts for real applications, with a broken example and a verified fix.
+Start with a [contribution](CONTRIBUTING.md) or a report about setup friction.
+The local runner, contracts, agent skill, and report formats remain open source.
 
-## Contributing
+- [Why this direction](docs/product/direction.md)
+- [Competition and evidence](docs/research/competition.md)
+- [Product and business proposal](docs/product/business.md)
+- [Distribution experiments](docs/product/distribution.md)
 
-Contributions are welcome through pull requests and issues. For larger changes, open an issue first to discuss design and scope.
-
-## License
-
-GPL-3.0. See [`LICENSE`](LICENSE).
+Use only applications you own or have permission to test.
+Licensed under [Apache-2.0](LICENSE).
