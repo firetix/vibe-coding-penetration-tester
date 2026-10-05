@@ -23,8 +23,47 @@ Avoid claims about replacing security teams or finding every vulnerability.
 | 6 | Improve the feature retained users request most | Launch publicly with observed evidence and a short demo | Compare activation and retention by source |
 
 Owner: project maintainer, supported by contributors after they accept specific work.
-No outreach, directory submission, release publication, or social post has happened through this plan.
-Those actions require the maintainer's publishing choice and actual destination accounts.
+The maintainer authorized a small outreach test on 2026-10-05.
+One Supabase community post is live. See the smoke test below.
+No directory submission or release publication has happened through this plan.
+
+## Supabase outreach smoke test
+
+Published: [Testing Supabase row-level security with two real users](https://github.com/orgs/supabase/discussions/51252).
+Author: `firetix`. Category: **Show and tell**. Published at `2026-10-05T07:10:37Z`.
+
+The category explicitly invites people to show their projects.
+The [community code of conduct](https://github.com/supabase/.github/blob/main/CODE_OF_CONDUCT.md) requires respectful participation.
+We checked recent questions before posting. The inspected questions covered different problems.
+For example, [discussion 51213](https://github.com/orgs/supabase/discussions/51213) asks about administrative privileges and migration recovery.
+The private-row reader does not solve that question.
+
+The post explains two application users, discloses alpha status, and links to the reviewed Supabase example.
+It asks: "Would you try this on one private table, or do your existing tests already cover it?"
+The linked example uses an immutable commit because the alpha is not on the default branch.
+
+The initial readback showed zero comments and zero reactions.
+Eleven of the fifteen latest showcase posts had no comments when inspected before publication.
+That small snapshot suggests limited response volume. It does not measure views or reader interest.
+Competing showcases establish available alternatives, not customer demand.
+
+Two local, read-only checks are scheduled for October 6 and October 8 at 00:11 Pacific time.
+They record public replies without sending follow-up messages.
+They require this Mac, its logged-in account, network access, and working GitHub authentication.
+Sleep can delay execution until wake. These checks are not a hosted monitoring service.
+Local receipts and results live under `.cache/outreach/supabase-smoke-2026-10-05/`.
+
+Evaluation window: seven days after publication.
+Initial target: two developers describe their current tests, and one tries a fixture on their own test project.
+Count replies, completed setup, retained tests, and paid work separately.
+There is no click tracking or local-run telemetry. We cannot calculate conversion rates from this post.
+Do not classify the product as unwanted from one unanswered post.
+
+If developers respond, first learn what they already use and which setup step blocks them.
+Offer help with synthetic fixtures. Never ask for credentials or customer data in public replies.
+If the post stays silent, test a short broken/fixed demonstration in another community that permits project sharing.
+Verify that community's current rules before posting.
+Collaborations with Supabase template maintainers are another candidate channel after one successful external setup.
 
 ## Channels and repeatable loops
 
