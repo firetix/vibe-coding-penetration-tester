@@ -28,7 +28,7 @@ Its regression test rejects hostname lookups; the original test deadline remains
 The legacy Vercel preview returned HTTP 500 after deployment.
 The new package metadata changed dependency selection; an explicit install script preserves legacy web dependencies.
 The updated web installer and deployed preview tests pass remotely.
-Remote verification of the loopback fix remains pending.
+See [pull request checks](https://github.com/firetix/vibe-coding-penetration-tester/pull/29/checks) for current remote results.
 
 ## Reproduce
 
