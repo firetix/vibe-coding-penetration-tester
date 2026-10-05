@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base_url": "http://127.0.0.1:8000",
+  "identity": {
+    "path": "/api/me",
+    "pointer": "/id",
+    "tenant_pointer": "/tenant_id"
+  },
+  "actors": {
+    "alice": {
+      "token_env": "VPT_ALICE_TOKEN",
+      "id": "alice",
+      "tenant": "tenant-alice"
+    },
+    "bob": {
+      "token_env": "VPT_BOB_TOKEN",
+      "id": "bob",
+      "tenant": "tenant-bob"
+    }
+  },
+  "cases": [
+    {
+      "id": "alice-private-invoice",
+      "path": "/api/invoices/invoice-alice",
+      "owner": "alice",
+      "resource": {
+        "pointer": "/id",
+        "equals": "invoice-alice"
+      },
+      "private": {
+        "pointer": "/private_note",
+        "equals": "vpt-private-fixture-alice-7f38d2"
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+name: Add a useful authorization case
+description: Propose a reproducible fixture with a broken and fixed version.
+title: "Authorization case: "
+body:
+  - type: markdown
+    attributes:
+      value: Use synthetic data. Do not include credentials, customer records, or unauthorized targets.
+  - type: input
+    id: framework
+    attributes:
+      label: Framework and version
+      placeholder: FastAPI with bearer authentication
+    validations:
+      required: true
+  - type: textarea
+    id: policy
+    attributes:
+      label: Expected access rule
+      description: State which actor owns the record and which actors must be denied.
+    validations:
+      required: true
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Reproducible local fixture
+      description: Link a minimal example with a seeded private canary and a server-side fix.
+    validations:
+      required: true
+  - type: textarea
+    id: controls
+    attributes:
+      label: Controls and limits
+      description: Explain identity validation, owner access, and cases this fixture does not cover.

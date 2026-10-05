@@ -1,0 +1,99 @@
+name: Authorization runner
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.11'
+          - os: ubuntu-latest
+            python: '3.14'
+          - os: macos-latest
+            python: '3.11'
+          - os: windows-latest
+            python: '3.11'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen --extra dev
+      - run: uv run ruff check vibe_pentest guard_tests examples/fastapi examples/supabase scripts/refresh_landing_demo.py
+      - run: uv run ruff format --check vibe_pentest guard_tests examples/fastapi examples/supabase scripts/refresh_landing_demo.py
+      - run: uv run pytest guard_tests -q -o addopts='' -o log_cli=false
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-${{ matrix.os }}-${{ matrix.python }}
+          path: dist/*
+
+  fastapi-recipe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.11'
+      - run: uv run --with fastapi --with uvicorn python examples/fastapi/verify.py
+
+  supabase-recipe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.11'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.95.4
+      - name: Start the disposable Supabase fixture
+        run: >-
+          supabase start --workdir examples/supabase
+          --exclude realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - run: uv run python examples/supabase/verify.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: supabase-evidence
+          path: .cache/supabase-verification.json
+      - name: Stop the fixture
+        if: always()
+        run: supabase stop --workdir examples/supabase --no-backup
+
+  legacy-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.11'
+      - name: Verify the separate web dependency installation
+        run: |
+          uv venv /tmp/vpt-web
+          /tmp/vpt-web/bin/python - <<'PY'
+          import os
+          import subprocess
+          import tomllib
+          with open('pyproject.toml', 'rb') as source:
+              script = tomllib.load(source)['tool']['vercel']['scripts']['vercel-install']
+          env = {**os.environ, 'VIRTUAL_ENV': '/tmp/vpt-web'}
+          subprocess.run(script, shell=True, env=env, check=True)
+          subprocess.run([
+              '/tmp/vpt-web/bin/python', '-c',
+              'from wsgi import app; client = app.test_client(); '
+              'assert client.get("/").status_code == 200; '
+              'assert client.get("/status").status_code == 200',
+          ], env={**env, 'VPT_BILLING_DB_PATH': '/tmp/vpt-web-smoke.db'}, check=True)
+          PY

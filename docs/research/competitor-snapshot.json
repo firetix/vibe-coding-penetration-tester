@@ -1,0 +1,90 @@
+[
+  {
+    "full_name": "firetix/vibe-coding-penetration-tester",
+    "html_url": "https://github.com/firetix/vibe-coding-penetration-tester",
+    "description": "Vibe Coding? Cool story. But your vibe might be \"security breach waiting to happen.\" Introducing VibePenTester, the AI pen-tester who rolls its eyes at your half-baked code, discovers your vulnerabilities faster than your coworkers discover free pizza, and gently bullies your web app into compliance. Less \"vibe check,\" more \"reality check.\"",
+    "stargazers_count": 177,
+    "forks_count": 35,
+    "pushed_at": "2026-06-08T03:22:56Z",
+    "archived": false,
+    "default_branch": "main",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "usestrix/strix",
+    "html_url": "https://github.com/usestrix/strix",
+    "description": "Open-source AI penetration testing tool to find and fix your app\u2019s vulnerabilities.",
+    "stargazers_count": 66534,
+    "forks_count": 7302,
+    "pushed_at": "2026-10-05T02:37:22Z",
+    "archived": false,
+    "default_branch": "main",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "KeygraphHQ/shannon",
+    "html_url": "https://github.com/KeygraphHQ/shannon",
+    "description": "Shannon is an AI pentester for web applications and APIs. It analyzes your source code, identifies attack vectors, and executes real exploits to prove vulnerabilities before they reach production.",
+    "stargazers_count": 48580,
+    "forks_count": 5566,
+    "pushed_at": "2026-10-01T22:17:59Z",
+    "archived": false,
+    "default_branch": "main",
+    "license": "AGPL-3.0"
+  },
+  {
+    "full_name": "0x4m4/hexstrike-ai",
+    "html_url": "https://github.com/0x4m4/hexstrike-ai",
+    "description": "HexStrike AI MCP Agents is an advanced MCP server that lets AI agents (Claude, GPT, Copilot, etc.) autonomously run 150+ cybersecurity tools for automated pentesting, vulnerability discovery, bug bounty automation, and security research. Seamlessly bridge LLMs with real-world offensive security capabilities.",
+    "stargazers_count": 12369,
+    "forks_count": 2518,
+    "pushed_at": "2026-08-03T14:33:09Z",
+    "archived": false,
+    "default_branch": "master",
+    "license": "MIT"
+  },
+  {
+    "full_name": "GreyDGL/PentestGPT",
+    "html_url": "https://github.com/GreyDGL/PentestGPT",
+    "description": "Automated Penetration Testing Agentic Framework Powered by Large Language Models",
+    "stargazers_count": 15729,
+    "forks_count": 2739,
+    "pushed_at": "2026-07-14T12:58:31Z",
+    "archived": false,
+    "default_branch": "main",
+    "license": "MIT"
+  },
+  {
+    "full_name": "semgrep/semgrep",
+    "html_url": "https://github.com/semgrep/semgrep",
+    "description": "Lightweight static analysis for many languages. Find bug variants with patterns that look like source code.",
+    "stargazers_count": 16874,
+    "forks_count": 1088,
+    "pushed_at": "2026-10-05T00:02:23Z",
+    "archived": false,
+    "default_branch": "develop",
+    "license": "LGPL-2.1"
+  },
+  {
+    "full_name": "projectdiscovery/nuclei",
+    "html_url": "https://github.com/projectdiscovery/nuclei",
+    "description": "Nuclei is a fast, customizable vulnerability scanner powered by the global security community and built on a simple YAML-based DSL, enabling collaboration to tackle trending vulnerabilities on the internet. It helps you find vulnerabilities in your applications, APIs, networks, DNS, and cloud configurations.",
+    "stargazers_count": 31728,
+    "forks_count": 3914,
+    "pushed_at": "2026-10-05T04:50:53Z",
+    "archived": false,
+    "default_branch": "dev",
+    "license": "MIT"
+  },
+  {
+    "full_name": "zaproxy/zaproxy",
+    "html_url": "https://github.com/zaproxy/zaproxy",
+    "description": "The ZAP by Checkmarx Core project",
+    "stargazers_count": 15868,
+    "forks_count": 2654,
+    "pushed_at": "2026-10-01T08:13:37Z",
+    "archived": false,
+    "default_branch": "main",
+    "license": "Apache-2.0"
+  }
+]

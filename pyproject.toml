@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vibe-pentest"
+version = "2.0.0a2"
+description = "Repeatable authorization checks for your coding agent and CI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{name = "VibePenTester contributors"}]
+dependencies = []
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.26,<2"]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1", "mcp>=1.26,<2"]
+
+[project.scripts]
+vpt = "vibe_pentest.cli:main"
+
+[project.urls]
+Repository = "https://github.com/firetix/vibe-coding-penetration-tester"
+Issues = "https://github.com/firetix/vibe-coding-penetration-tester/issues"
+
+[tool.vercel.scripts]
+vercel-install = 'uv pip install --python "$VIRTUAL_ENV/bin/python" -r requirements-vercel.txt'
+
+[tool.hatch.build.targets.wheel]
+packages = ["vibe_pentest"]
+
+[tool.hatch.build.targets.sdist]
+include = ["vibe_pentest", "guard_tests", "skills", "examples", "docs", "site", "scripts/refresh_landing_demo.py", "README.md", "CONTRIBUTING.md", "SECURITY.md", "LICENSE", "pyproject.toml", "uv.lock"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

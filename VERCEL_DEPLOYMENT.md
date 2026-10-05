@@ -2,6 +2,10 @@
 
 This document provides step-by-step instructions for deploying the VibePenTester application to Vercel.
 
+The root `pyproject.toml` packages the separate authorization runner.
+Its `tool.vercel.scripts.vercel-install` command installs `requirements-vercel.txt` into Vercel's build environment.
+Keep this command when changing package metadata. The web app needs dependencies outside the runner's lockfile.
+
 ## Prerequisites
 
 1. Create a Vercel account at [vercel.com](https://vercel.com) if you don't have one already
@@ -152,4 +156,4 @@ Vercel Analytics is automatically enabled for your project. To view analytics:
 
 3. You'll see visitor data, performance metrics, and other insights
 
-For more advanced analytics options, you can also integrate with other platforms through Vercel integrations. 
+For more advanced analytics options, you can also integrate with other platforms through Vercel integrations.

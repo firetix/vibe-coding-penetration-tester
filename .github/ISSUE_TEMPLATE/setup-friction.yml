@@ -1,0 +1,31 @@
+name: Report setup friction
+description: Help make the first useful check easier.
+title: "Setup: "
+body:
+  - type: markdown
+    attributes:
+      value: Do not include tokens, private hostnames, response bodies, or customer records.
+  - type: input
+    id: version
+    attributes:
+      label: VibePenTester and Python versions
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What were you trying to check?
+      description: Describe the framework, authentication type, and expected policy without private data.
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: Where did setup stop?
+      description: Include a sanitized command and error message. State whether the local demo worked.
+    validations:
+      required: true
+  - type: input
+    id: minutes
+    attributes:
+      label: Approximate setup time in minutes
