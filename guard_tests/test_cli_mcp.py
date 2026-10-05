@@ -10,21 +10,24 @@ from vibe_pentest.demo import fixture, template
 
 
 def test_demo_subprocess():
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import faulthandler, runpy; "
-            "faulthandler.dump_traceback_later(10); "
-            "runpy.run_module('vibe_pentest', run_name='__main__', alter_sys=True)",
-            "demo",
-            "--format",
-            "json",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import faulthandler, runpy; "
+                "faulthandler.dump_traceback_later(10); "
+                "runpy.run_module('vibe_pentest', run_name='__main__', alter_sys=True)",
+                "demo",
+                "--format",
+                "json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError((exc.stderr or b"").decode("utf-8", errors="replace")) from exc
     assert result.returncode == 0, result.stderr
     reports = json.loads(result.stdout)
     assert reports["vulnerable"]["status"] == "fail"

@@ -5,8 +5,8 @@ Package: `vibe-pentest` version `2.0.0a1`.
 
 | Check | Observed result | Limit |
 | --- | --- | --- |
-| Runner suite, Python 3.11 | 94 passed | Local macOS execution |
-| Runner suite, Python 3.14 | 94 passed | Local macOS execution |
+| Runner suite, Python 3.11 | 95 passed | Local macOS execution |
+| Runner suite, Python 3.14 | 95 passed | Local macOS execution |
 | Existing unit and API suites | 163 passed | No live model or external scan |
 | FastAPI fixture | Broken version failed; fixed version passed | Synthetic local data |
 | MCP client | Initialize, list, run, structured result passed | Real standard-input/output connection; graphical clients not tested |
@@ -22,10 +22,13 @@ Package: `vibe-pentest` version `2.0.0a1`.
 | Static checks | Ruff, actionlint, documentation links, and whitespace checks passed | Remote workflow execution remains separate |
 
 The first remote run passed Linux, Windows, FastAPI, and existing local application tests.
-The macOS demo exceeded its fifteen-second test deadline. A rerun checks whether this repeats.
+The macOS demo repeatedly exceeded its fifteen-second test deadline.
+The fixture now avoids reverse hostname resolution when binding its numeric loopback address.
+Its regression test rejects hostname lookups; the original test deadline remains unchanged.
 The legacy Vercel preview returned HTTP 500 after deployment.
 The new package metadata changed dependency selection; an explicit install script preserves legacy web dependencies.
-Remote verification of that change remains pending.
+The updated web installer and deployed preview tests pass remotely.
+Remote verification of the loopback fix remains pending.
 
 ## Reproduce
 

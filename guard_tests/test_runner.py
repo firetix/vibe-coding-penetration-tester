@@ -1,4 +1,5 @@
 import json
+import socket
 
 import pytest
 
@@ -41,6 +42,19 @@ def test_local_vulnerable_and_fixed_applications():
         assert exit_code(report) == expected
         assert report["coverage"]["requests"] == 5
         assert report["coverage"]["completed_checks"] == 3
+
+
+def test_demo_fixture_does_not_resolve_hostnames(monkeypatch):
+    def reject_lookup(*args):
+        pytest.fail("The loopback fixture must not perform a hostname lookup.")
+
+    monkeypatch.setattr(socket, "getfqdn", reject_lookup)
+    with fixture() as origin:
+        report = run(
+            Contract.parse(template(origin)),
+            {"VPT_ALICE_TOKEN": "demo-alice", "VPT_BOB_TOKEN": "demo-bob"},
+        )
+    assert exit_code(report) == 0
 
 
 @pytest.mark.parametrize(

@@ -39,6 +39,7 @@ uv run vpt demo
 
 The demo starts a disposable application on loopback, checks its broken and fixed versions, then stops it.
 It uses synthetic data and never contacts an external target.
+The fixture binds directly to its numeric address without a hostname lookup.
 The source build works now. Registry publication is a separate release step.
 
 ## Test your app
